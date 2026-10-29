@@ -25,7 +25,7 @@ docker image prune -f
 
 ```bash
 # 拉取最新镜像
-docker pull ghcr.io/luckjiawei/podux:latest
+docker pull ghcr.io/derrors/podux:latest
 
 # 停止并删除旧容器（数据存储在 volume 中，不会丢失）
 docker stop podux
@@ -37,7 +37,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8090:8090 \
   -v ./podux-data:/app/pb_data \
-  ghcr.io/luckjiawei/podux:latest
+  ghcr.io/derrors/podux:latest
 ```
 
 ## 升级到指定版本
@@ -46,10 +46,10 @@ docker run -d \
 
 ```bash
 # Docker Compose：设置环境变量
-VERSION=v1.2.0 docker compose up -d
+VERSION=0.2.0 docker compose up -d
 
 # 或编辑 docker-compose.yml 中的 image 字段
-image: ghcr.io/luckjiawei/podux:v1.2.0
+image: ghcr.io/derrors/podux:0.2.0
 ```
 
 ## 回滚
@@ -61,7 +61,7 @@ image: ghcr.io/luckjiawei/podux:v1.2.0
 docker compose down
 
 # 修改 docker-compose.yml 中的版本号为旧版本，然后启动
-VERSION=v1.1.0 docker compose up -d
+VERSION=0.2.0 docker compose up -d
 ```
 
 ::: tip

@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: pnpm
           cache-dependency-path: site/pnpm-lock.yaml
 
@@ -89,7 +89,7 @@ jobs:
         run: |
           go build \
             -trimpath \
-            -ldflags "-s -w -X main.Version=ci -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -ldflags "-s -w" \
             -o /tmp/podux \
             main.go
 
@@ -135,6 +135,5 @@ jobs:
           tags: ${{ steps.image.outputs.name }}:dev
           build-args: |
             VERSION=dev
-            BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

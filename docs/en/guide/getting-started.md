@@ -20,7 +20,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8090:8090 \
   -v podux-data:/app/pb_data \
-  ghcr.io/luckjiawei/podux:latest
+  ghcr.io/derrors/podux:latest
 ```
 
 On successful startup, the terminal will display:
@@ -36,7 +36,7 @@ You can also manage it with Docker Compose:
 ```yaml
 services:
   podux:
-    image: ghcr.io/luckjiawei/podux:latest
+    image: ghcr.io/derrors/podux:latest
     container_name: podux
     restart: unless-stopped
     ports:

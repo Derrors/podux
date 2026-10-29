@@ -129,7 +129,7 @@ export default defineConfig({
     logo: { src: '/logo.svg', width: 24, height: 24 },
 
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/luckjiawei/podux' }
+      { icon: 'github', link: 'https://github.com/Derrors/podux' }
     ],
 
     search: {

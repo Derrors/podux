@@ -23,11 +23,11 @@ flowchart LR
 
 ### Layers and Entry Points
 
-- `main.go` creates the PocketBase app, registers migration commands, constructs repositories/services/handlers, binds the `fh_proxies` create/update/delete hooks and the `OnTerminate` hook that stops frpc clients, and initializes state, starts background tasks, registers routes, and configures the static-file fallback in `OnServe`.
+- `main.go` creates the PocketBase app, registers migration commands, constructs repositories/services/handlers, binds the `fh_proxies` create/update/delete hooks, the `fh_servers` delete hooks (cascade cleanup, see the database design), and the `OnTerminate` hook that stops `MonitorService` and frpc clients, and initializes state, starts background tasks, registers routes, and configures the static-file fallback in `OnServe`.
 - `internal/domain` currently defines lightweight models, status values, and repository interfaces only for servers and proxies.
 - `internal/application` handles statistics, imports, frpc configuration/lifecycle, networking and metrics, system settings, and version queries.
 - `internal/infrastructure/persistence` implements server and proxy repositories with dbx/PocketBase.
-- `internal/interfaces/http` exposes `/api/dashboard/*`, `/api/frpc/*`, `/api/import/*`, `/api/servers*`, `/api/system/*`, and `/api/frp/version`. Except for initialization-status and initialization endpoints, registered custom routes use `requireAuth`, which only accepts the `Authorization` header (the log stream no longer takes a `?token=` query parameter; the frontend reads it with `fetch`). `/api/servers` list items omit `auth`, `transport`, `log`, and `metadatas`; edit forms load full records through the PocketBase SDK.
+- `internal/interfaces/http` exposes `/api/dashboard/*`, `/api/frpc/*`, `/api/import/*`, `/api/servers*`, `/api/system/*`, and `/api/frp/version`. `/api/frpc/logs/stream` answers 404 when no log file exists yet; otherwise it replays up to 50 lines, sends an `event: replay-end` frame, and then streams live lines. Except for initialization-status and initialization endpoints, registered custom routes use `requireAuth`, which only accepts the `Authorization` header (the log stream no longer takes a `?token=` query parameter; the frontend reads it with `fetch`). `/api/servers` list items omit `auth`, `transport`, `log`, and `metadatas`; edit forms load full records through the PocketBase SDK.
 - React also uses the PocketBase SDK directly for `fh_users`, `fh_servers`, and `fh_proxies`; collection API rules control that access boundary.
 
 ### Typical Request Flow
@@ -67,7 +67,7 @@ frp logs through one package-level logger, so all servers share `pb_data/frpc/fr
 2. PocketBase `serve` triggers `OnServe`, which sets every server to `stopped` and every proxy to `offline`.
 3. After a 10-second delay, servers with `autoConnection=true` start automatically.
 4. `MonitorService` immediately runs TCP latency and missing-geolocation checks, then repeats them at intervals from `fh_settings.general`; server-side defaults are 30 seconds (clamped to 10–300 seconds, matching the settings page) and 24 hours. Saving settings applies new intervals to the running tickers without a restart. The latest probe result per server, including failures, is held in memory by `MetricsService`; only successful latencies are written to `fh_metrics_raw`. Before a server's first probe after startup, its latest stored value from the last 10 minutes is used.
-5. PocketBase cron aggregates raw metrics into hourly metrics at minute 5 of every hour. At 01:05 each day it aggregates daily metrics and deletes raw data older than 7 days and hourly data older than 30 days.
+5. PocketBase cron aggregates raw metrics into hourly metrics at minute 5 of every hour. At 01:05 each day it aggregates daily metrics and deletes raw data older than 7 days, hourly data older than 30 days, and daily data older than one year. The dashboard's max latency comes from `MetricsService`'s in-memory latest status rather than a scan of `fh_metrics_raw`.
 6. After handlers are registered, `pb_public` is served through `embed.FS` with an SPA fallback; `/_/` remains the PocketBase Admin UI.
 
 ### Frontend Build and Embedding
@@ -96,6 +96,4 @@ The Vite development server listens on `0.0.0.0` and proxies `/api` to `127.0.0.
 
 ## To Be Confirmed
 
-- `github_handler.go` and its service exist, but their wiring and registration are commented out in `main.go`; they must not be treated as a published API.
-- `MonitorService` has no graceful-shutdown hook; it relies on process termination. frpc clients are stopped in `OnTerminate` (kcp/quic close gracefully).
 - No formal repository-level backup/restore, horizontal-scaling, or multi-instance mutual-exclusion design was found.

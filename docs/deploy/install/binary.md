@@ -8,21 +8,22 @@
 
 ## 下载
 
-前往 [GitHub Releases](https://github.com/luckjiawei/podux/releases/latest) 页面，根据你的系统选择对应的安装包：
+前往 [GitHub Releases](https://github.com/Derrors/podux/releases/latest) 页面，根据你的系统选择对应的安装包：
 
 | 系统 | 架构 | 文件名 |
 | --- | --- | --- |
-| Linux | x86_64 (amd64) | `podux-linux-amd64.tar.gz` |
-| Linux | ARM64 | `podux-linux-arm64.tar.gz` |
-| Linux | ARMv7 | `podux-linux-armv7.tar.gz` |
-| macOS | Intel | `podux-darwin-amd64.tar.gz` |
-| macOS | Apple Silicon | `podux-darwin-arm64.tar.gz` |
-| Windows | x86_64 | `podux-windows-amd64.zip` |
+| Linux | x86_64 (amd64) | `podux-<version>-linux-amd64.tar.gz` |
+| Linux | ARM64 | `podux-<version>-linux-arm64.tar.gz` |
+| Linux | ARMv7 | `podux-<version>-linux-arm.tar.gz` |
+| macOS | Intel | `podux-<version>-darwin-amd64.tar.gz` |
+| macOS | Apple Silicon | `podux-<version>-darwin-arm64.tar.gz` |
+| Windows | x86_64 | `podux-<version>-windows-amd64.zip` |
 
 也可以通过命令行直接下载（以 Linux amd64 为例）：
 
 ```bash
-curl -LO https://github.com/luckjiawei/podux/releases/latest/download/podux-linux-amd64.tar.gz
+VERSION=v0.2.0
+curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${VERSION}-linux-amd64.tar.gz
 ```
 
 ## 安装
@@ -31,7 +32,7 @@ curl -LO https://github.com/luckjiawei/podux/releases/latest/download/podux-linu
 
 ```bash
 # 解压
-tar -xzf podux-linux-amd64.tar.gz
+tar -xzf podux-${VERSION}-linux-amd64.tar.gz
 
 # 移动到系统路径（可选）
 sudo mv podux /usr/local/bin/

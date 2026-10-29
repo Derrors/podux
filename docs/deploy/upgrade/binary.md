@@ -30,11 +30,12 @@ pkill podux
 
 ### 3. 下载新版本
 
-前往 [GitHub Releases](https://github.com/luckjiawei/podux/releases/latest) 查看最新版本，或通过命令行下载（以 Linux amd64 为例）：
+前往 [GitHub Releases](https://github.com/Derrors/podux/releases/latest) 查看最新版本，或通过命令行下载（以 Linux amd64 为例）：
 
 ```bash
-curl -LO https://github.com/luckjiawei/podux/releases/latest/download/podux-linux-amd64.tar.gz
-tar -xzf podux-linux-amd64.tar.gz
+VERSION=v0.2.0
+curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${VERSION}-linux-amd64.tar.gz
+tar -xzf podux-${VERSION}-linux-amd64.tar.gz
 ```
 
 ### 4. 替换二进制文件

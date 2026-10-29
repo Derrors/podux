@@ -13,6 +13,12 @@ set -e
 APP_NAME="podux"
 VERSION=${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}
 BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S')
+# Exact release tags (v1.2.3, v1.2.3-rc.1) set the app version; other builds keep the default.
+case "$VERSION" in
+    v[0-9]*-g*|*-dirty) APP_VERSION="" ;;
+    v[0-9]*) APP_VERSION="${VERSION#v}" ;;
+    *) APP_VERSION="" ;;
+esac
 SITE_DIR="../site"
 PUBLIC_DIR="../pb_public"
 OUTPUT_DIR="./dist"
@@ -157,7 +163,7 @@ build_binary() {
     # Build with version information
     GOOS=$goos GOARCH=$goarch CGO_ENABLED=0 go build \
         -trimpath \
-        -ldflags "-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}" \
+        -ldflags "-s -w ${APP_VERSION:+-X podux/pkg/buildinfo.AppVersion=${APP_VERSION}}" \
         -o "$output_path" \
         ../main.go
 

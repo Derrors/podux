@@ -18,7 +18,7 @@ hero:
       link: /guide/getting-started
     - theme: alt
       text: GitHub
-      link: https://github.com/luckjiawei/podux
+      link: https://github.com/Derrors/podux
 
 features:
   - icon: 🖥️

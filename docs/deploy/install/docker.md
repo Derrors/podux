@@ -12,7 +12,7 @@
 官方镜像托管在 GitHub Container Registry：
 
 ```text
-ghcr.io/luckjiawei/podux:latest
+ghcr.io/derrors/podux:latest
 ```
 
 支持以下架构：`linux/amd64`、`linux/arm64`、`linux/arm/v7`
@@ -25,7 +25,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8090:8090 \
   -v ./podux-data:/app/pb_data \
-  ghcr.io/luckjiawei/podux:latest
+  ghcr.io/derrors/podux:latest
 ```
 
 | 参数 | 说明 |
@@ -45,7 +45,7 @@ version: '3.8'
 
 services:
   podux:
-    image: ghcr.io/luckjiawei/podux:${VERSION:-latest}
+    image: ghcr.io/derrors/podux:${VERSION:-latest}
     container_name: podux
     restart: unless-stopped
 
@@ -128,7 +128,7 @@ docker run -d \
   --restart unless-stopped \
   -p 18090:18090 \
   -v ./podux-data:/app/pb_data \
-  ghcr.io/luckjiawei/podux:latest \
+  ghcr.io/derrors/podux:latest \
   serve --http 0.0.0.0:18090
 ```
 

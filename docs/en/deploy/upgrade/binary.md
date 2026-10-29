@@ -30,11 +30,12 @@ pkill podux
 
 ### 3. Download the New Version
 
-Visit [GitHub Releases](https://github.com/luckjiawei/podux/releases/latest) for the latest version, or download via command line (Linux amd64 example):
+Visit [GitHub Releases](https://github.com/Derrors/podux/releases/latest) for the latest version, or download via command line (Linux amd64 example):
 
 ```bash
-curl -LO https://github.com/luckjiawei/podux/releases/latest/download/podux-linux-amd64.tar.gz
-tar -xzf podux-linux-amd64.tar.gz
+VERSION=v0.2.0
+curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${VERSION}-linux-amd64.tar.gz
+tar -xzf podux-${VERSION}-linux-amd64.tar.gz
 ```
 
 ### 4. Replace the Binary

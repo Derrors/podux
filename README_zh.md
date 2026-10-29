@@ -11,13 +11,15 @@
   <a href="README.md">English</a> | <b>简体中文</b>
 </div>
 
+> **说明：** 本仓库是 [luckjiawei/podux](https://github.com/luckjiawei/podux) 的独立维护分支，版本与 Docker 镜像（`ghcr.io/derrors/podux`）从这里发布。
+
 > **项目更名通知：** 本项目原名为 **frpc-hub**，现已正式更名为 **Podux**。
 > 仓库地址及所有相关引用均已同步更新。
 
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/luckjiawei/podux">
+  <a href="https://github.com/Derrors/podux">
     <img src="site/src/assets/logo.png" alt="Logo" width="140">
   </a>
 
@@ -32,9 +34,9 @@
     &nbsp;&nbsp;·&nbsp;&nbsp;
     <a href="https://podux.io/"><strong>📖 官方文档</strong></a>
     &nbsp;&nbsp;·&nbsp;&nbsp;
-    <a href="https://github.com/luckjiawei/podux/issues">🐛 提交 Bug</a>
+    <a href="https://github.com/Derrors/podux/issues">🐛 提交 Bug</a>
     &nbsp;&nbsp;·&nbsp;&nbsp;
-    <a href="https://github.com/luckjiawei/podux/issues">✨ 需求建议</a>
+    <a href="https://github.com/Derrors/podux/issues">✨ 需求建议</a>
   </p>
 
   <br />
@@ -71,15 +73,15 @@
 
 ## Star 历史
 
-[![Star History Chart](https://api.star-history.com/svg?repos=luckjiawei/podux&type=Date)](https://www.star-history.com/#luckjiawei/podux&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Derrors/podux&type=Date)](https://www.star-history.com/#Derrors/podux&Date)
 
 <!-- MARKDOWN LINKS & IMAGES -->
 
-[forks-shield]: https://img.shields.io/github/forks/luckjiawei/podux.svg?style=for-the-badge
-[forks-url]: https://github.com/luckjiawei/podux/network/members
-[stars-shield]: https://img.shields.io/github/stars/luckjiawei/podux.svg?style=for-the-badge
-[stars-url]: https://github.com/luckjiawei/podux/stargazers
-[issues-shield]: https://img.shields.io/github/issues/luckjiawei/podux.svg?style=for-the-badge
-[issues-url]: https://github.com/luckjiawei/podux/issues
-[license-shield]: https://img.shields.io/github/license/luckjiawei/podux.svg?style=for-the-badge
-[license-url]: https://github.com/luckjiawei/podux/blob/main/LICENSE
+[forks-shield]: https://img.shields.io/github/forks/Derrors/podux.svg?style=for-the-badge
+[forks-url]: https://github.com/Derrors/podux/network/members
+[stars-shield]: https://img.shields.io/github/stars/Derrors/podux.svg?style=for-the-badge
+[stars-url]: https://github.com/Derrors/podux/stargazers
+[issues-shield]: https://img.shields.io/github/issues/Derrors/podux.svg?style=for-the-badge
+[issues-url]: https://github.com/Derrors/podux/issues
+[license-shield]: https://img.shields.io/github/license/Derrors/podux.svg?style=for-the-badge
+[license-url]: https://github.com/Derrors/podux/blob/main/LICENSE

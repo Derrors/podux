@@ -28,7 +28,7 @@ See the [development design documentation](development/README.md) for the full d
 
 ## Local Development and Verification
 
-Prerequisites: Go 1.25.5 as required by `go.mod`, Node.js 20 (CI baseline), and pnpm 10 (CI baseline).
+Prerequisites: Go 1.25.5 as required by `go.mod`, Node.js 22 (CI baseline), and pnpm 10 (CI baseline).
 
 ```bash
 # Backend (ensure pb_public/index.html exists first; see the full frontend build below)

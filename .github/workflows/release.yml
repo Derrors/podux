@@ -7,7 +7,7 @@ on:
 
 env:
   GO_VERSION_FILE: go.mod
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
   PNPM_VERSION: '10'
   APP_NAME: podux
   REGISTRY: ghcr.io
@@ -121,7 +121,6 @@ jobs:
           GOARM: ${{ matrix.goarm }}
           CGO_ENABLED: '0'
           VERSION: ${{ github.ref_name }}
-          BUILD_TIME: ${{ github.event.head_commit.timestamp }}
         run: |
           PLATFORM="${{ matrix.platform }}"
           OUTPUT_DIR="dist/${PLATFORM}"
@@ -132,7 +131,7 @@ jobs:
 
           go build \
             -trimpath \
-            -ldflags "-s -w -X podux/pkg/buildinfo.AppVersion=${VERSION#v} -X main.BuildTime=${BUILD_TIME}" \
+            -ldflags "-s -w -X podux/pkg/buildinfo.AppVersion=${VERSION#v}" \
             -o "${OUTPUT_DIR}/${BINARY}" \
             main.go
 
@@ -266,6 +265,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_name }}
-            BUILD_TIME=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

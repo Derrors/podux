@@ -25,7 +25,7 @@ docker image prune -f
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/luckjiawei/podux:latest
+docker pull ghcr.io/derrors/podux:latest
 
 # Stop and remove the old container (data in volume is preserved)
 docker stop podux
@@ -37,7 +37,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8090:8090 \
   -v ./podux-data:/app/pb_data \
-  ghcr.io/luckjiawei/podux:latest
+  ghcr.io/derrors/podux:latest
 ```
 
 ## Upgrade to a Specific Version
@@ -46,10 +46,10 @@ To target a specific version instead of `latest`, set the image tag:
 
 ```bash
 # Docker Compose: set via environment variable
-VERSION=v1.2.0 docker compose up -d
+VERSION=0.2.0 docker compose up -d
 
 # Or edit the image field in docker-compose.yml
-image: ghcr.io/luckjiawei/podux:v1.2.0
+image: ghcr.io/derrors/podux:0.2.0
 ```
 
 ## Rollback
@@ -61,7 +61,7 @@ If issues occur after upgrading, switch back to the previous version:
 docker compose down
 
 # Set the old version and start
-VERSION=v1.1.0 docker compose up -d
+VERSION=0.2.0 docker compose up -d
 ```
 
 ::: tip

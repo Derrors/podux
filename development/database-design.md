@@ -2,7 +2,7 @@
 
 ## Sources of Truth and Migration Constraints
 
-PocketBase uses SQLite and registers Go migrations through the blank import of `migrations` in `main.go`; `migratecmd` enables `Automigrate: true`. The only current migration is `migrations/1774402980_collections_snapshot.go`, which imports a collection snapshot with `ImportCollectionsByMarshaledJSON(..., false)`; its rollback function is currently empty. The migration, not any running `pb_data/data.db`, is therefore the primary schema source of truth.
+PocketBase uses SQLite and registers Go migrations through the blank import of `migrations` in `main.go`; `migratecmd` enables `Automigrate: true`. `migrations/1774402980_collections_snapshot.go` imports the collection snapshot with `ImportCollectionsByMarshaledJSON(..., false)`; its rollback function is currently empty. `migrations/1793274060_enable_rate_limits.go` turns on PocketBase's built-in rate limiting (off by default) and ensures a `*:auth` rule (2 password logins per 3 seconds per client IP); existing rules are kept, and its rollback disables rate limiting. The migration, not any running `pb_data/data.db`, is therefore the primary schema source of truth.
 
 Every structure/rule/index change must add a reviewable migration with an appropriate rollback. Never modify production SQLite directly or make changes only through the PocketBase Admin UI. "Default" below records only snapshot autogeneration behavior; fields without an explicit statement have no verified schema default.
 
@@ -99,13 +99,13 @@ Purpose: hourly aggregates. Optional relation `targetId`, optional select `metri
 
 ### `fh_metrics_daily`
 
-Purpose: daily aggregates. Fields match hourly, and all three value fields are optional numbers. It has a composite non-unique `(targetId, metricKey, t)` index, no autodate fields, and `null` for all Record API rules. At 01:05 daily, the previous day's hourly values are aggregated and upserted; the code currently writes only `valAvg`. No retention policy for daily data was found.
+Purpose: daily aggregates. Fields match hourly, and all three value fields are optional numbers. It has a composite non-unique `(targetId, metricKey, t)` index, no autodate fields, and `null` for all Record API rules. At 01:05 daily, the previous day's hourly values are aggregated and upserted; the code currently writes only `valAvg`. The same job deletes daily rows older than one year.
 
 ## Lifecycle, Deletion, and Sensitivity
 
 - Server/proxy runtime statuses are reset at startup. Status is a transient runtime projection; configuration itself is persistent.
 - Aggregation follows raw -> hourly -> daily. Raw data is retained for 7 days and hourly data for 30 days; no verified limit exists for daily data.
-- Every relation uses `cascadeDelete: false`. The schema does not automatically delete proxies/metrics targets with a server, and deleting proxies/targets may also leave related records. Although the UI shows a confirmation dialog, no server-side transactional cleanup was found; treat this as an orphaning risk.
+- Every relation uses `cascadeDelete: false`. Deleting an `fh_servers` record is handled by hooks in [cleanup.go](../internal/application/server/cleanup.go): in one transaction it deletes the server's proxies (as records, so their hooks fire), its metrics targets and their raw/hourly/daily rows, then the server; after the commit its frpc is stopped and cached metrics are dropped. Deleting a single proxy still leaves its proxy-level metrics targets, if any.
 - PocketBase protects `fh_users.password/tokenKey`; `fh_servers.auth/transport` may contain tokens, OIDC secrets, and TLS private keys. Logs mask common JSON key names, but original values must still never be exported, committed, or echoed.
 - Migration workflow: identify callers -> add forward/down migrations -> update models/repositories/services/UI -> update this document -> verify upgrade and rollback against a temporary database -> run the full checks. Never rewrite the snapshot to falsify existing deployment history.
 

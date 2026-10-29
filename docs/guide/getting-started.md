@@ -20,7 +20,7 @@ docker run -d \
   --restart unless-stopped \
   -p 8090:8090 \
   -v podux-data:/app/pb_data \
-  ghcr.io/luckjiawei/podux:latest
+  ghcr.io/derrors/podux:latest
 ```
 
 启动成功后，终端会输出类似以下内容：
@@ -36,7 +36,7 @@ Admin: http://0.0.0.0:8090/_/
 ```yaml
 services:
   podux:
-    image: ghcr.io/luckjiawei/podux:latest
+    image: ghcr.io/derrors/podux:latest
     container_name: podux
     restart: unless-stopped
     ports:

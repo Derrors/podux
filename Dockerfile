@@ -25,7 +25,6 @@ COPY . .
 COPY --from=frontend-builder /app/dist ./pb_public
 
 ARG VERSION=dev
-ARG BUILD_TIME
 ARG TARGETARCH
 ARG TARGETVARIANT
 # Release tags (v1.2.3) set the app version; other builds keep the default in pkg/buildinfo.
@@ -33,12 +32,12 @@ RUN case "${VERSION}" in v[0-9]*) APP_VERSION="${VERSION#v}" ;; *) APP_VERSION="
     GOARM=$(echo "${TARGETVARIANT}" | tr -d 'v') \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -trimpath \
-    -ldflags "-s -w ${APP_VERSION:+-X podux/pkg/buildinfo.AppVersion=${APP_VERSION}} -X main.BuildTime=${BUILD_TIME}" \
+    -ldflags "-s -w ${APP_VERSION:+-X podux/pkg/buildinfo.AppVersion=${APP_VERSION}}" \
     -o podux \
     main.go
 
 # Stage 3: Final runtime image
-FROM alpine:latest
+FROM alpine:3.24
 
 RUN apk add --no-cache \
     ca-certificates \
