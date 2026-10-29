@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import pb from "../../lib/pocketbase";
-import { apiPost, getErrorMessage } from "../../lib/api";
+import { apiPost, getErrorMessage, isUnauthorizedError } from "../../lib/api";
 import { notifyError } from "../../lib/notify";
 import { STALE } from "../../lib/latestRequest";
 import { useLatestRequest } from "../../hooks/useLatestRequest";
@@ -33,11 +34,13 @@ export function useServerDetail() {
       setServer(record);
       setError(null);
     } catch (err) {
-      setError(getErrorMessage(err) || t("server.failedToLoad"));
-      notifyError(t("server.failedToLoad"), err);
+      // A 401 clears the auth store and RequireAuth redirects; don't flash the error screen.
+      if (isUnauthorizedError(err)) return;
+      setError(getErrorMessage(err) || i18n.t("server.failedToLoad"));
+      notifyError(i18n.t("server.failedToLoad"), err);
     }
     setLoading(false);
-  }, [id, request, t]);
+  }, [id, request]);
 
   useEffect(() => {
     void fetchServer();

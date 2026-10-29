@@ -84,6 +84,50 @@ describe("usePaginatedList", () => {
     expect(result.current.initialLoading).toBe(false);
   });
 
+  it("mutate makes an in-flight (poll) response stale", async () => {
+    const { fetchPage, calls } = controllableFetch();
+    const { result } = renderHook(() => usePaginatedList<Row>({ fetchPage, ...options }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await act(async () => calls[0].resolve(page("before")));
+
+    // A poll/reload is in flight when the user toggles something.
+    act(() => void result.current.reload());
+    await waitFor(() => expect(calls).toHaveLength(2));
+    act(() => result.current.mutate((r) => ({ ...r, items: [{ id: "optimistic" }] })));
+    expect(calls[1].query.signal.aborted).toBe(true);
+
+    await act(async () => calls[1].resolve(page("before")));
+    expect(result.current.items).toEqual([{ id: "optimistic" }]);
+  });
+
+  it("runMutation drops loads that overlap the update and reloads afterwards", async () => {
+    const { fetchPage, calls } = controllableFetch();
+    const { result } = renderHook(() => usePaginatedList<Row>({ fetchPage, ...options }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    await act(async () => calls[0].resolve(page("before")));
+
+    const update = deferred<void>();
+    act(() => result.current.mutate((r) => ({ ...r, items: [{ id: "optimistic" }] })));
+    let mutation!: Promise<void>;
+    act(() => {
+      mutation = result.current.runMutation(() => update.promise);
+    });
+
+    // A poll that starts and finishes while the update is pending is ignored.
+    act(() => void result.current.reload());
+    await waitFor(() => expect(calls).toHaveLength(2));
+    await act(async () => calls[1].resolve(page("before")));
+    expect(result.current.items).toEqual([{ id: "optimistic" }]);
+
+    await act(async () => {
+      update.resolve();
+      await mutation;
+    });
+    await waitFor(() => expect(calls).toHaveLength(3));
+    await act(async () => calls[2].resolve(page("confirmed")));
+    expect(result.current.items).toEqual([{ id: "confirmed" }]);
+  });
+
   it("clamps the page when it is past the last page", async () => {
     const { fetchPage, calls } = controllableFetch();
     const { result } = renderHook(() => usePaginatedList<Row>({ fetchPage, ...options }));

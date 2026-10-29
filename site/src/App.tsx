@@ -76,7 +76,6 @@ function App() {
             <Route path="/servers/:id/logs" element={<ServerLogPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/import" element={<ImportPage />} />
-            {/* <Route path="/versions" element={<VersionPage />} /> */}
           </Route>
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

@@ -1,9 +1,12 @@
 import { Avatar, Box, DropdownMenu, Flex, Popover, Text } from "@radix-ui/themes";
 import { type ReactNode, useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import pb from "../lib/pocketbase";
 import { apiGet } from "../lib/api";
+import { logout } from "../lib/auth";
+import { isNewerVersion } from "../lib/version";
+import { useAuthRecord } from "../hooks/useAuthRecord";
 import { getGravatarUrl } from "../lib/gravatar";
 import { motion, AnimatePresence } from "framer-motion";
 import { PageTransition } from "../components/PageTransition";
@@ -36,16 +39,6 @@ function useIsMobile() {
   return isUA || isSmall;
 }
 
-function isNewerVersion(latest: string, current: string): boolean {
-  const clean = (v: string) => v.replace(/^v/, "");
-  const parts = (v: string) => clean(v).split(".").map(Number);
-  const [la, lb, lc] = parts(latest);
-  const [ca, cb, cc] = parts(current);
-  if (la !== ca) return la > ca;
-  if (lb !== cb) return lb > cb;
-  return lc > cc;
-}
-
 const navItems = [
   {
     labelKey: "nav.dashboard",
@@ -66,18 +59,10 @@ const navItems = [
 
 const mobileBottomNavItems = navItems;
 
-const handleLogout = () => {
-  pb.authStore.clear();
-  window.location.href = "/login";
-};
-
-const handleGotoProfile = () => {
-  window.location.href = "/settings?tab=profile";
-};
-
 export function MainLayout({ children }: MainLayoutProps) {
   const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
 
   const [appVersion, setAppVersion] = useState<string>("");
@@ -103,8 +88,15 @@ export function MainLayout({ children }: MainLayoutProps) {
       .catch(() => undefined);
   }, []);
 
-  // Get current user info from PocketBase authStore
-  const currentUser = pb.authStore.record;
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
+
+  const handleGotoProfile = () => navigate("/settings?tab=profile");
+
+  // Current user from the PocketBase auth store (updates after a profile save).
+  const currentUser = useAuthRecord();
   const userEmail = currentUser?.email || "";
   const userNickName = currentUser?.nickname || "";
   const gravatarUrl = currentUser?.avatar
@@ -419,7 +411,7 @@ export function MainLayout({ children }: MainLayoutProps) {
               {/* Right: Links */}
               <Flex align="center" gap="4">
                 <a
-                  href="https://github.com/luckjiawei/podux"
+                  href="https://github.com/Derrors/podux"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="no-underline"

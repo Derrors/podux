@@ -99,6 +99,17 @@ export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === "AbortError";
 }
 
+/** HTTP status of a failed api helper or PocketBase SDK request; undefined for other errors. */
+export function getErrorStatus(err: unknown): number | undefined {
+  if (err instanceof ApiError || err instanceof ClientResponseError) return err.status;
+  return undefined;
+}
+
+/** True when the backend rejected the auth token (the auth store is cleared on 401). */
+export function isUnauthorizedError(err: unknown): boolean {
+  return getErrorStatus(err) === 401;
+}
+
 /** Best-effort human readable message for errors from fetch, the api helpers or the PocketBase SDK. */
 export function getErrorMessage(err: unknown): string | undefined {
   if (err instanceof Error && err.message) return err.message;

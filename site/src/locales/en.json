@@ -34,7 +34,8 @@
     "clearSearch": "Clear search",
     "logoAlt": "Podux logo",
     "nextPage": "Next page",
-    "previousPage": "Previous page"
+    "previousPage": "Previous page",
+    "pagination": "Pagination"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -60,7 +61,8 @@
     "signInToAccount": "Sign in to your Podux account",
     "enterEmail": "Enter your email",
     "enterPassword": "Enter your password",
-    "invalidCredentials": "Invalid email or password"
+    "invalidCredentials": "Invalid email or password",
+    "tooManyAttempts": "Too many login attempts. Please wait a few seconds and try again."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -144,7 +146,7 @@
     "noServersMatch": "No servers match your search query",
     "clearSearch": "Clear Search",
     "confirmDeletion": "Confirm Deletion",
-    "deleteConfirmMessage": "Are you sure you want to delete this server? This action cannot be undone.",
+    "deleteConfirmMessage": "Are you sure you want to delete this server? All of its proxies will be deleted as well. This action cannot be undone.",
     "host": "Host",
     "port": "Port",
     "bootStatus": "BootStatus",
@@ -274,7 +276,8 @@
       "connected": "Live",
       "reconnecting": "Reconnecting",
       "disconnected": "Disconnected",
-      "reconnect": "Reconnect"
+      "reconnect": "Reconnect",
+      "empty": "No log file yet"
     },
     "saveFailed": "Failed to save server",
     "unknownLocation": "Unknown",
@@ -431,7 +434,8 @@
     "passwordUpdateSuccess": "Password updated successfully! Please sign in again.",
     "loadFailed": "Failed to load settings",
     "notAuthenticated": "You are not signed in",
-    "profileUpdateFailed": "Failed to update profile. Please try again."
+    "profileUpdateFailed": "Failed to update profile. Please try again.",
+    "profileUpdateSuccess": "Profile updated"
   },
   "language": {
     "en": "English",
@@ -445,17 +449,7 @@
     "upToDate": "You are up to date",
     "updateAvailable": "Update Available",
     "updateNow": "View Release",
-    "releaseNotes": "Release Notes",
-    "columnDownload": "Download",
-    "columnReleaseDate": "Release Date",
-    "columnVersion": "Version",
-    "downloadCurrentArch": "Download for Current Arch",
-    "fetchFailed": "Failed to load releases",
-    "frpReleasesDesc": "Available releases from fatedier/frp",
-    "frpVersions": "FRP Versions",
-    "noReleases": "No releases found.",
-    "notFound": "Not found",
-    "viewOnGithub": "View on GitHub"
+    "releaseNotes": "Release Notes"
   },
   "import": {
     "title": "Import",

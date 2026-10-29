@@ -5,6 +5,7 @@ import { Box, Flex, Heading, Text, Separator, TextField, Button } from "@radix-u
 import { Icon } from "@iconify/react/offline";
 import { FormItem } from "../../components/FormItem";
 import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { toast } from "sonner";
 
 interface GeneralSettingsData {
@@ -37,14 +38,15 @@ export function GeneralSettings() {
           });
         }
       } catch (error) {
-        notifyError(t("settings.loadFailed"), error);
+        // i18n singleton, not t: t changes per language and would reload and reset the form.
+        notifyError(i18n.t("settings.loadFailed"), error);
       } finally {
         setLoading(false);
       }
     };
 
     loadSettings();
-  }, [t]);
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);

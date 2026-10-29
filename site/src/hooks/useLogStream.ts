@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, apiFetch } from "../lib/api";
+import { newReplayLines } from "../lib/logReplay";
 import { parseSseChunk } from "../lib/sse";
 
-export type LogStreamStatus = "connecting" | "connected" | "reconnecting" | "disconnected";
+/** `empty`: the server has no log file yet (HTTP 404); not retried until `reconnect`. */
+export type LogStreamStatus =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected"
+  | "empty";
 
 export interface LogLine {
   id: number;
@@ -10,6 +17,8 @@ export interface LogLine {
 }
 
 export const MAX_LOG_LINES = 500;
+/** Sent by the backend after the replayed history of every connection. */
+export const REPLAY_END_EVENT = "replay-end";
 const BACKOFF_BASE_MS = 1000;
 const BACKOFF_MAX_MS = 30_000;
 /** A connection that stayed open this long resets the backoff. */
@@ -38,8 +47,9 @@ function isPermanentFailure(err: unknown): boolean {
 /**
  * Streams `/api/frpc/logs/stream` for a server using fetch (so the Authorization header
  * can be sent) and reconnects with exponential backoff when the stream ends or fails.
- * The backend replays the last 50 lines on every connect, so the buffer is replaced by
- * the first batch of each connection instead of appended to.
+ * The backend replays up to 50 lines on every connect and then sends a `replay-end`
+ * event; the replay is merged into the buffer (see lib/logReplay.ts) so a reconnect
+ * neither wipes older lines nor brings back lines the user cleared.
  * Mount it with `key={serverId}` so switching servers starts from a clean state.
  */
 export function useLogStream(serverId: string) {
@@ -47,6 +57,15 @@ export function useLogStream(serverId: string) {
   const [status, setStatus] = useState<LogStreamStatus>("connecting");
   const [retryToken, setRetryToken] = useState(0);
   const nextIdRef = useRef(0);
+  // Source of truth for the buffer outside of render (merging needs the current lines).
+  const linesRef = useRef<LogLine[]>([]);
+  // Texts that were visible when the user last pressed Clear: the anchor for later replays.
+  const clearedRef = useRef<string[]>([]);
+
+  const commit = useCallback((next: LogLine[]) => {
+    linesRef.current = next;
+    setLines(next);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -54,9 +73,22 @@ export function useLogStream(serverId: string) {
     let attempt = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
+    const append = (texts: string[]) => {
+      if (texts.length === 0) return;
+      const entries = texts.map((text) => ({ id: nextIdRef.current++, text }));
+      commit(appendLogLines(linesRef.current, entries));
+    };
+
+    const mergeReplay = (replay: string[]) => {
+      const current = linesRef.current;
+      const seen = current.length > 0 ? current.map((line) => line.text) : clearedRef.current;
+      append(newReplayLines(seen, replay));
+    };
+
     const connect = async () => {
       const startedAt = Date.now();
-      let firstBatch = true;
+      // Lines of the replayed history; null once `replay-end` arrived.
+      let replay: string[] | null = [];
       try {
         const response = await apiFetch(
           `/api/frpc/logs/stream?id=${encodeURIComponent(serverId)}`,
@@ -73,20 +105,33 @@ export function useLogStream(serverId: string) {
           if (done) break;
           const { events, rest } = parseSseChunk(buffer + decoder.decode(value, { stream: true }));
           buffer = rest;
-          if (events.length === 0) continue;
-          const entries = events.map((text) => ({ id: nextIdRef.current++, text }));
-          const replace = firstBatch;
-          firstBatch = false;
-          setLines((prev) => appendLogLines(replace ? [] : prev, entries));
+          const live: string[] = [];
+          for (const { event, data } of events) {
+            if (event === REPLAY_END_EVENT) {
+              if (replay) mergeReplay(replay);
+              replay = null;
+            } else if (replay) {
+              replay.push(data);
+            } else {
+              live.push(data);
+            }
+          }
+          append(live);
         }
       } catch (err) {
         if (signal.aborted) return;
+        if (err instanceof ApiError && err.status === 404) {
+          setStatus("empty");
+          return;
+        }
         if (isPermanentFailure(err)) {
           setStatus("disconnected");
           return;
         }
       }
       if (signal.aborted) return;
+      // The stream ended before `replay-end`: keep what was replayed so far.
+      if (replay && replay.length > 0) mergeReplay(replay);
 
       if (Date.now() - startedAt >= STABLE_CONNECTION_MS) attempt = 0;
       setStatus("reconnecting");
@@ -99,9 +144,14 @@ export function useLogStream(serverId: string) {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [serverId, retryToken]);
+  }, [serverId, retryToken, commit]);
 
-  const clear = useCallback(() => setLines([]), []);
+  const clear = useCallback(() => {
+    if (linesRef.current.length > 0) {
+      clearedRef.current = linesRef.current.map((line) => line.text);
+    }
+    commit([]);
+  }, [commit]);
 
   const reconnect = useCallback(() => {
     setStatus("connecting");

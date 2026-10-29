@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import pb from "../../lib/pocketbase";
 import { notifyError } from "../../lib/notify";
 import { STALE } from "../../lib/latestRequest";
+import { createMutationGuard } from "../../lib/mutationGuard";
 import { useLatestRequest } from "../../hooks/useLatestRequest";
 import { usePolling } from "../../hooks/usePolling";
 import type { Proxy } from "../../types/proxy";
@@ -18,9 +20,11 @@ export function useServerProxies(serverId: string | undefined) {
   const [refreshing, setRefreshing] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const request = useLatestRequest();
+  const [mutations] = useState(createMutationGuard);
 
   const fetchProxies = useCallback(async () => {
     if (!serverId) return;
+    const token = mutations.begin();
     try {
       const result = await request.run((signal) =>
         pb.collection("fh_proxies").getFullList<Proxy>({
@@ -30,12 +34,14 @@ export function useServerProxies(serverId: string | undefined) {
         })
       );
       if (result === STALE) return;
+      // The response may predate an optimistic toggle; the fetch after the toggle settles it.
+      if (!mutations.isCurrent(token)) return;
       setProxies(result);
     } catch (err) {
-      notifyError(t("proxy.fetchFailed"), err, "server-proxies-fetch");
+      notifyError(i18n.t("proxy.fetchFailed"), err, "server-proxies-fetch");
     }
     setLoading(false);
-  }, [serverId, request, t]);
+  }, [serverId, request, mutations]);
 
   useEffect(() => {
     void fetchProxies();
@@ -59,16 +65,20 @@ export function useServerProxies(serverId: string | undefined) {
   const toggleStatus = async (proxy: Proxy) => {
     if (togglingId === proxy.id) return;
     const newStatus = proxy.status === "enabled" ? "disabled" : "enabled";
+    // Abort the in-flight poll so its older response can't overwrite the optimistic status.
+    request.abort();
     setStatus(proxy.id, newStatus); // optimistic
     setTogglingId(proxy.id);
-    try {
-      await pb.collection("fh_proxies").update(proxy.id, { status: newStatus });
-    } catch (err) {
-      setStatus(proxy.id, proxy.status);
-      notifyError(t("proxy.updateStatusFailed"), err);
-    } finally {
-      setTogglingId(null);
-    }
+    await mutations.run(async () => {
+      try {
+        await pb.collection("fh_proxies").update(proxy.id, { status: newStatus });
+      } catch (err) {
+        setStatus(proxy.id, proxy.status);
+        notifyError(t("proxy.updateStatusFailed"), err);
+      }
+    });
+    setTogglingId(null);
+    await fetchProxies();
   };
 
   const deleteProxy = async (id: string) => {

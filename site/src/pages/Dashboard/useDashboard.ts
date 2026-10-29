@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { apiGet } from "../../lib/api";
 import { notifyError } from "../../lib/notify";
 import { STALE } from "../../lib/latestRequest";
@@ -85,7 +85,6 @@ function toStats(data: DashboardStatsResponse): DashboardStats {
 }
 
 export function useDashboard() {
-  const { t } = useTranslation();
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [topology, setTopology] = useState<TopologyData>({ servers: [], proxies: [] });
   const request = useLatestRequest();
@@ -106,9 +105,9 @@ export function useDashboard() {
         proxies: topologyData?.proxies ?? [],
       });
     } catch (err) {
-      notifyError(t("dashboard.loadFailed"), err, "dashboard-load");
+      notifyError(i18n.t("dashboard.loadFailed"), err, "dashboard-load");
     }
-  }, [request, t]);
+  }, [request]);
 
   usePolling(load, POLL_INTERVAL_MS, { immediate: true });
 

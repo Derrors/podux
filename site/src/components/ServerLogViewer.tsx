@@ -17,6 +17,13 @@ const statusColor: Record<LogStreamStatus, "green" | "amber" | "gray" | "red"> =
   reconnecting: "amber",
   connecting: "gray",
   disconnected: "red",
+  empty: "gray",
+};
+
+const statusDot: Partial<Record<LogStreamStatus, string>> = {
+  connected: "status-dot-green",
+  disconnected: "status-dot-red",
+  empty: "status-dot-gray",
 };
 
 function StreamStatus({ status, onReconnect }: { status: LogStreamStatus; onReconnect: () => void }) {
@@ -27,13 +34,11 @@ function StreamStatus({ status, onReconnect }: { status: LogStreamStatus; onReco
         {status === "connecting" || status === "reconnecting" ? (
           <Icon icon="lucide:loader-2" width="10" height="10" className="animate-spin" />
         ) : (
-          <span
-            className={`status-dot ${status === "connected" ? "status-dot-green" : "status-dot-red"}`}
-          />
+          <span className={`status-dot ${statusDot[status]}`} />
         )}
         {t(`server.logStream.${status}`)}
       </Badge>
-      {status === "disconnected" && (
+      {(status === "disconnected" || status === "empty") && (
         <Button size="1" variant="ghost" onClick={onReconnect}>
           {t("server.logStream.reconnect")}
         </Button>

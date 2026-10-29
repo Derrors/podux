@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import i18n from "../../../i18n";
 import pb from "../../../lib/pocketbase";
 import { apiGet } from "../../../lib/api";
 import { notifyError } from "../../../lib/notify";
@@ -127,11 +128,12 @@ export function useServerForm() {
         });
       })
       .catch((err) => {
-        notifyError(t("server.failedToLoad"), err);
+        // i18n singleton, not t: t changes per language and would refetch and reset the form.
+        notifyError(i18n.t("server.failedToLoad"), err);
         navigate("/servers");
       })
       .finally(() => setLoadingServer(false));
-  }, [id, navigate, t]);
+  }, [id, navigate]);
 
   const handleChange = (
     field: keyof Omit<ServerFormData, "auth" | "log" | "transport" | "metadatas">,

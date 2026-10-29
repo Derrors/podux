@@ -18,6 +18,7 @@ import { formatTimeAgo } from "../../lib/format";
 import { notifyError } from "../../lib/notify";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 export function ProfileSettings() {
   const { t, i18n } = useTranslation();
@@ -79,10 +80,13 @@ export function ProfileSettings() {
         formData.append("avatar", avatarFile);
       }
 
-      await pb.collection("fh_users").update(pb.authStore.record!.id, formData);
-
-      // Force refresh/reload might be needed or just let PB auth store update reactively
-      window.location.reload(); // Simple way to refresh state across app
+      const updated = await pb.collection("fh_users").update(pb.authStore.record!.id, formData);
+      // Saving the record into the auth store re-renders everything that shows the user.
+      pb.authStore.save(pb.authStore.token, updated);
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      toast.success(t("settings.profileUpdateSuccess"));
     } catch (error) {
       notifyError(t("settings.profileUpdateFailed"), error);
     } finally {

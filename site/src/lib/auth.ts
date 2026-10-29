@@ -12,6 +12,25 @@ export function handleUnauthorized() {
   }
 }
 
+// Set by an explicit logout so RequireAuth sends the user to a plain /login instead of
+// /login?redirect=… (a redirect back only makes sense after an expired session).
+let loggedOut = false;
+
+pb.authStore.onChange((token) => {
+  if (token) loggedOut = false;
+});
+
+/** Logs the user out; RequireAuth then redirects to /login without a redirect param. */
+export function logout() {
+  loggedOut = true;
+  pb.authStore.clear();
+}
+
+/** True after `logout()` until the next successful login. */
+export function isExplicitLogout() {
+  return loggedOut;
+}
+
 /** Only allow same-origin absolute paths as post-login redirect targets. */
 export function sanitizeRedirect(value: string | null | undefined): string | null {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {

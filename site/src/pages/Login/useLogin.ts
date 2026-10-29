@@ -3,7 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import pb from "../../lib/pocketbase";
 import { sanitizeRedirect } from "../../lib/auth";
-import { getErrorMessage } from "../../lib/api";
+import { getErrorMessage, getErrorStatus } from "../../lib/api";
 
 export function useLogin() {
   const { t } = useTranslation();
@@ -30,7 +30,12 @@ export function useLogin() {
       // Redirect back to previous page after successful login
       navigate(from, { replace: true });
     } catch (err) {
-      setError(getErrorMessage(err) || t("auth.invalidCredentials"));
+      // auth-with-password is rate limited per IP (HTTP 429).
+      setError(
+        getErrorStatus(err) === 429
+          ? t("auth.tooManyAttempts")
+          : getErrorMessage(err) || t("auth.invalidCredentials")
+      );
     } finally {
       setLoading(false);
     }

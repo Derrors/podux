@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { STALE } from "../lib/latestRequest";
+import { createMutationGuard } from "../lib/mutationGuard";
 import { useLatestRequest } from "./useLatestRequest";
 import { usePolling } from "./usePolling";
 
@@ -45,6 +46,7 @@ export function usePaginatedList<T, R extends PageResult<T> = PageResult<T>>({
   const [loadedSearch, setLoadedSearch] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const request = useLatestRequest();
+  const [mutations] = useState(createMutationGuard);
 
   const fetchPageRef = useRef(fetchPage);
   const onErrorRef = useRef(onError);
@@ -65,6 +67,7 @@ export function usePaginatedList<T, R extends PageResult<T> = PageResult<T>>({
 
   const load = useCallback(async () => {
     const query = { page, perPage, search: debouncedSearch };
+    const token = mutations.begin();
     let next: R | typeof STALE | undefined;
     try {
       next = await request.run((signal) => fetchPageRef.current({ ...query, signal }));
@@ -72,13 +75,20 @@ export function usePaginatedList<T, R extends PageResult<T> = PageResult<T>>({
       onErrorRef.current(err);
     }
     if (next === STALE) return;
+    // The response may predate an optimistic change; the reload after the mutation settles it.
+    if (!mutations.isCurrent(token)) return;
     if (next) {
       setResult(next);
       // Deleting the last row of the last page leaves us past the end.
       if (next.totalPages > 0 && query.page > next.totalPages) setPage(next.totalPages);
     }
     setLoadedSearch(query.search);
-  }, [page, perPage, debouncedSearch, request]);
+  }, [page, perPage, debouncedSearch, request, mutations]);
+
+  const loadRef = useRef(load);
+  useEffect(() => {
+    loadRef.current = load;
+  });
 
   useEffect(() => {
     void load();
@@ -95,10 +105,34 @@ export function usePaginatedList<T, R extends PageResult<T> = PageResult<T>>({
     }
   }, [load]);
 
-  /** Optimistically patch the current result (e.g. toggling a status before the server confirms). */
-  const mutate = useCallback((updater: (current: R) => R) => {
-    setResult((current) => (current ? updater(current) : current));
-  }, []);
+  /**
+   * Optimistically patch the current result (e.g. toggling a status before the server confirms).
+   * The in-flight load is aborted so an older response can't overwrite the patch.
+   */
+  const mutate = useCallback(
+    (updater: (current: R) => R) => {
+      mutations.touch();
+      request.abort();
+      setResult((current) => (current ? updater(current) : current));
+    },
+    [mutations, request]
+  );
+
+  /**
+   * Runs a server update (put the optimistic `mutate` before it and any rollback inside `fn`).
+   * Loads overlapping it are dropped; the list is reloaded once it settled.
+   */
+  const runMutation = useCallback(
+    async <T>(fn: () => Promise<T>): Promise<T> => {
+      request.abort();
+      try {
+        return await mutations.run(fn);
+      } finally {
+        void loadRef.current();
+      }
+    },
+    [mutations, request]
+  );
 
   return {
     items: result?.items ?? [],
@@ -116,5 +150,6 @@ export function usePaginatedList<T, R extends PageResult<T> = PageResult<T>>({
     refresh,
     reload: load,
     mutate,
+    runMutation,
   };
 }

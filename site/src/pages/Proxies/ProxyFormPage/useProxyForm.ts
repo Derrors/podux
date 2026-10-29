@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import i18n from "../../../i18n";
 import pb from "../../../lib/pocketbase";
 import { apiGet } from "../../../lib/api";
 import { notifyError } from "../../../lib/notify";
@@ -76,13 +77,14 @@ export function useProxyForm() {
           setFormData((prev) => ({ ...prev, serverId: list[0].id }));
         }
       } catch (err) {
-        notifyError(t("server.fetchFailed"), err);
+        // i18n singleton, not t: t changes per language and would refetch and reset the form.
+        notifyError(i18n.t("server.fetchFailed"), err);
       } finally {
         setLoadingServers(false);
       }
     };
     fetchServers();
-  }, [isEditing, t]);
+  }, [isEditing]);
 
   useEffect(() => {
     if (!id) return;
@@ -109,14 +111,14 @@ export function useProxyForm() {
           pluginPassword: plugin?.password || "",
         });
       } catch (err) {
-        notifyError(t("proxy.loadFailed"), err);
+        notifyError(i18n.t("proxy.loadFailed"), err);
         navigate("/proxies");
       } finally {
         setLoadingProxy(false);
       }
     };
     fetchProxy();
-  }, [id, navigate, t]);
+  }, [id, navigate]);
 
   const validateField = (field: keyof ProxyFormData, value: string) => {
     let error = "";
