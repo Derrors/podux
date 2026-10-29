@@ -23,6 +23,9 @@ type MetricsService struct {
 	// which are not written to fh_metrics_raw.
 	latest     map[string]*NetworkStatus
 	latestLock sync.RWMutex
+	// forgotten holds deleted servers (guarded by latestLock): a probe that was already
+	// running when the server was deleted must not bring it back into latest.
+	forgotten map[string]struct{}
 }
 
 // latestFallbackWindow bounds the DB lookup used before a server has been probed
@@ -35,6 +38,7 @@ func NewMetricsService(app core.App) *MetricsService {
 		app:         app,
 		targetCache: make(map[string]string),
 		latest:      make(map[string]*NetworkStatus),
+		forgotten:   make(map[string]struct{}),
 	}
 }
 
@@ -44,6 +48,10 @@ func NewMetricsService(app core.App) *MetricsService {
 // don't skew the stored latency series.
 func (s *MetricsService) RecordServerLatency(serverID string, latencyMs int64, probeErr string) error {
 	s.latestLock.Lock()
+	if _, gone := s.forgotten[serverID]; gone {
+		s.latestLock.Unlock()
+		return nil
+	}
 	s.latest[serverID] = &NetworkStatus{
 		Latency:       latencyMs,
 		Reachable:     latencyMs >= 0,
@@ -182,13 +190,14 @@ func (s *MetricsService) MaxLatestLatency() (int64, error) {
 	return maxLatency, nil
 }
 
-// ForgetServer drops cached state for a deleted server.
+// ForgetServer drops cached state for a deleted server and ignores its later probe results.
 func (s *MetricsService) ForgetServer(serverID string) {
 	s.targetCacheLock.Lock()
 	delete(s.targetCache, serverID)
 	s.targetCacheLock.Unlock()
 	s.latestLock.Lock()
 	delete(s.latest, serverID)
+	s.forgotten[serverID] = struct{}{}
 	s.latestLock.Unlock()
 }
 

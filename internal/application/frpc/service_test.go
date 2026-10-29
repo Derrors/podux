@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	proxydomain "podux/internal/domain/proxy"
 	serverdomain "podux/internal/domain/server"
@@ -82,12 +83,29 @@ func TestDestroyingLeavesNewerInstanceAlone(t *testing.T) {
 	}
 }
 
-func TestTerminateRejectsStartingInstance(t *testing.T) {
+func TestTerminateCancelsStartingInstance(t *testing.T) {
 	fs := newTestService(&fakeServerRepo{})
 	id := serverA
-	fs.instances[id] = &instance{stopped: make(chan struct{})}
+	inst := &instance{stopped: make(chan struct{})}
+	fs.instances[id] = inst
 
-	if err := fs.TerminateFrpc(&id); err == nil {
-		t.Fatal("expected error while instance is starting")
+	done := make(chan error, 1)
+	go func() { done <- fs.TerminateFrpc(&id) }()
+
+	// Stand in for LaunchFrpc: once it sees the stop request it gives up and closes stopped.
+	waitFor(t, func() bool {
+		fs.mu.Lock()
+		defer fs.mu.Unlock()
+		return inst.stopRequested
+	})
+	close(inst.stopped)
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("TerminateFrpc = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("TerminateFrpc did not return after the launch gave up")
 	}
 }

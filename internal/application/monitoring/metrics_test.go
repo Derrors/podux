@@ -107,6 +107,14 @@ func TestMaxLatestLatencyAndForget(t *testing.T) {
 	if got, _ := s.MaxLatestLatency(); got != 30 {
 		t.Fatalf("after ForgetServer, MaxLatestLatency = %d, want 30", got)
 	}
+
+	// A probe that was in flight when the server was deleted finishes afterwards.
+	if err := s.RecordServerLatency("bbbbbbbbbbbbbbb", 500, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.MaxLatestLatency(); got != 30 {
+		t.Fatalf("late probe of a deleted server counted: MaxLatestLatency = %d, want 30", got)
+	}
 }
 
 func TestPurgeOldDaily(t *testing.T) {

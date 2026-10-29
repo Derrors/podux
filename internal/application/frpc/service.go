@@ -29,6 +29,10 @@ var sensitiveRegex = regexp.MustCompile(`"(?i)(token|password|sk|pwd|secretkey|h
 // ErrAlreadyRunning is returned when launching a server that is already running or starting.
 var ErrAlreadyRunning = errors.New("frpc is already running for this server")
 
+// ErrLaunchCancelled is returned by LaunchFrpc when the server was stopped (or deleted)
+// while its frpc was still starting.
+var ErrLaunchCancelled = errors.New("frpc launch was cancelled by a stop request")
+
 // ErrLogNotFound is returned by StreamLog when no frpc log file exists yet.
 var ErrLogNotFound = errors.New("no frpc log file yet")
 
@@ -45,6 +49,9 @@ type instance struct {
 	cancel   context.CancelFunc
 	graceful bool
 	stopped  chan struct{}
+	// stopRequested is set by TerminateFrpc while the instance is still starting
+	// (cancel is nil); LaunchFrpc then gives up instead of running frpc.
+	stopRequested bool
 	// reloadMu orders reloads so an older proxy snapshot never replaces a newer one.
 	reloadMu sync.Mutex
 }
@@ -304,6 +311,15 @@ func (fs *Service) LaunchFrpc(serverId *string) error {
 
 	ctx, cancel := context.WithCancel(xlog.NewContext(context.Background(), newServerLogger(id)))
 	fs.mu.Lock()
+	if inst.stopRequested {
+		delete(fs.instances, id)
+		fs.mu.Unlock()
+		cancel()
+		svr.Close()
+		close(inst.stopped)
+		fs.app.Logger().Info("Frpc launch cancelled", "id", id)
+		return ErrLaunchCancelled
+	}
 	inst.svr = svr
 	inst.common = cfg
 	inst.cancel = cancel
@@ -458,16 +474,19 @@ func (fs *Service) TerminateFrpc(id *string) error {
 	var cancel context.CancelFunc
 	if exists {
 		cancel = inst.cancel
+		if cancel == nil {
+			// Still building its config: LaunchFrpc sees the flag and gives up before running.
+			inst.stopRequested = true
+		}
 	}
 	fs.mu.Unlock()
 	if !exists {
 		return nil
 	}
-	if cancel == nil {
-		return errors.New("frpc is still starting, try again shortly")
-	}
 
-	cancel()
+	if cancel != nil {
+		cancel()
+	}
 	select {
 	case <-inst.stopped:
 		fs.app.Logger().Info("Frpc stopped", "id", *id)

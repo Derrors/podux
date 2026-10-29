@@ -1,11 +1,16 @@
 package frpc
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	golog "github.com/fatedier/golib/log"
 )
 
 const (
@@ -88,5 +93,22 @@ func TestLineReaderKeepsPartialLines(t *testing.T) {
 	r.reset()
 	if got := r.feed([]byte("fresh\n")); len(got) != 1 || got[0] != "fresh" {
 		t.Fatalf("got %q after reset", got)
+	}
+}
+
+func TestLevelFilterFollowsLoweredThreshold(t *testing.T) {
+	var out bytes.Buffer
+	var threshold atomic.Int32
+	threshold.Store(int32(golog.InfoLevel))
+	f := &levelFilter{out: &out, threshold: &threshold}
+
+	_, _ = f.WriteLog([]byte("debug-1\n"), golog.DebugLevel, time.Time{})
+	_, _ = f.WriteLog([]byte("info-1\n"), golog.InfoLevel, time.Time{})
+	threshold.Store(int32(golog.DebugLevel)) // a server with debug logging launched
+	_, _ = f.WriteLog([]byte("debug-2\n"), golog.DebugLevel, time.Time{})
+	_, _ = f.WriteLog([]byte("trace-1\n"), golog.TraceLevel, time.Time{})
+
+	if got, want := out.String(), "info-1\ndebug-2\n"; got != want {
+		t.Fatalf("written = %q, want %q", got, want)
 	}
 }

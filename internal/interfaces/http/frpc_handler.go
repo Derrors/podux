@@ -38,7 +38,7 @@ func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
 			return e.JSON(400, map[string]string{"error": "invalid id format"})
 		}
 		err := h.service.LaunchFrpc(&id)
-		if errors.Is(err, frpc.ErrAlreadyRunning) {
+		if errors.Is(err, frpc.ErrAlreadyRunning) || errors.Is(err, frpc.ErrLaunchCancelled) {
 			return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
 		}
 		if err != nil {

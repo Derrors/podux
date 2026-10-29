@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/fatedier/frp/pkg/util/log"
 	"github.com/fatedier/frp/pkg/util/xlog"
@@ -36,11 +38,14 @@ func newServerLogger(serverID string) *xlog.Logger {
 }
 
 // sharedLogger initializes the frp global logger once and only ever lowers its
-// level, so the most verbose level requested by a running server is captured.
+// threshold, so the most verbose level requested by a running server is captured.
+// log.Logger is a plain package variable that running clients read on every line, so
+// it is assigned only once, before any frpc runs; later level changes go through an
+// atomic threshold in the output filter instead of swapping the logger.
 type sharedLogger struct {
 	mu          sync.Mutex
 	initialized bool
-	level       golog.Level
+	threshold   atomic.Int32 // golog.Level
 }
 
 func (l *sharedLogger) ensure(path, levelStr string, maxDays int) {
@@ -51,15 +56,41 @@ func (l *sharedLogger) ensure(path, levelStr string, maxDays int) {
 
 	if !l.initialized {
 		_ = os.MkdirAll(filepath.Dir(path), 0755)
-		log.InitLogger(path, level.String(), maxDays, true)
+		writer := golog.NewRotateFileWriter(golog.RotateFileConfig{
+			FileName: path,
+			Mode:     golog.RotateFileModeDaily,
+			MaxDays:  maxDays,
+		})
+		writer.Init()
+		l.threshold.Store(int32(level))
+		log.Logger = log.Logger.WithOptions(
+			golog.WithOutput(&levelFilter{out: writer, threshold: &l.threshold}),
+			golog.WithLevel(golog.TraceLevel),
+		)
 		l.initialized = true
-		l.level = level
 		return
 	}
-	if level < l.level {
-		log.Logger = log.Logger.WithOptions(golog.WithLevel(level))
-		l.level = level
+	if int32(level) < l.threshold.Load() {
+		l.threshold.Store(int32(level))
 	}
+}
+
+// levelFilter drops log lines below the shared threshold before they reach the file.
+type levelFilter struct {
+	out       io.Writer
+	threshold *atomic.Int32
+}
+
+func (f *levelFilter) Write(p []byte) (int, error) {
+	return f.out.Write(p)
+}
+
+// WriteLog implements golib's log.Writer, which the logger prefers over Write.
+func (f *levelFilter) WriteLog(p []byte, level golog.Level, _ time.Time) (int, error) {
+	if int32(level) < f.threshold.Load() {
+		return len(p), nil
+	}
+	return f.out.Write(p)
 }
 
 func parseLevel(s string) golog.Level {
