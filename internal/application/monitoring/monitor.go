@@ -2,8 +2,9 @@ package monitoring
 
 import (
 	"encoding/json"
-	"fmt"
+	"net"
 	"podux/pkg/utils"
+	"strconv"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -63,6 +64,18 @@ func (s *MonitorService) startTicker(ticker *time.Ticker, fn func()) {
 			}
 		}
 	}()
+}
+
+// UpdateIntervals applies new check intervals to the running tickers.
+func (s *MonitorService) UpdateIntervals(latencyInterval, geoInterval time.Duration) {
+	if s.latencyTicker == nil || s.geoTicker == nil {
+		return
+	}
+	s.latencyTicker.Reset(latencyInterval)
+	s.geoTicker.Reset(geoInterval)
+	s.app.Logger().Info("Network monitor intervals updated",
+		"latencyInterval", latencyInterval,
+		"geoInterval", geoInterval)
 }
 
 // Stop halts the background monitoring task.
@@ -129,10 +142,10 @@ func (s *MonitorService) updateAllServersGeoLocation() {
 
 // updateServerLatency pings a single server and records the result to metrics.
 func (s *MonitorService) updateServerLatency(serverID string, serverAddr string, serverPort int) {
-	addr := fmt.Sprintf("%s:%d", serverAddr, serverPort)
+	addr := net.JoinHostPort(serverAddr, strconv.Itoa(serverPort))
 	pingResult := utils.PingHost(addr, 5*time.Second)
 
-	if err := s.metricsService.RecordServerLatency(serverID, pingResult.Latency); err != nil {
+	if err := s.metricsService.RecordServerLatency(serverID, pingResult.Latency, pingResult.Error); err != nil {
 		s.app.Logger().Error("Failed to record server latency metric", "serverId", serverID, "error", err)
 	}
 

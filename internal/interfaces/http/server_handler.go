@@ -22,6 +22,8 @@ func NewServerHandler(app core.App, metricsService *monitoring.MetricsService) *
 	return &ServerHandler{app: app, metricsService: metricsService}
 }
 
+// serverVO is a list item. Credentials and connection settings (auth, transport
+// incl. TLS keys, log, metadatas) are left out; edit forms load the full record.
 type serverVO struct {
 	ID             string                    `json:"id"`
 	ServerName     string                    `json:"serverName"`
@@ -34,10 +36,6 @@ type serverVO struct {
 	SendRate       float64                   `json:"sendRate"`
 	RecvRate       float64                   `json:"recvRate"`
 	GeoLocation    any                       `json:"geoLocation,omitempty"`
-	Log            any                       `json:"log,omitempty"`
-	Auth           any                       `json:"auth,omitempty"`
-	Transport      any                       `json:"transport,omitempty"`
-	Metadatas      any                       `json:"metadatas,omitempty"`
 	Created        string                    `json:"created"`
 	Updated        string                    `json:"updated"`
 	NetworkStatus  *monitoring.NetworkStatus `json:"networkStatus,omitempty"`
@@ -129,10 +127,6 @@ func (h *ServerHandler) RegisterHandlers(e *core.ServeEvent) {
 				SendRate:       r.GetFloat("sendRate"),
 				RecvRate:       r.GetFloat("recvRate"),
 				GeoLocation:    r.Get("geoLocation"),
-				Log:            r.Get("log"),
-				Auth:           r.Get("auth"),
-				Transport:      r.Get("transport"),
-				Metadatas:      r.Get("metadatas"),
 				Created:        r.GetString("created"),
 				Updated:        r.GetString("updated"),
 				NetworkStatus:  latencyMap[r.Id],

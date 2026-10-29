@@ -74,44 +74,45 @@ func (r *ProxyRepository) CountByType() (map[string]int64, error) {
 }
 
 func (r *ProxyRepository) UpdateBootStatus(id string, status proxy.ProxyBootStatus) error {
-	r.app.Logger().Info("Update proxy boot status", "id", id, "status", status)
-
+	// Only write when the status changes; this runs every few seconds per proxy.
 	result, err := r.app.DB().
-		Update("fh_proxies", dbx.Params{
-			"bootStatus": string(status),
-		}, dbx.HashExp{
-			"id": id,
-		}).
-		Execute()
+		Update("fh_proxies",
+			dbx.Params{"bootStatus": string(status)},
+			dbx.NewExp("id = {:id} AND bootStatus != {:status}", dbx.Params{
+				"id":     id,
+				"status": string(status),
+			}),
+		).Execute()
 
 	if err != nil {
 		r.app.Logger().Error("Failed to update proxy boot status", "id", id, "error", err)
 		return err
 	}
 
-	rowsAffected, _ := result.RowsAffected()
-	r.app.Logger().Info("Proxy boot status updated successfully", "id", id, "status", status, "rowsAffected", rowsAffected)
+	if rowsAffected, _ := result.RowsAffected(); rowsAffected > 0 {
+		r.app.Logger().Info("Proxy boot status changed", "id", id, "status", status)
+	}
 	return nil
 }
 
 func (r *ProxyRepository) UpdateBootStatusByServerID(serverID string, status proxy.ProxyBootStatus) error {
-	r.app.Logger().Info("Update proxy boot status by server id", "id", serverID, "status", status)
-
 	result, err := r.app.DB().
-		Update("fh_proxies", dbx.Params{
-			"bootStatus": string(status),
-		}, dbx.HashExp{
-			"serverId": serverID,
-		}).
-		Execute()
+		Update("fh_proxies",
+			dbx.Params{"bootStatus": string(status)},
+			dbx.NewExp("serverId = {:serverId} AND bootStatus != {:status}", dbx.Params{
+				"serverId": serverID,
+				"status":   string(status),
+			}),
+		).Execute()
 
 	if err != nil {
 		r.app.Logger().Error("Failed to update proxy boot status by server id", "serverID", serverID, "error", err)
 		return err
 	}
 
-	rowsAffected, _ := result.RowsAffected()
-	r.app.Logger().Info("Proxy boot status updated successfully", "serverID", serverID, "status", status, "count", rowsAffected)
+	if rowsAffected, _ := result.RowsAffected(); rowsAffected > 0 {
+		r.app.Logger().Info("Proxy boot status changed by server id", "serverID", serverID, "status", status, "count", rowsAffected)
+	}
 	return nil
 }
 
@@ -170,4 +171,3 @@ func (r *ProxyRepository) FindEnabledByServerID(serverID string) ([]proxy.Proxy,
 
 	return proxies, nil
 }
-

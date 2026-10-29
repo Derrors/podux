@@ -15,7 +15,8 @@ import (
 const SettingsID = "wcstsqmz8hur331"
 
 type Service struct {
-	app core.App
+	app       core.App
+	listeners []func()
 }
 
 type InitializeRequest struct {
@@ -110,14 +111,25 @@ func (s *Service) UpdateSettings(req *UpdateSettingsRequest) error {
 	}
 
 	s.app.Logger().Info("Settings updated successfully")
+	for _, fn := range s.listeners {
+		fn()
+	}
 	return nil
+}
+
+// OnSettingsUpdated registers fn to run after settings are saved.
+func (s *Service) OnSettingsUpdated(fn func()) {
+	s.listeners = append(s.listeners, fn)
 }
 
 // GetMonitoringIntervals reads latencyCheckInterval and locationCheckInterval
 // from settings general JSON. Falls back to defaults if not set or on error.
 func (s *Service) GetMonitoringIntervals() (latencyInterval, geoInterval time.Duration) {
-	const defaultLatency = 5 * time.Second
+	// Keep in sync with the defaults and 10-300s range in the settings page.
+	const defaultLatency = 30 * time.Second
+	const minLatency, maxLatency = 10 * time.Second, 300 * time.Second
 	const defaultGeo = 24 * time.Hour
+	const minGeo = time.Minute
 
 	settings, err := s.GetSettings()
 	if err != nil {
@@ -128,14 +140,14 @@ func (s *Service) GetMonitoringIntervals() (latencyInterval, geoInterval time.Du
 	latencyInterval = defaultLatency
 	if v, ok := settings.General["latencyCheckInterval"]; ok {
 		if secs, ok := toFloat64(v); ok && secs > 0 {
-			latencyInterval = time.Duration(secs) * time.Second
+			latencyInterval = min(max(time.Duration(secs)*time.Second, minLatency), maxLatency)
 		}
 	}
 
 	geoInterval = defaultGeo
 	if v, ok := settings.General["locationCheckInterval"]; ok {
 		if secs, ok := toFloat64(v); ok && secs > 0 {
-			geoInterval = time.Duration(secs) * time.Second
+			geoInterval = max(time.Duration(secs)*time.Second, minGeo)
 		}
 	}
 

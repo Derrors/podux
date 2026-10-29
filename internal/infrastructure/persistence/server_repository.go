@@ -32,7 +32,7 @@ func (r *ServerRepository) CountByBootStatus(status server.ServerStatus) (int64,
 }
 
 func (r *ServerRepository) UpdateBootStatus(id string, status server.ServerStatus) error {
-	r.app.Logger().Info("Update server boot status", "id", id, "status", status)
+	r.app.Logger().Debug("Update server boot status", "id", id, "status", status)
 
 	result, err := r.app.DB().
 		Update("fh_servers",

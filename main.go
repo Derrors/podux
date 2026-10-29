@@ -62,18 +62,37 @@ func main() {
 	importHandler := httphandler.NewImportHandler(app, importService)
 	serverHandler := httphandler.NewServerHandler(app, metricsService)
 
-	// Hook: Reload frpc when proxy is updated
-	app.OnRecordAfterUpdateSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
-		serverId := e.Record.GetString("serverId")
-		if serverId != "" {
-			// Check if the server is currently running
-			if frpcService.IsServerRunning(serverId) {
-				app.Logger().Info("Proxy updated, reloading frpc configuration", "proxyId", e.Record.Id, "serverId", serverId)
-				if err := frpcService.ReloadFrpc(&serverId); err != nil {
-					app.Logger().Error("Failed to reload frpc after proxy update", "error", err, "serverId", serverId)
-				}
+	// Hooks: reload the running frpc whenever one of its proxies changes.
+	reloadServers := func(e *core.RecordEvent, serverIds ...string) {
+		seen := map[string]bool{}
+		for _, serverId := range serverIds {
+			if serverId == "" || seen[serverId] || !frpcService.IsServerRunning(serverId) {
+				continue
+			}
+			seen[serverId] = true
+			app.Logger().Info("Proxy changed, reloading frpc configuration", "proxyId", e.Record.Id, "serverId", serverId)
+			if err := frpcService.ReloadFrpc(&serverId); err != nil {
+				app.Logger().Error("Failed to reload frpc after proxy change", "error", err, "serverId", serverId)
 			}
 		}
+	}
+	app.OnRecordAfterCreateSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
+		reloadServers(e, e.Record.GetString("serverId"))
+		return e.Next()
+	})
+	app.OnRecordAfterUpdateSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
+		// A proxy moved to another server must also be removed from the old one.
+		reloadServers(e, e.Record.GetString("serverId"), e.Record.Original().GetString("serverId"))
+		return e.Next()
+	})
+	app.OnRecordAfterDeleteSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
+		reloadServers(e, e.Record.GetString("serverId"))
+		return e.Next()
+	})
+
+	// Stop frpc clients before the app shuts down (kcp/quic sessions close gracefully).
+	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		frpcService.StopAll()
 		return e.Next()
 	})
 
@@ -90,6 +109,9 @@ func main() {
 		// Start network monitoring service using intervals from settings
 		latencyInterval, geoInterval := settingsService.GetMonitoringIntervals()
 		networkMonitorService.Start(latencyInterval, geoInterval)
+		settingsService.OnSettingsUpdated(func() {
+			networkMonitorService.UpdateIntervals(settingsService.GetMonitoringIntervals())
+		})
 		metricsScheduler.Register()
 
 		// Register routes for each module

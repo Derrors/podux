@@ -38,8 +38,8 @@ func PingHost(addr string, timeout time.Duration) PingResult {
 	}
 
 	// If address doesn't contain port, default to 7000
-	if !strings.Contains(addr, ":") {
-		addr = addr + ":7000"
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		addr = net.JoinHostPort(strings.Trim(addr, "[]"), "7000")
 	}
 
 	start := time.Now()
@@ -88,9 +88,9 @@ func GetGeoLocation(addr string) (*GeoLocation, error) {
 // resolveAddr resolves address and extracts IP
 func resolveAddr(addr string) (string, error) {
 	// Remove port number
-	host := addr
-	if idx := strings.LastIndex(addr, ":"); idx != -1 {
-		host = addr[:idx]
+	host := strings.Trim(addr, "[]")
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
 	}
 
 	// Return directly if already an IP address

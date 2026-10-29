@@ -1,8 +1,10 @@
 package httphandler
 
 import (
-	"podux/internal/application/frpc"
+	"errors"
 	"net/http"
+
+	"podux/internal/application/frpc"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -35,6 +37,9 @@ func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
 			return e.JSON(400, map[string]string{"error": "invalid id format"})
 		}
 		err := h.service.LaunchFrpc(&id)
+		if errors.Is(err, frpc.ErrAlreadyRunning) {
+			return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
+		}
 		if err != nil {
 			return e.JSON(500, map[string]string{"error": err.Error()})
 		}
@@ -62,7 +67,7 @@ func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
 
 		h.service.StreamLog(id, e.Request.Context(), w, flusher)
 		return nil
-	}, h.app))
+	}))
 
 	e.Router.POST("/api/frpc/terminate", requireAuth(func(e *core.RequestEvent) error {
 		data := struct {

@@ -3,6 +3,7 @@ package importer
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 	"github.com/pocketbase/dbx"
@@ -39,7 +40,7 @@ type tomlTransportConfig struct {
 }
 
 type tomlTLSConfig struct {
-	Enable                    bool   `toml:"enable"`
+	Enable                    *bool  `toml:"enable"`
 	DisableCustomTLSFirstByte bool   `toml:"disableCustomTLSFirstByte"`
 	ServerName                string `toml:"serverName"`
 	CertFile                  string `toml:"certFile"`
@@ -93,7 +94,13 @@ type ImportProxyInfo struct {
 type ImportPreviewResponse struct {
 	Server  ImportServerInfo  `json:"server"`
 	Proxies []ImportProxyInfo `json:"proxies"`
+	// Warnings are codes the frontend translates, e.g. WarningTLSFilePathIgnored.
+	Warnings []string `json:"warnings,omitempty"`
 }
+
+// WarningTLSFilePathIgnored means the TOML referenced TLS files by path. Podux stores
+// certificate contents, so the paths were dropped and must be pasted after import.
+const WarningTLSFilePathIgnored = "tls_file_path_ignored"
 
 type ProxyImportOption struct {
 	Name      string `json:"name"`
@@ -175,23 +182,7 @@ func (s *Service) ParseToml(req *ParseTomlRequest) (*ImportPreviewResponse, erro
 		"maxDays": logMaxDays,
 	}
 
-	// Build transport map with defaults
-	protocol := cfg.Transport.Protocol
-	if protocol == "" {
-		protocol = "tcp"
-	}
-	transportMap := map[string]interface{}{
-		"protocol": protocol,
-		"proxyURL": cfg.Transport.ProxyURL,
-		"tls": map[string]interface{}{
-			"enable":                    cfg.Transport.TLS.Enable,
-			"disableCustomTLSFirstByte": cfg.Transport.TLS.DisableCustomTLSFirstByte,
-			"serverName":                cfg.Transport.TLS.ServerName,
-			"certFile":                  cfg.Transport.TLS.CertFile,
-			"keyFile":                   cfg.Transport.TLS.KeyFile,
-			"trustedCaFile":             cfg.Transport.TLS.TrustedCaFile,
-		},
-	}
+	transportMap, warnings := buildTransportMap(cfg.Transport)
 
 	metadatas := cfg.Metadatas
 	if metadatas == nil {
@@ -261,8 +252,9 @@ func (s *Service) ParseToml(req *ParseTomlRequest) (*ImportPreviewResponse, erro
 	}
 
 	return &ImportPreviewResponse{
-		Server:  serverInfo,
-		Proxies: proxies,
+		Server:   serverInfo,
+		Proxies:  proxies,
+		Warnings: warnings,
 	}, nil
 }
 
@@ -344,10 +336,6 @@ func (s *Service) handleServerImport(
 	if logMaxDays == 0 {
 		logMaxDays = 3
 	}
-	protocol := cfg.Transport.Protocol
-	if protocol == "" {
-		protocol = "tcp"
-	}
 	metadatas := cfg.Metadatas
 	if metadatas == nil {
 		metadatas = map[string]string{}
@@ -361,18 +349,8 @@ func (s *Service) handleServerImport(
 		"level":   logLevel,
 		"maxDays": logMaxDays,
 	})
-	transportJSON, _ := json.Marshal(map[string]interface{}{
-		"protocol": protocol,
-		"proxyURL": cfg.Transport.ProxyURL,
-		"tls": map[string]interface{}{
-			"enable":                    cfg.Transport.TLS.Enable,
-			"disableCustomTLSFirstByte": cfg.Transport.TLS.DisableCustomTLSFirstByte,
-			"serverName":                cfg.Transport.TLS.ServerName,
-			"certFile":                  cfg.Transport.TLS.CertFile,
-			"keyFile":                   cfg.Transport.TLS.KeyFile,
-			"trustedCaFile":             cfg.Transport.TLS.TrustedCaFile,
-		},
-	})
+	transportMap, _ := buildTransportMap(cfg.Transport)
+	transportJSON, _ := json.Marshal(transportMap)
 	metadatasJSON, _ := json.Marshal(metadatas)
 
 	serversCollection, err := txApp.FindCollectionByNameOrId("fh_servers")
@@ -500,4 +478,40 @@ func (s *Service) handleProxyImport(
 	}
 
 	return nil
+}
+
+// buildTransportMap converts the TOML transport section into the stored JSON shape.
+// frp's TOML references TLS files by path while Podux stores their PEM contents,
+// so path values are dropped and reported as a warning.
+func buildTransportMap(t tomlTransportConfig) (map[string]interface{}, []string) {
+	protocol := t.Protocol
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	// frp enables TLS unless it is explicitly disabled.
+	tlsEnable := t.TLS.Enable == nil || *t.TLS.Enable
+
+	var warnings []string
+	pemOnly := func(v string) string {
+		if v == "" || strings.Contains(v, "-----BEGIN") {
+			return v
+		}
+		if len(warnings) == 0 {
+			warnings = append(warnings, WarningTLSFilePathIgnored)
+		}
+		return ""
+	}
+
+	return map[string]interface{}{
+		"protocol": protocol,
+		"proxyURL": t.ProxyURL,
+		"tls": map[string]interface{}{
+			"enable":                    tlsEnable,
+			"disableCustomTLSFirstByte": t.TLS.DisableCustomTLSFirstByte,
+			"serverName":                t.TLS.ServerName,
+			"certFile":                  pemOnly(t.TLS.CertFile),
+			"keyFile":                   pemOnly(t.TLS.KeyFile),
+			"trustedCaFile":             pemOnly(t.TLS.TrustedCaFile),
+		},
+	}, warnings
 }

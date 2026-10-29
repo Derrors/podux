@@ -18,20 +18,40 @@ type MetricsService struct {
 	// targetCache maps serverID -> fh_metrics_targets record ID
 	targetCache     map[string]string
 	targetCacheLock sync.RWMutex
+
+	// latest holds the most recent probe result per server, including failures,
+	// which are not written to fh_metrics_raw.
+	latest     map[string]*NetworkStatus
+	latestLock sync.RWMutex
 }
+
+// latestFallbackWindow bounds the DB lookup used before a server has been probed
+// since startup; older measurements are too stale to show.
+const latestFallbackWindow = 10 * time.Minute
 
 // NewMetricsService creates a new MetricsService.
 func NewMetricsService(app core.App) *MetricsService {
 	return &MetricsService{
 		app:         app,
 		targetCache: make(map[string]string),
+		latest:      make(map[string]*NetworkStatus),
 	}
 }
 
-// RecordServerLatency records a latency measurement for a server.
+// RecordServerLatency records a probe result for a server.
 // It automatically finds or creates the corresponding fh_metrics_targets record.
-// Negative latency (unreachable host) is skipped.
-func (s *MetricsService) RecordServerLatency(serverID string, latencyMs int64) error {
+// Unreachable results (negative latency) only update the latest status, so they
+// don't skew the stored latency series.
+func (s *MetricsService) RecordServerLatency(serverID string, latencyMs int64, probeErr string) error {
+	s.latestLock.Lock()
+	s.latest[serverID] = &NetworkStatus{
+		Latency:       latencyMs,
+		Reachable:     latencyMs >= 0,
+		LastCheckTime: time.Now().UTC(),
+		Error:         probeErr,
+	}
+	s.latestLock.Unlock()
+
 	if latencyMs < 0 {
 		return nil
 	}
@@ -96,8 +116,9 @@ func (s *MetricsService) getOrCreateServerTarget(serverID string) (string, error
 	return targetID, nil
 }
 
-// GetLatestLatencyBatch returns the most recent latency for every server in one SQL query.
-// The returned map key is the server ID.
+// GetLatestLatencyBatch returns the most recent probe result for every server.
+// The returned map key is the server ID. Servers not probed since startup fall back
+// to their latest stored measurement from the last few minutes.
 func (s *MetricsService) GetLatestLatencyBatch() (map[string]*NetworkStatus, error) {
 	type row struct {
 		ServerID string  `db:"serverId"`
@@ -105,19 +126,20 @@ func (s *MetricsService) GetLatestLatencyBatch() (map[string]*NetworkStatus, err
 		T        string  `db:"t"`
 	}
 
+	since := time.Now().UTC().Add(-latestFallbackWindow).Format("2006-01-02 15:04:05.000Z")
+
+	// SQLite returns the row holding MAX(r.t) for bare columns in the group.
 	var rows []row
 	err := s.app.DB().
 		NewQuery(`
-			SELECT t.serverId, r.val, r.t
+			SELECT t.serverId, r.val, MAX(r.t) AS t
 			FROM fh_metrics_raw r
 			INNER JOIN fh_metrics_targets t ON r.targetId = t.id
 			WHERE r.metricKey = {:key}
-			  AND r.t = (
-			    SELECT MAX(r2.t) FROM fh_metrics_raw r2
-			    WHERE r2.targetId = r.targetId AND r2.metricKey = {:key}
-			  )
+			  AND r.t >= {:since}
+			GROUP BY r.targetId
 		`).
-		Bind(dbx.Params{"key": MetricKeyFrpsDelay}).
+		Bind(dbx.Params{"key": MetricKeyFrpsDelay, "since": since}).
 		All(&rows)
 	if err != nil {
 		return nil, err
@@ -133,6 +155,14 @@ func (s *MetricsService) GetLatestLatencyBatch() (map[string]*NetworkStatus, err
 			LastCheckTime: t,
 		}
 	}
+
+	s.latestLock.RLock()
+	for serverID, status := range s.latest {
+		copied := *status
+		result[serverID] = &copied
+	}
+	s.latestLock.RUnlock()
+
 	return result, nil
 }
 

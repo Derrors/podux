@@ -4,6 +4,7 @@ go 1.25.5
 
 require (
 	github.com/fatedier/frp v0.68.0
+	github.com/fatedier/golib v0.5.1
 	github.com/pelletier/go-toml/v2 v2.2.0
 	github.com/pocketbase/dbx v1.11.0
 	github.com/pocketbase/pocketbase v0.35.0
@@ -18,7 +19,6 @@ require (
 	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/domodwyer/mailyak/v3 v3.6.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fatedier/golib v0.5.1 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
 	github.com/ganigeorgiev/fexpr v0.5.0 // indirect
