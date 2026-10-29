@@ -83,7 +83,7 @@ Mapping: `application/system.Service`, the system handler, React GeneralSettings
 
 ### `fh_version`
 
-Purpose: version name/path records. Optional text fields `version_name` and `version_path`, plus `created`/`updated`. It has no application indexes, and all Record API rules are `null`. The current version service returns the frp version from compile-time dependencies, while the system version uses buildinfo/an external release API. No application read/write path for this collection was found; its actual purpose remains to be confirmed.
+Purpose: version name/path records. Optional text fields `version_name` and `version_path`, plus `created`/`updated`. It has no application indexes, and all Record API rules are `null`. The current version service returns the frp version from compile-time dependencies, while the system version uses buildinfo (set from the release tag), and update checks read this fork's latest GitHub release (cached for an hour). No application read/write path for this collection was found; its actual purpose remains to be confirmed.
 
 ### `fh_metrics_targets`
 

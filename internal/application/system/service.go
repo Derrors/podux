@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"podux/pkg/buildinfo"
@@ -14,9 +15,20 @@ import (
 
 const SettingsID = "wcstsqmz8hur331"
 
+// latestReleaseURL is the release feed checked for updates (this fork, not upstream).
+var latestReleaseURL = "https://api.github.com/repos/Derrors/podux/releases/latest"
+
+// latestReleaseTTL limits GitHub calls: unauthenticated requests are capped at 60/hour
+// per IP, and every page load asks for the latest version.
+const latestReleaseTTL = time.Hour
+
 type Service struct {
 	app       core.App
 	listeners []func()
+
+	latestMu sync.Mutex
+	latest   *LatestVersionResponse
+	latestAt time.Time
 }
 
 type InitializeRequest struct {
@@ -181,11 +193,30 @@ type LatestVersionResponse struct {
 	Body    string `json:"body"`
 }
 
-// GetLatestVersion fetches the latest podux release from GitHub.
+// GetLatestVersion returns the latest podux release from GitHub, cached for an hour.
+// If GitHub can't be reached, the last known release is returned when there is one.
 func (s *Service) GetLatestVersion() (*LatestVersionResponse, error) {
+	s.latestMu.Lock()
+	defer s.latestMu.Unlock()
+
+	if s.latest != nil && time.Since(s.latestAt) < latestReleaseTTL {
+		return s.latest, nil
+	}
+	release, err := fetchLatestRelease()
+	if err != nil {
+		if s.latest != nil {
+			return s.latest, nil
+		}
+		return nil, err
+	}
+	s.latest, s.latestAt = release, time.Now()
+	return release, nil
+}
+
+func fetchLatestRelease() (*LatestVersionResponse, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	req, err := http.NewRequest("GET", "https://ghp.podux.io/repos/luckjiawei/podux/releases/latest", nil)
+	req, err := http.NewRequest("GET", latestReleaseURL, nil)
 	if err != nil {
 		return nil, err
 	}
