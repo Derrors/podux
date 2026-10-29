@@ -22,7 +22,7 @@ func (s *MetricsScheduler) Register() {
 		}
 	})
 
-	// Aggregate hourly -> daily and enforce data retention every day at 01:05.
+	// Aggregate hourly -> daily and enforce data retention (raw 7d, hourly 30d, daily 1y) every day at 01:05.
 	s.app.Cron().MustAdd("metrics_daily_agg", "5 1 * * *", func() {
 		if err := s.metrics.AggregateDaily(); err != nil {
 			s.app.Logger().Error("Failed to aggregate daily metrics", "error", err)
@@ -32,6 +32,9 @@ func (s *MetricsScheduler) Register() {
 		}
 		if err := s.metrics.PurgeOldHourly(); err != nil {
 			s.app.Logger().Error("Failed to purge old hourly metrics", "error", err)
+		}
+		if err := s.metrics.PurgeOldDaily(); err != nil {
+			s.app.Logger().Error("Failed to purge old daily metrics", "error", err)
 		}
 	})
 }

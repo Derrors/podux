@@ -43,18 +43,16 @@ func main() {
 	serverService := server.NewService(app, serverRepo)
 	proxyService := proxy.NewService(app, proxyRepo)
 	frpcService := frpc.NewService(app, serverRepo, proxyRepo)
-	dashboardService := dashboard.NewService(app, serverService, proxyService)
 	settingsService := system.NewService(app)
 	geoService := monitoring.NewGeoService(app)
 	metricsService := monitoring.NewMetricsService(app)
+	dashboardService := dashboard.NewService(app, serverService, proxyService, metricsService)
 	metricsScheduler := monitoring.NewMetricsScheduler(app, metricsService)
 	networkMonitorService := monitoring.NewMonitorService(app, geoService, metricsService)
 	importService := importer.NewService(app)
 	versionService := version.NewService(app)
-	//githubService := github.NewService(app)
 
 	// HTTP Handlers
-	//githubHandler := httphandler.NewGithubHandler(app, githubService)
 	frpcHandler := httphandler.NewFrpcHandler(app, frpcService)
 	versionHandler := httphandler.NewVersionHandler(app, versionService)
 	dashboardHandler := httphandler.NewDashboardHandler(dashboardService)
@@ -90,8 +88,17 @@ func main() {
 		return e.Next()
 	})
 
-	// Stop frpc clients before the app shuts down (kcp/quic sessions close gracefully).
+	// Deleting a server also deletes its proxies and metrics, then stops its frpc.
+	server.RegisterDeleteHooks(app, func(serverId string) {
+		if err := frpcService.TerminateFrpc(&serverId); err != nil {
+			app.Logger().Error("Failed to stop frpc of deleted server", "error", err, "serverId", serverId)
+		}
+		metricsService.ForgetServer(serverId)
+	})
+
+	// Stop background work before the app shuts down (kcp/quic sessions close gracefully).
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		networkMonitorService.Stop()
 		frpcService.StopAll()
 		return e.Next()
 	})
@@ -115,7 +122,6 @@ func main() {
 		metricsScheduler.Register()
 
 		// Register routes for each module
-		//githubHandler.RegisterHandlers(e)
 		frpcHandler.RegisterHandlers(e)
 		versionHandler.RegisterHandlers(e)
 		dashboardHandler.RegisterHandlers(e)

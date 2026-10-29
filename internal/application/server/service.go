@@ -28,7 +28,3 @@ func (s *Service) ResetAllServerStatus() {
 		s.app.Logger().Error("ResetAllServerStatus failed", "error", err)
 	}
 }
-
-func (s *Service) GetMaxLatency() (int64, error) {
-	return s.repo.GetMaxLatency()
-}

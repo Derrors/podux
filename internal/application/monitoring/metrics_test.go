@@ -4,22 +4,14 @@ import (
 	"testing"
 	"time"
 
-	_ "podux/migrations"
+	"podux/internal/testutil"
 
 	"github.com/pocketbase/pocketbase/core"
 )
 
 func newTestApp(t *testing.T) core.App {
 	t.Helper()
-	app := core.NewBaseApp(core.BaseAppConfig{DataDir: t.TempDir()})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.RunAllMigrations(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	return app
+	return testutil.NewApp(t)
 }
 
 func insertServer(t *testing.T, app core.App, id string) {
@@ -97,4 +89,62 @@ func TestGetLatestLatencyBatch(t *testing.T) {
 	if st := got["freshserver0001"]; st == nil || st.Reachable || st.Error != "connection refused" {
 		t.Fatalf("status after failed probe = %+v, want unreachable", st)
 	}
+}
+
+func TestMaxLatestLatencyAndForget(t *testing.T) {
+	app := newTestApp(t)
+	s := NewMetricsService(app)
+
+	_ = s.RecordServerLatency("aaaaaaaaaaaaaaa", 30, "")
+	_ = s.RecordServerLatency("bbbbbbbbbbbbbbb", 120, "")
+	_ = s.RecordServerLatency("ccccccccccccccc", -1, "timeout")
+
+	if got, err := s.MaxLatestLatency(); err != nil || got != 120 {
+		t.Fatalf("MaxLatestLatency = %d, %v; want 120 (unreachable ignored)", got, err)
+	}
+
+	s.ForgetServer("bbbbbbbbbbbbbbb")
+	if got, _ := s.MaxLatestLatency(); got != 30 {
+		t.Fatalf("after ForgetServer, MaxLatestLatency = %d, want 30", got)
+	}
+}
+
+func TestPurgeOldDaily(t *testing.T) {
+	app := newTestApp(t)
+	s := NewMetricsService(app)
+	insertServer(t, app, "dailyserver0001")
+	target, err := s.getOrCreateServerTarget("dailyserver0001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	collection, err := app.FindCollectionByNameOrId("fh_metrics_daily")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, at := range []time.Time{time.Now().AddDate(-2, 0, 0), time.Now().AddDate(0, 0, -1)} {
+		r := core.NewRecord(collection)
+		r.Set("targetId", target)
+		r.Set("metricKey", MetricKeyFrpsDelay)
+		r.Set("t", at.UTC().Format("2006-01-02 15:04:05.000Z"))
+		if err := app.Save(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := s.PurgeOldDaily(); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := app.DB().NewQuery("SELECT COUNT(*) FROM fh_metrics_daily").Row(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("%d daily rows left, want 1", n)
+	}
+}
+
+func TestMonitorStopIsIdempotent(t *testing.T) {
+	m := NewMonitorService(core.NewBaseApp(core.BaseAppConfig{}), nil, nil)
+	m.Stop()
+	m.Stop()
 }

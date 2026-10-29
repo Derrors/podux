@@ -29,6 +29,13 @@ var sensitiveRegex = regexp.MustCompile(`"(?i)(token|password|sk|pwd|secretkey|h
 // ErrAlreadyRunning is returned when launching a server that is already running or starting.
 var ErrAlreadyRunning = errors.New("frpc is already running for this server")
 
+// ErrLogNotFound is returned by StreamLog when no frpc log file exists yet.
+var ErrLogNotFound = errors.New("no frpc log file yet")
+
+// replayEndFrame marks the end of the replayed history in a log stream, so the
+// client can merge it with lines it already shows.
+const replayEndFrame = "event: replay-end\ndata:\n\n"
+
 const stopTimeout = 10 * time.Second
 
 // instance is one running frpc client. svr is nil while the instance is still starting.
@@ -454,12 +461,12 @@ func (fs *Service) getFrpMainPath(id *string) string {
 }
 
 // StreamLog streams a server's frpc log lines via SSE.
-// It sends the server's last 50 lines as initial content, then tails new lines every 500ms.
-func (fs *Service) StreamLog(serverId string, ctx context.Context, w http.ResponseWriter, flusher http.Flusher) {
+// It sends the server's last 50 lines followed by a replay-end event, then tails
+// new lines every 500ms until ctx is done. It returns ErrLogNotFound, without
+// writing anything, when there is no log file yet.
+func (fs *Service) StreamLog(serverId string, ctx context.Context, w http.ResponseWriter, flusher http.Flusher) error {
 	if !validServerID.MatchString(serverId) {
-		fmt.Fprintf(w, "data: [invalid server id]\n\n")
-		flusher.Flush()
-		return
+		return errors.New("invalid server id")
 	}
 
 	levelStr := "info"
@@ -473,11 +480,11 @@ func (fs *Service) StreamLog(serverId string, ctx context.Context, w http.Respon
 
 	logPath := sharedLogPath()
 	file, err := os.Open(logPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrLogNotFound
+	}
 	if err != nil {
-		fs.app.Logger().Warn("Log file not found", "serverId", serverId, "path", logPath, "error", err)
-		fmt.Fprintf(w, "data: [No log file found]\n\n")
-		flusher.Flush()
-		return
+		return err
 	}
 	defer func() { file.Close() }()
 
@@ -486,11 +493,12 @@ func (fs *Service) StreamLog(serverId string, ctx context.Context, w http.Respon
 	for _, line := range initialLines {
 		fmt.Fprintf(w, "data: %s\n\n", line)
 	}
+	fmt.Fprint(w, replayEndFrame)
 	flusher.Flush()
 
 	offset, err := file.Seek(0, io.SeekEnd)
 	if err != nil {
-		return
+		return nil
 	}
 
 	var reader lineReader
@@ -501,7 +509,7 @@ func (fs *Service) StreamLog(serverId string, ctx context.Context, w http.Respon
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-ticker.C:
 			fi, err := os.Stat(logPath)
 			if err != nil {

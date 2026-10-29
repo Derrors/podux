@@ -5,6 +5,7 @@ import (
 	"net"
 	"podux/pkg/utils"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -17,6 +18,7 @@ type MonitorService struct {
 	geoService     *GeoService
 	metricsService *MetricsService
 	stopChan       chan struct{}
+	stopOnce       sync.Once
 	latencyTicker  *time.Ticker
 	geoTicker      *time.Ticker
 }
@@ -78,7 +80,7 @@ func (s *MonitorService) UpdateIntervals(latencyInterval, geoInterval time.Durat
 		"geoInterval", geoInterval)
 }
 
-// Stop halts the background monitoring task.
+// Stop halts the background monitoring task. It is safe to call more than once.
 func (s *MonitorService) Stop() {
 	if s.latencyTicker != nil {
 		s.latencyTicker.Stop()
@@ -86,7 +88,7 @@ func (s *MonitorService) Stop() {
 	if s.geoTicker != nil {
 		s.geoTicker.Stop()
 	}
-	close(s.stopChan)
+	s.stopOnce.Do(func() { close(s.stopChan) })
 }
 
 // updateAllServersLatency updates latency for all servers.

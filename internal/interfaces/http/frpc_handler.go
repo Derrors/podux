@@ -65,7 +65,14 @@ func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
 			return e.JSON(500, map[string]string{"error": "streaming not supported"})
 		}
 
-		h.service.StreamLog(id, e.Request.Context(), w, flusher)
+		// The SSE headers above aren't sent until the first write, so errors can still be JSON.
+		err := h.service.StreamLog(id, e.Request.Context(), w, flusher)
+		if errors.Is(err, frpc.ErrLogNotFound) {
+			return e.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		if err != nil {
+			return e.JSON(500, map[string]string{"error": err.Error()})
+		}
 		return nil
 	}))
 

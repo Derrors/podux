@@ -166,31 +166,30 @@ func (s *MetricsService) GetLatestLatencyBatch() (map[string]*NetworkStatus, err
 	return result, nil
 }
 
-// GetLatestServerLatency returns the most recent latency measurement for a server.
-// Returns nil if no data has been recorded yet.
-func (s *MetricsService) GetLatestServerLatency(serverID string) (*NetworkStatus, error) {
-	records, err := s.app.FindRecordsByFilter(
-		"fh_metrics_raw",
-		"targetId.serverId = {:serverId} && metricKey = {:key}",
-		"-t",
-		1,
-		0,
-		map[string]any{"serverId": serverID, "key": MetricKeyFrpsDelay},
-	)
+// MaxLatestLatency returns the highest latest latency among reachable servers,
+// or 0 when none has been measured recently.
+func (s *MetricsService) MaxLatestLatency() (int64, error) {
+	latest, err := s.GetLatestLatencyBatch()
 	if err != nil {
-		return nil, fmt.Errorf("query latest latency: %w", err)
+		return 0, err
 	}
-	if len(records) == 0 {
-		return nil, nil
+	var maxLatency int64
+	for _, st := range latest {
+		if st.Reachable && st.Latency > maxLatency {
+			maxLatency = st.Latency
+		}
 	}
+	return maxLatency, nil
+}
 
-	r := records[0]
-	latency := int64(r.GetFloat("val"))
-	return &NetworkStatus{
-		Latency:       latency,
-		Reachable:     latency >= 0,
-		LastCheckTime: r.GetDateTime("t").Time(),
-	}, nil
+// ForgetServer drops cached state for a deleted server.
+func (s *MetricsService) ForgetServer(serverID string) {
+	s.targetCacheLock.Lock()
+	delete(s.targetCache, serverID)
+	s.targetCacheLock.Unlock()
+	s.latestLock.Lock()
+	delete(s.latest, serverID)
+	s.latestLock.Unlock()
 }
 
 // AggregateHourly aggregates the previous full hour from fh_metrics_raw into fh_metrics_hourly.
@@ -365,6 +364,20 @@ func (s *MetricsService) PurgeOldHourly() error {
 	}
 	affected, _ := result.RowsAffected()
 	s.app.Logger().Info("Purged old hourly metrics", "deleted", affected)
+	return nil
+}
+
+// PurgeOldDaily deletes fh_metrics_daily records older than 365 days.
+func (s *MetricsService) PurgeOldDaily() error {
+	cutoff := time.Now().UTC().AddDate(-1, 0, 0).Format("2006-01-02 15:04:05.000Z")
+	result, err := s.app.DB().
+		Delete("fh_metrics_daily", dbx.NewExp("t < {:cutoff}", dbx.Params{"cutoff": cutoff})).
+		Execute()
+	if err != nil {
+		return fmt.Errorf("purge old daily metrics: %w", err)
+	}
+	affected, _ := result.RowsAffected()
+	s.app.Logger().Info("Purged old daily metrics", "deleted", affected)
 	return nil
 }
 

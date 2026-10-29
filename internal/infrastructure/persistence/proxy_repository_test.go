@@ -4,22 +4,14 @@ import (
 	"testing"
 
 	"podux/internal/domain/proxy"
-	_ "podux/migrations"
+	"podux/internal/testutil"
 
 	"github.com/pocketbase/pocketbase/core"
 )
 
 func newTestApp(t *testing.T) core.App {
 	t.Helper()
-	app := core.NewBaseApp(core.BaseAppConfig{DataDir: t.TempDir()})
-	if err := app.Bootstrap(); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.RunAllMigrations(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = app.ResetBootstrapState() })
-	return app
+	return testutil.NewApp(t)
 }
 
 func saveRecord(t *testing.T, app core.App, collectionName string, fields map[string]any) *core.Record {

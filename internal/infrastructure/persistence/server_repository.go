@@ -77,23 +77,6 @@ func (r *ServerRepository) ResetAllBootStatus() error {
 	return nil
 }
 
-func (r *ServerRepository) GetMaxLatency() (int64, error) {
-	var maxLatency int64
-	// Get the max latency among each target's most recent measurement.
-	err := r.app.DB().
-		Select("MAX(val)").
-		From("fh_metrics_raw").
-		Where(dbx.NewExp("metricKey = 'frps_delay' AND t IN (SELECT MAX(t) FROM fh_metrics_raw WHERE metricKey = 'frps_delay' GROUP BY targetId)")).
-		Row(&maxLatency)
-
-	if err != nil {
-		r.app.Logger().Error("Failed to get max latency", "error", err)
-		return 0, err
-	}
-
-	return maxLatency, nil
-}
-
 func (r *ServerRepository) FindAllWithAutoConnect() ([]server.ServerRecord, error) {
 	records, err := r.app.FindAllRecords("fh_servers", dbx.HashExp{"autoConnection": true})
 	if err != nil {

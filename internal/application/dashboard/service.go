@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"podux/internal/application/monitoring"
 	proxyapp "podux/internal/application/proxy"
 	serverapp "podux/internal/application/server"
 	proxydomain "podux/internal/domain/proxy"
@@ -49,14 +50,16 @@ type Service struct {
 	app           core.App
 	serverService *serverapp.Service
 	proxyService  *proxyapp.Service
+	metrics       *monitoring.MetricsService
 	startTime     time.Time
 }
 
-func NewService(app core.App, serverService *serverapp.Service, proxyService *proxyapp.Service) *Service {
+func NewService(app core.App, serverService *serverapp.Service, proxyService *proxyapp.Service, metrics *monitoring.MetricsService) *Service {
 	return &Service{
 		app:           app,
 		serverService: serverService,
 		proxyService:  proxyService,
+		metrics:       metrics,
 		startTime:     time.Now(),
 	}
 }
@@ -87,7 +90,7 @@ func (s *Service) GetStats() (*DashboardStats, error) {
 		return nil, err
 	}
 
-	maxLatency, err := s.serverService.GetMaxLatency()
+	maxLatency, err := s.metrics.MaxLatestLatency()
 	if err != nil {
 		return nil, err
 	}
