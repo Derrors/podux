@@ -6,5 +6,3 @@ export function ServersPage() {
 
   return <ServersView {...state} />;
 }
-
-export default ServersPage;

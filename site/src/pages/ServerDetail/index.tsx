@@ -6,5 +6,3 @@ export function ServerDetailPage() {
 
   return <ServerDetailView {...state} />;
 }
-
-export default ServerDetailPage;

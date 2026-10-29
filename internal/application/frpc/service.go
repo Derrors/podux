@@ -41,9 +41,12 @@ const stopTimeout = 10 * time.Second
 // instance is one running frpc client. svr is nil while the instance is still starting.
 type instance struct {
 	svr      *client.Service
+	common   *v1.ClientCommonConfig
 	cancel   context.CancelFunc
 	graceful bool
 	stopped  chan struct{}
+	// reloadMu orders reloads so an older proxy snapshot never replaces a newer one.
+	reloadMu sync.Mutex
 }
 
 type Service struct {
@@ -61,6 +64,29 @@ func NewService(app core.App, serverRepo serverdomain.Repository, proxyRepo prox
 		instances:  make(map[string]*instance),
 		serverRepo: serverRepo,
 		proxyRepo:  proxyRepo,
+	}
+}
+
+// storedOIDC is the flat OIDC part of fh_servers.auth as saved by the server form.
+type storedOIDC struct {
+	ClientID      string `json:"oidcClientId"`
+	ClientSecret  string `json:"oidcClientSecret"`
+	Audience      string `json:"oidcAudience"`
+	TokenEndpoint string `json:"oidcTokenEndpoint"`
+}
+
+func (o storedOIDC) applyTo(cfg *v1.AuthOIDCClientConfig) {
+	if o.ClientID != "" {
+		cfg.ClientID = o.ClientID
+	}
+	if o.ClientSecret != "" {
+		cfg.ClientSecret = o.ClientSecret
+	}
+	if o.Audience != "" {
+		cfg.Audience = o.Audience
+	}
+	if o.TokenEndpoint != "" {
+		cfg.TokenEndpointURL = o.TokenEndpoint
 	}
 }
 
@@ -94,7 +120,7 @@ func (fs *Service) genCommonCfgs(id *string) (*v1.ClientCommonConfig, error) {
 	if err := unmarshalField(record.GetString("log"), &logConfig); err != nil {
 		return nil, fmt.Errorf("parse log config: %w", err)
 	}
-	logConfig.To = sharedLogPath()
+	logConfig.To = sharedLogPath(fs.app.DataDir())
 	cfg.Log = logConfig
 
 	// auth config
@@ -102,6 +128,12 @@ func (fs *Service) genCommonCfgs(id *string) (*v1.ClientCommonConfig, error) {
 	if err := unmarshalField(record.GetString("auth"), &authConfig); err != nil {
 		return nil, fmt.Errorf("parse auth config: %w", err)
 	}
+	// The server form stores OIDC settings as flat keys; frp expects them under "oidc".
+	var oidc storedOIDC
+	if err := unmarshalField(record.GetString("auth"), &oidc); err != nil {
+		return nil, fmt.Errorf("parse auth config: %w", err)
+	}
+	oidc.applyTo(&authConfig.OIDC)
 	if authConfig.Method != "none" && authConfig.Method != "" {
 		cfg.Auth = authConfig
 	}
@@ -158,6 +190,11 @@ func (fs *Service) genCommonCfgs(id *string) (*v1.ClientCommonConfig, error) {
 	return cfg, nil
 }
 
+var legacyTransportKeys = map[string]string{
+	"use_encryption":  "useEncryption",
+	"use_compression": "useCompression",
+}
+
 func (fs *Service) genProxyCfgs(serverId *string) ([]v1.ProxyConfigurer, error) {
 	proxies, err := fs.proxyRepo.FindEnabledByServerID(*serverId)
 	if err != nil {
@@ -184,6 +221,18 @@ func (fs *Service) genProxyCfgs(serverId *string) ([]v1.ProxyConfigurer, error) 
 		proxyData["type"] = proxyMap.ProxyType
 		delete(proxyData, "proxyType")
 		proxyData["name"] = proxyMap.Name + "-" + proxyMap.Id
+
+		// Older proxy forms saved snake_case keys; frp only reads camelCase.
+		if transport, ok := proxyData["transport"].(map[string]interface{}); ok {
+			for legacy, key := range legacyTransportKeys {
+				if v, ok := transport[legacy]; ok {
+					if _, set := transport[key]; !set {
+						transport[key] = v
+					}
+					delete(transport, legacy)
+				}
+			}
+		}
 
 		// Remove empty plugin map so frp doesn't try to parse a typeless plugin
 		if plugin, ok := proxyData["plugin"].(map[string]interface{}); ok {
@@ -256,6 +305,7 @@ func (fs *Service) LaunchFrpc(serverId *string) error {
 	ctx, cancel := context.WithCancel(xlog.NewContext(context.Background(), newServerLogger(id)))
 	fs.mu.Lock()
 	inst.svr = svr
+	inst.common = cfg
 	inst.cancel = cancel
 	inst.graceful = cfg.Transport.Protocol == "kcp" || cfg.Transport.Protocol == "quic"
 	fs.serverRepo.UpdateBootStatus(id, serverdomain.ServerStatusRunning)
@@ -303,7 +353,7 @@ func (fs *Service) newClient(serverId *string) (*client.Service, *v1.ClientCommo
 	if err := cfg.Complete(); err != nil {
 		return nil, nil, err
 	}
-	fs.logger.ensure(cfg.Log.Level, int(cfg.Log.MaxDays))
+	fs.logger.ensure(cfg.Log.To, cfg.Log.Level, int(cfg.Log.MaxDays))
 
 	configSrc := frpcsource.NewConfigSource()
 	if err := configSrc.ReplaceAll(proxyCfgs, nil); err != nil {
@@ -457,7 +507,7 @@ func (fs *Service) StopAll() {
 }
 
 func (fs *Service) getFrpMainPath(id *string) string {
-	return filepath.Join("pb_data", "frpc", *id)
+	return filepath.Join(fs.app.DataDir(), "frpc", *id)
 }
 
 // StreamLog streams a server's frpc log lines via SSE.
@@ -478,7 +528,7 @@ func (fs *Service) StreamLog(serverId string, ctx context.Context, w http.Respon
 	}
 	filter := newLineFilter(serverId, levelStr)
 
-	logPath := sharedLogPath()
+	logPath := sharedLogPath(fs.app.DataDir())
 	file, err := os.Open(logPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return ErrLogNotFound
@@ -555,10 +605,19 @@ func (fs *Service) StreamLog(serverId string, ctx context.Context, w http.Respon
 func (fs *Service) ReloadFrpc(serverId *string) error {
 	fs.mu.Lock()
 	inst, ok := fs.instances[*serverId]
+	var svr *client.Service
+	var common *v1.ClientCommonConfig
+	if ok {
+		svr, common = inst.svr, inst.common
+	}
 	fs.mu.Unlock()
-	if !ok || inst.svr == nil {
+	if svr == nil {
 		return nil
 	}
+
+	// Read and push under one lock: a reload that read the proxies earlier must not apply last.
+	inst.reloadMu.Lock()
+	defer inst.reloadMu.Unlock()
 
 	fs.app.Logger().Info("Reload frpc", "id", *serverId)
 
@@ -571,8 +630,10 @@ func (fs *Service) ReloadFrpc(serverId *string) error {
 	safeProxies := sensitiveRegex.ReplaceAll(proxyCfgsBytes, []byte(`"${1}":"***"`))
 	fs.app.Logger().Info("FRP Reload Configurations", "proxies", string(safeProxies))
 
+	// UpdateConfigSource completes and filters the configs like startup does; pushing raw
+	// configs would make every proxy differ from the running one and restart them all.
 	// TODO 2026-02-08 reload visitorCfgs
-	return inst.svr.UpdateAllConfigurer(proxyCfgs, nil)
+	return svr.UpdateConfigSource(common, proxyCfgs, nil)
 }
 
 // IsServerRunning checks if a server is currently running or starting.

@@ -3,6 +3,7 @@ package importer
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -101,6 +102,21 @@ type ImportPreviewResponse struct {
 // WarningTLSFilePathIgnored means the TOML referenced TLS files by path. Podux stores
 // certificate contents, so the paths were dropped and must be pasted after import.
 const WarningTLSFilePathIgnored = "tls_file_path_ignored"
+
+// WarningUnsupportedProxySkipped means the TOML has proxy types Podux can't manage
+// (anything but tcp/udp/http/https); they are left out of the preview and the import.
+const WarningUnsupportedProxySkipped = "unsupported_proxy_skipped"
+
+// proxyTypeOf returns the proxy's type (frp defaults to tcp) and whether fh_proxies accepts it.
+func proxyTypeOf(p tomlProxyConfig) (string, bool) {
+	switch p.Type {
+	case "":
+		return "tcp", true
+	case "tcp", "udp", "http", "https":
+		return p.Type, true
+	}
+	return p.Type, false
+}
 
 type ProxyImportOption struct {
 	Name      string `json:"name"`
@@ -205,9 +221,12 @@ func (s *Service) ParseToml(req *ParseTomlRequest) (*ImportPreviewResponse, erro
 	// Build proxy infos with duplicate detection
 	proxies := make([]ImportProxyInfo, 0, len(cfg.Proxies))
 	for _, p := range cfg.Proxies {
-		proxyType := p.Type
-		if proxyType == "" {
-			proxyType = "tcp"
+		proxyType, ok := proxyTypeOf(p)
+		if !ok {
+			if !slices.Contains(warnings, WarningUnsupportedProxySkipped) {
+				warnings = append(warnings, WarningUnsupportedProxySkipped)
+			}
+			continue
 		}
 		customDomains := p.CustomDomains
 		if customDomains == nil {
@@ -412,7 +431,8 @@ func (s *Service) handleProxyImport(
 
 	for _, p := range cfg.Proxies {
 		opt, ok := proxyOptMap[p.Name]
-		if !ok || !opt.Import {
+		proxyType, supported := proxyTypeOf(p)
+		if !ok || !opt.Import || !supported {
 			result.ProxiesSkipped++
 			continue
 		}
@@ -442,10 +462,6 @@ func (s *Service) handleProxyImport(
 			proxyRecord = core.NewRecord(proxiesCollection)
 		}
 
-		proxyType := p.Type
-		if proxyType == "" {
-			proxyType = "tcp"
-		}
 		customDomains := p.CustomDomains
 		if customDomains == nil {
 			customDomains = []string{}

@@ -3,6 +3,7 @@ package httphandler
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"podux/internal/application/frpc"
 
@@ -56,6 +57,11 @@ func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
 		}
 
 		w := e.Response
+		// Lift PocketBase's 5-minute server WriteTimeout for this long-lived stream,
+		// as its own realtime endpoint does; otherwise the log view drops every 5 minutes.
+		if err := http.NewResponseController(w).SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return e.JSON(500, map[string]string{"error": "failed to initialize log stream"})
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")

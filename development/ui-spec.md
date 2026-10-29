@@ -4,7 +4,7 @@
 
 The application UI under `site/` uses React 19, TypeScript, and Vite 7 together with Radix Themes, Tailwind CSS 4, Iconify (offline: `vite-plugins/iconify-offline.ts` bundles only the `lucide`/`circle-flags` icons the source uses, so import `Icon` from `@iconify/react/offline` and never rely on the Iconify API), Framer Motion, Recharts, Sonner, and react-i18next; it does not use Vue. Vue is used only by the VitePress site under `docs/`.
 
-`site/src/main.tsx` loads Radix CSS, `index.css`, and i18n in that order, then wraps the application in `ThemeProvider`, `LanguageProvider`, and Radix `<Theme>`. Theme settings are `accentColor="indigo"`, `grayColor="slate"`, and `radius="large"`. Appearance is light/dark, initially taken from the system `prefers-color-scheme` and then stored in `localStorage.theme`. `index.css` is the entry point for Tailwind and global status-dot styles. `App.css` is an unused Vite template remnant not imported by `App.tsx`; do not treat it as the current UI baseline.
+`site/src/main.tsx` loads Radix CSS, `index.css`, and i18n in that order, then wraps the application in `ThemeProvider`, `LanguageProvider`, and Radix `<Theme>`. Theme settings are `accentColor="indigo"`, `grayColor="slate"`, and `radius="large"`. Appearance is light/dark, initially taken from the system `prefers-color-scheme` and then stored in `localStorage.theme`. `index.css` is the entry point for Tailwind and global status-dot styles.
 
 ## Design Tokens in Use
 
@@ -50,7 +50,7 @@ The project has no custom token file. It primarily consumes Radix CSS variables 
 - Themes: new colors should use `var(--accent-*)`, `var(--gray-*)`, and semantic colors. Avoid fixed white backgrounds/black text. Check charts, overlays, borders, and focus states in light and dark themes.
 - Internationalization: route all user-facing text through `t()` and update both `locales/zh.json` and `en.json`. LanguageContext/localStorage owns language selection; do not use hard-coded Chinese or English as fallback UI.
 - Accessibility: use semantic Radix components. Icon-only buttons need accessible names/tooltips; images need alt text; form labels must associate with controls; keyboard focus must remain visible. `index.css` currently forces the Recharts surface outline off and must be limited to non-interactive charts; reassess it if keyboard chart interaction is added.
-- Motion: the standard page transition is `PageTransition` at 0.3s cubic-bezier; titles use 0.5s easeOut; status dots loop every 1.6–2.5s. Lightweight hover/tap effects are acceptable but must not block interaction. Only the unused Vite-template `App.css` currently observes `prefers-reduced-motion`; actual Framer/status-dot animations do not support it consistently and remain technical debt.
+- Motion: the standard page transition is `PageTransition` at 0.3s cubic-bezier; titles use 0.5s easeOut; status dots loop every 1.6–2.5s. Lightweight hover/tap effects are acceptable but must not block interaction. Framer/status-dot animations do not observe `prefers-reduced-motion` consistently; this remains technical debt. Inside a page, give a `motion` element an `exit` prop only under its own `AnimatePresence`: one that mounts while `PageTransition` is exiting otherwise joins that exit and can leave the page stuck invisible.
 
 ## Reuse and Addition Rules
 
@@ -58,7 +58,7 @@ The project has no custom token file. It primarily consumes Radix CSS variables 
 2. Extract a shared component only when a semantically stable pattern spans at least two pages; keep page-specific compositions in the page directory.
 3. New shared components must use tokens, support `className` and necessary props, cover loading/disabled/error states, and be verified in both themes and mobile layouts.
 4. Local styles are acceptable for third-party charts, complex layouts, or states difficult to express with Radix props/Tailwind. Scope names to the page/component and avoid global selectors and `!important`. Existing `!important` usage in Settings CSS is a compatibility condition, not a pattern for new styles.
-5. Do not restore or extend unused `App.css` template styles. Put necessary global rules in `index.css` and document their impact.
+5. Put necessary global rules in `index.css` and document their impact.
 
 ## Technical Debt
 

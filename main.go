@@ -88,6 +88,24 @@ func main() {
 		return e.Next()
 	})
 
+	// A new or moved server gets its location now; a moved one drops the stale location first.
+	app.OnRecordUpdate("fh_servers").BindFunc(func(e *core.RecordEvent) error {
+		if e.Record.GetString("serverAddr") != e.Record.Original().GetString("serverAddr") {
+			e.Record.Set("geoLocation", nil)
+		}
+		return e.Next()
+	})
+	app.OnRecordAfterUpdateSuccess("fh_servers").BindFunc(func(e *core.RecordEvent) error {
+		if e.Record.GetString("serverAddr") != e.Record.Original().GetString("serverAddr") {
+			networkMonitorService.RefreshGeoLocation(e.Record.Id, e.Record.GetString("serverAddr"))
+		}
+		return e.Next()
+	})
+	app.OnRecordAfterCreateSuccess("fh_servers").BindFunc(func(e *core.RecordEvent) error {
+		networkMonitorService.RefreshGeoLocation(e.Record.Id, e.Record.GetString("serverAddr"))
+		return e.Next()
+	})
+
 	// Deleting a server also deletes its proxies and metrics, then stops its frpc.
 	server.RegisterDeleteHooks(app, func(serverId string) {
 		if err := frpcService.TerminateFrpc(&serverId); err != nil {

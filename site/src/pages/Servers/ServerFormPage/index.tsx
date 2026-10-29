@@ -33,5 +33,3 @@ export function ServerFormPage() {
     />
   );
 }
-
-export default ServerFormPage;

@@ -6,5 +6,3 @@ export function ProxiesPage() {
 
   return <ProxiesView {...state} />;
 }
-
-export default ProxiesPage;

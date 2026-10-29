@@ -1,14 +1,5 @@
 import type { TFunction } from "i18next";
 
-export const formatBytes = (bytes: number): { value: number; unit: string } => {
-  if (bytes === 0) return { value: 0, unit: "B" };
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
-
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return { value: bytes / Math.pow(k, i), unit: sizes[i] };
-};
-
 /**
  * Format a timestamp into a localized "time ago" string ("5 minutes ago", "5 分钟前").
  * @param timestamp - ISO date string or Date object

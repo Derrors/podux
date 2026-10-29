@@ -370,6 +370,8 @@
     "errorInvalidIP": "Invalid IP or hostname",
     "errorInvalidPort": "Invalid port (1-65535)",
     "errorRequired": "Required",
+    "errorInvalidDomain": "Invalid domain (no http://, port or path)",
+    "errorInvalidSubdomain": "Subdomain may only contain letters, digits and hyphens",
     "errorSubdomainRequired": "Subdomain or custom domains required",
     "createSuccess": "Proxy created successfully",
     "deleteFailed": "Failed to delete proxy",
@@ -499,7 +501,8 @@
     "viewServers": "View Servers",
     "importSuccess": "Import completed successfully",
     "warnings": {
-      "tls_file_path_ignored": "The TLS certificate, key or CA in this file are file paths. Podux stores certificate contents, not paths, so they were not imported. After importing, open the server's edit form and paste the certificate, key and CA contents."
+      "tls_file_path_ignored": "The TLS certificate, key or CA in this file are file paths. Podux stores certificate contents, not paths, so they were not imported. After importing, open the server's edit form and paste the certificate, key and CA contents.",
+      "unsupported_proxy_skipped": "This file contains proxy types Podux doesn't support (only TCP, UDP, HTTP and HTTPS); those proxies are not imported."
     }
   },
   "error": {

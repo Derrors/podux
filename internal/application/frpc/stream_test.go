@@ -33,7 +33,6 @@ func (r *syncRecorder) body() string {
 }
 
 func TestStreamLogMissingFile(t *testing.T) {
-	t.Chdir(t.TempDir())
 	fs := NewService(testutil.NewApp(t), &fakeServerRepo{}, fakeProxyRepo{})
 	rec := httptest.NewRecorder()
 
@@ -47,8 +46,8 @@ func TestStreamLogMissingFile(t *testing.T) {
 }
 
 func TestStreamLogReplayThenLive(t *testing.T) {
-	t.Chdir(t.TempDir())
-	path := sharedLogPath()
+	app := testutil.NewApp(t)
+	path := sharedLogPath(app.DataDir())
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +56,7 @@ func TestStreamLogReplayThenLive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fs := NewService(testutil.NewApp(t), &fakeServerRepo{}, fakeProxyRepo{})
+	fs := NewService(app, &fakeServerRepo{}, fakeProxyRepo{})
 	out := &syncRecorder{ResponseRecorder: httptest.NewRecorder()}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

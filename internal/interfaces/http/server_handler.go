@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"podux/internal/application/monitoring"
@@ -56,6 +57,8 @@ type serverOptionVO struct {
 	NetworkStatus *monitoring.NetworkStatus `json:"networkStatus,omitempty"`
 }
 
+var likeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+
 type probePoint struct {
 	T   string  `json:"t"`
 	Val float64 `json:"val"`
@@ -78,9 +81,11 @@ func (h *ServerHandler) RegisterHandlers(e *core.ServeEvent) {
 		var total int64
 		countQ := h.app.DB().Select("COUNT(*)").From("fh_servers")
 		if search != "" {
+			// Escape LIKE wildcards like PocketBase's "~" does, so the count matches the page query.
+			escaped := likeEscaper.Replace(search)
 			countQ = countQ.Where(dbx.NewExp(
-				"(serverName LIKE {:s} OR serverAddr LIKE {:s} OR description LIKE {:s})",
-				dbx.Params{"s": "%" + search + "%"},
+				`(serverName LIKE {:s} ESCAPE '\' OR serverAddr LIKE {:s} ESCAPE '\' OR description LIKE {:s} ESCAPE '\')`,
+				dbx.Params{"s": "%" + escaped + "%"},
 			))
 		}
 		if err := countQ.Row(&total); err != nil {
@@ -179,7 +184,7 @@ func (h *ServerHandler) RegisterHandlers(e *core.ServeEvent) {
 
 		points := make([]probePoint, 0, len(rows))
 		for _, r := range rows {
-			points = append(points, probePoint{T: r.T, Val: r.Val})
+			points = append(points, probePoint(r))
 		}
 		return e.JSON(200, points)
 	}))

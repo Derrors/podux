@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import i18n from "../../../i18n";
@@ -44,6 +44,12 @@ const DEFAULT_FORM: ProxyFormData = {
   pluginPassword: "",
 };
 
+type Transport = Record<string, unknown>;
+
+/** Reads a flag stored as camelCase (frp, TOML import) or snake_case (older forms). */
+const transportFlag = (transport: Transport, key: string, legacyKey: string) =>
+  Boolean(transport[key] ?? transport[legacyKey]);
+
 export interface ServerOption {
   id: string;
   serverName: string;
@@ -66,6 +72,8 @@ export function useProxyForm() {
   const [loadingProxy, setLoadingProxy] = useState(isEditing);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof ProxyFormData, string>>>({});
+  // Transport keys the form doesn't edit (e.g. bandwidthLimit from a TOML import) are kept on save.
+  const loadedTransport = useRef<Transport>({});
 
   useEffect(() => {
     const fetchServers = async () => {
@@ -93,6 +101,8 @@ export function useProxyForm() {
         setLoadingProxy(true);
         const record = await pb.collection("fh_proxies").getOne(id);
         const plugin = record.plugin as Record<string, string> | null | undefined;
+        const transport = (record.transport as Transport | null | undefined) ?? {};
+        loadedTransport.current = transport;
         setFormData({
           serverId: record.serverId as string,
           name: (record.name as string) || "",
@@ -102,8 +112,8 @@ export function useProxyForm() {
           remotePort: String(record.remotePort || ""),
           subdomain: (record.subdomain as string) || "",
           customDomains: (record.customDomains as string[] | undefined) || [],
-          encryption: (record.transport as Record<string, boolean> | undefined)?.use_encryption || false,
-          compression: (record.transport as Record<string, boolean> | undefined)?.use_compression || false,
+          encryption: transportFlag(transport, "useEncryption", "use_encryption"),
+          compression: transportFlag(transport, "useCompression", "use_compression"),
           description: (record.description as string) || "",
           pluginEnabled: !!plugin?.type,
           pluginType: (plugin?.type as ProxyFormData["pluginType"]) || "socks5",
@@ -133,6 +143,9 @@ export function useProxyForm() {
         case "localPort":
         case "remotePort":
           if (!REGEX.PORT.test(value)) error = t("proxy.errorInvalidPort");
+          break;
+        case "subdomain":
+          if (!REGEX.SUBDOMAIN.test(value)) error = t("proxy.errorInvalidSubdomain");
           break;
       }
     }
@@ -175,8 +188,16 @@ export function useProxyForm() {
       else if (!REGEX.PORT.test(data.remotePort)) newErrors.remotePort = t("proxy.errorInvalidPort");
     }
 
-    if (isHttp && !data.subdomain && data.customDomains.length === 0) {
-      newErrors.subdomain = t("proxy.errorSubdomainRequired");
+    if (isHttp) {
+      if (data.subdomain && !REGEX.SUBDOMAIN.test(data.subdomain)) {
+        newErrors.subdomain = t("proxy.errorInvalidSubdomain");
+      }
+      if (data.customDomains.some((d) => !REGEX.DOMAIN.test(d))) {
+        newErrors.customDomains = t("proxy.errorInvalidDomain");
+      }
+      if (!data.subdomain && data.customDomains.length === 0) {
+        newErrors.subdomain = t("proxy.errorSubdomainRequired");
+      }
     }
 
     setErrors(newErrors);
@@ -184,32 +205,42 @@ export function useProxyForm() {
   };
 
   const handleSubmit = async () => {
-    if (!validate(formData)) return;
+    // Blank rows from "Add custom domain" are dropped rather than saved as "".
+    const data = {
+      ...formData,
+      subdomain: formData.subdomain.trim(),
+      customDomains: formData.customDomains.map((d) => d.trim()).filter(Boolean),
+    };
+    if (!validate(data)) return;
 
-    const plugin = formData.pluginEnabled
+    const plugin = data.pluginEnabled
       ? {
-        type: formData.pluginType,
-        ...(formData.pluginUsername ? { username: formData.pluginUsername } : {}),
-        ...(formData.pluginPassword ? { password: formData.pluginPassword } : {}),
+        type: data.pluginType,
+        ...(data.pluginUsername ? { username: data.pluginUsername } : {}),
+        ...(data.pluginPassword ? { password: data.pluginPassword } : {}),
       }
       : null;
 
+    const keptTransport = { ...loadedTransport.current };
+    delete keptTransport.use_encryption;
+    delete keptTransport.use_compression;
+    // status is left out: an update keeps the proxy enabled or disabled as it was.
     const payload = {
-      serverId: formData.serverId,
-      proxyType: formData.type,
-      name: formData.name,
-      localIP: formData.localIp,
-      localPort: formData.localPort,
-      remotePort: formData.remotePort,
-      subdomain: formData.subdomain,
-      customDomains: formData.customDomains,
+      serverId: data.serverId,
+      proxyType: data.type,
+      name: data.name,
+      localIP: data.localIp,
+      localPort: data.localPort,
+      remotePort: data.remotePort,
+      subdomain: data.subdomain,
+      customDomains: data.customDomains,
       transport: {
-        use_encryption: formData.encryption,
-        use_compression: formData.compression,
+        ...keptTransport,
+        useEncryption: data.encryption,
+        useCompression: data.compression,
       },
       plugin,
-      description: formData.description,
-      status: "enabled",
+      description: data.description,
     };
 
     try {
@@ -218,7 +249,7 @@ export function useProxyForm() {
         await pb.collection("fh_proxies").update(id!, payload);
         toast.success(t("proxy.updateSuccess"));
       } else {
-        await pb.collection("fh_proxies").create({ bootStatus: "offline", ...payload });
+        await pb.collection("fh_proxies").create({ status: "enabled", bootStatus: "offline", ...payload });
         toast.success(t("proxy.createSuccess"));
       }
       navigate("/proxies");

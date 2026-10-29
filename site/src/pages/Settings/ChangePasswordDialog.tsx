@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { FormItem } from "../../components/FormItem";
 import { ClientResponseError } from "pocketbase";
 import pb from "../../lib/pocketbase";
-import { getErrorMessage } from "../../lib/api";
+import { getErrorMessage, getErrorStatus } from "../../lib/api";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 
@@ -63,8 +63,11 @@ export function ChangePasswordDialog({
         if (import.meta.env.DEV) {
           console.log("Old password verified successfully");
         }
-      } catch {
-        setError(t("settings.incorrectPassword"));
+      } catch (err) {
+        // A 429 from the login rate limit is not a wrong password.
+        setError(
+          getErrorStatus(err) === 429 ? t("auth.tooManyAttempts") : t("settings.incorrectPassword")
+        );
         setLoading(false);
         return;
       }

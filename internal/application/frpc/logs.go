@@ -18,8 +18,8 @@ import (
 // "[podux:<id>]" prefix that StreamLog uses to pick out that server's lines.
 const serverLogPrefixName = "podux"
 
-func sharedLogPath() string {
-	return filepath.Join("pb_data", "frpc", "frpc.log")
+func sharedLogPath(dataDir string) string {
+	return filepath.Join(dataDir, "frpc", "frpc.log")
 }
 
 func serverLogTag(serverID string) string {
@@ -43,14 +43,13 @@ type sharedLogger struct {
 	level       golog.Level
 }
 
-func (l *sharedLogger) ensure(levelStr string, maxDays int) {
+func (l *sharedLogger) ensure(path, levelStr string, maxDays int) {
 	level := parseLevel(levelStr)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if !l.initialized {
-		path := sharedLogPath()
 		_ = os.MkdirAll(filepath.Dir(path), 0755)
 		log.InitLogger(path, level.String(), maxDays, true)
 		l.initialized = true

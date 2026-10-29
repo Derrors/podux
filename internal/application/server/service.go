@@ -19,10 +19,6 @@ func (s *Service) GetServerCountByStatus(status serverdomain.ServerStatus) (int6
 	return s.repo.CountByBootStatus(status)
 }
 
-func (s *Service) UpdateServerBootStatus(serverID string, status serverdomain.ServerStatus) error {
-	return s.repo.UpdateBootStatus(serverID, status)
-}
-
 func (s *Service) ResetAllServerStatus() {
 	if err := s.repo.ResetAllBootStatus(); err != nil {
 		s.app.Logger().Error("ResetAllServerStatus failed", "error", err)

@@ -22,6 +22,11 @@ import type { ServerListItem } from "../../types/server";
 
 interface ServersViewProps {
   servers: ServerListItem[];
+  stats: {
+    total: number;
+    running: number;
+    stopped: number;
+  };
   loading: boolean;
   refreshing: boolean;
   pendingId: string | null;
@@ -45,6 +50,7 @@ const fade = {
 
 export function ServersView({
   servers,
+  stats,
   loading,
   refreshing,
   pendingId,
@@ -77,7 +83,7 @@ export function ServersView({
           <Reveal visible={mounted} delay={0.1}>
             <StatCard
               title={t("server.totalServers")}
-              value={<AnimateNumber value={servers.length} decimalPlaces={0} />}
+              value={<AnimateNumber value={stats.total} decimalPlaces={0} />}
               color="gray"
               icon={<Icon icon="lucide:hard-drive" width="32" height="32" color="var(--gray-11)" />}
             />
@@ -88,7 +94,7 @@ export function ServersView({
               value={
                 <span style={{ color: "var(--green-9)" }}>
                   <AnimateNumber
-                    value={servers.filter((s) => s.bootStatus === "running").length}
+                    value={stats.running}
                     decimalPlaces={0}
                   />
                 </span>
@@ -103,7 +109,7 @@ export function ServersView({
               value={
                 <span style={{ color: "var(--red-9)" }}>
                   <AnimateNumber
-                    value={servers.filter((s) => s.bootStatus === "stopped").length}
+                    value={stats.stopped}
                     decimalPlaces={0}
                   />
                 </span>

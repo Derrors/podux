@@ -6,5 +6,3 @@ export function SetupPage() {
 
   return <SetupView {...setupState} />;
 }
-
-export default SetupPage;

@@ -27,7 +27,7 @@ flowchart LR
 - `internal/domain` currently defines lightweight models, status values, and repository interfaces only for servers and proxies.
 - `internal/application` handles statistics, imports, frpc configuration/lifecycle, networking and metrics, system settings, and version queries.
 - `internal/infrastructure/persistence` implements server and proxy repositories with dbx/PocketBase.
-- `internal/interfaces/http` exposes `/api/dashboard/*`, `/api/frpc/*`, `/api/import/*`, `/api/servers*`, `/api/system/*`, and `/api/frp/version`. `/api/frpc/logs/stream` answers 404 when no log file exists yet; otherwise it replays up to 50 lines, sends an `event: replay-end` frame, and then streams live lines. Except for initialization-status and initialization endpoints, registered custom routes use `requireAuth`, which only accepts the `Authorization` header (the log stream no longer takes a `?token=` query parameter; the frontend reads it with `fetch`). `/api/servers` list items omit `auth`, `transport`, `log`, and `metadatas`; edit forms load full records through the PocketBase SDK.
+- `internal/interfaces/http` exposes `/api/dashboard/*`, `/api/frpc/*`, `/api/import/*`, `/api/servers*`, `/api/system/*`, and `/api/frp/version`. `/api/frpc/logs/stream` lifts PocketBase's 5-minute write timeout for the connection and answers 404 when no log file exists yet; otherwise it replays up to 50 lines, sends an `event: replay-end` frame, and then streams live lines. Except for initialization-status and initialization endpoints, registered custom routes use `requireAuth`, which only accepts the `Authorization` header (the log stream no longer takes a `?token=` query parameter; the frontend reads it with `fetch`). `/api/servers` list items omit `auth`, `transport`, `log`, and `metadatas`; edit forms load full records through the PocketBase SDK.
 - React also uses the PocketBase SDK directly for `fh_users`, `fh_servers`, and `fh_proxies`; collection API rules control that access boundary.
 
 ### Typical Request Flow
@@ -55,11 +55,11 @@ sequenceDiagram
   end
 ```
 
-Standard server/proxy CRUD primarily uses the PocketBase SDK. Server lists, dashboard data, imports, settings, and runtime controls use custom APIs. After a successful `fh_proxies` create, update, or delete, a hook calls `ReloadFrpc` for each affected running server (both the old and new server when a proxy moves); the frontend does not call `/api/frpc/reload` itself.
+Standard server/proxy CRUD primarily uses the PocketBase SDK. Server lists, dashboard data, imports, settings, and runtime controls use custom APIs. After a successful `fh_proxies` create, update, or delete, a hook calls `ReloadFrpc` for each affected running server (both the old and new server when a proxy moves); the frontend does not call `/api/frpc/reload` itself. `ReloadFrpc` pushes the configs through frp's `UpdateConfigSource`, which completes and filters them like startup does, so only proxies whose effective config changed are restarted; reloads of one server are serialized.
 
 [frpc.Service](../internal/application/frpc/service.go) keeps one instance per server. `LaunchFrpc` reserves the slot before building the config, so a second launch returns `ErrAlreadyRunning` (HTTP 409). `TerminateFrpc` waits up to 10 seconds for the client to exit, and an exiting instance only clears the map entry and statuses it still owns, so a quick stop/start cannot mark the new instance stopped.
 
-frp logs through one package-level logger, so all servers share `pb_data/frpc/frpc.log`. Each server's run context carries an xlog prefix `[podux:<id>]`; [logs.go](../internal/application/frpc/logs.go) filters the stream to that server and to its configured log level. The shared logger uses the most verbose level any launched server has requested. frp lines without a server context (a handful of global messages) are not shown in any server's log view.
+frp logs through one package-level logger, so all servers share `<data dir>/frpc/frpc.log` (the PocketBase data dir: `--dir`, default `pb_data`). Each server's run context carries an xlog prefix `[podux:<id>]`; [logs.go](../internal/application/frpc/logs.go) filters the stream to that server and to its configured log level. The shared logger uses the most verbose level any launched server has requested. frp lines without a server context (a handful of global messages) are not shown in any server's log view.
 
 ### Startup Flow and Background Tasks
 
@@ -84,7 +84,7 @@ The Vite development server listens on `0.0.0.0` and proxies `/api` to `127.0.0.
 
 ## Configuration, Persistence, and Deployment Boundaries
 
-- PocketBase uses `pb_data/` as its default data root; the Docker volume mounts `/app/pb_data`. The database, uploads, the shared `pb_data/frpc/frpc.log`, and `pb_data/frpc/<id>/certs` are runtime data. Older versions wrote per-server logs to `pb_data/frpc/<id>/logs`; those files are no longer read.
+- PocketBase uses `pb_data/` as its default data root; the Docker volume mounts `/app/pb_data`. The database, uploads, the shared `pb_data/frpc/frpc.log`, and `pb_data/frpc/<id>/certs` are runtime data; the frpc paths follow `--dir` when it is set. Older versions wrote per-server logs to `pb_data/frpc/<id>/logs`; those files are no longer read.
 - Server connection/authentication/transport/logging/metadata settings are stored in collection JSON fields. TLS certificate contents are written to a server-specific certificates directory at startup, with private-key permissions set to `0600`. Never commit this content.
 - The fixed system-settings record ID is `wcstsqmz8hur331`; the initialization transaction creates both the first `fh_users` record and the settings record.
 - Geolocation and version queries access external services and depend on network availability. frpc instance status exists only in memory; database statuses are reset together on restart.

@@ -10,7 +10,6 @@ services:
       dockerfile: Dockerfile
       args:
         VERSION: ${VERSION:-latest}
-        BUILD_TIME: ${BUILD_TIME:-$(date -u '+%Y-%m-%d_%H:%M:%S')}
     image: podux:${VERSION:-latest}
     container_name: podux
     restart: unless-stopped

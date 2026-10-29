@@ -4,17 +4,17 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { useSystemStore } from "../../stores/systemStore";
 import { apiPost, getErrorMessage } from "../../lib/api";
+import { useLanguage, type Language } from "../../contexts/language";
 
 export function useSetup() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
+  // The shared language context persists the choice under the same key the rest of the app reads.
+  const { language, setLanguage } = useLanguage();
   const navigate = useNavigate();
   const checkInitialized = useSystemStore((s) => s.checkInitialized);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [language, setLanguage] = useState<"en" | "zh">(
-    (localStorage.getItem("language") as "en" | "zh") || "en"
-  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(true);
@@ -34,11 +34,7 @@ export function useSetup() {
       });
   }, [checkInitialized, navigate]);
 
-  const handleLanguageChange = async (lang: "en" | "zh") => {
-    setLanguage(lang);
-    await i18n.changeLanguage(lang);
-    localStorage.setItem("language", lang);
-  };
+  const handleLanguageChange = (lang: Language) => setLanguage(lang);
 
   const validateForm = () => {
     if (!email || !password || !confirmPassword) {

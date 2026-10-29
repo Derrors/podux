@@ -239,7 +239,7 @@ export function ProxyFormPageView({
 
                   {isHttpType ? (
                     <>
-                      <FormItem label={t("proxy.customDomainsLabel")}>
+                      <FormItem label={t("proxy.customDomainsLabel")} error={errors.customDomains}>
                         <Flex direction="column" gap="2">
                           {formData.customDomains.map((domain, index) => (
                             <Flex key={index} gap="2" align="center">
@@ -279,7 +279,7 @@ export function ProxyFormPageView({
                           </Button>
                         </Flex>
                       </FormItem>
-                      <FormItem label={t("proxy.subdomain")}>
+                      <FormItem label={t("proxy.subdomain")} error={errors.subdomain}>
                         <TextField.Root
                           size="2"
                           placeholder={t("proxy.subdomainPlaceholder")}

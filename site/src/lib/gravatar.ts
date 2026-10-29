@@ -17,5 +17,3 @@ export function getGravatarUrl(
   const hash = md5(trimmedEmail);
   return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=${defaultImage}`;
 }
-
-export default getGravatarUrl;

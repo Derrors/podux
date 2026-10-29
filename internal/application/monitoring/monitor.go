@@ -159,6 +159,12 @@ func (s *MonitorService) updateServerLatency(serverID string, serverAddr string,
 	)
 }
 
+// RefreshGeoLocation looks up a server's location in the background, e.g. after it was
+// created or its address changed, instead of waiting for the next geo interval.
+func (s *MonitorService) RefreshGeoLocation(serverID string, serverAddr string) {
+	go s.updateServerGeoLocation(serverID, serverAddr)
+}
+
 // updateServerGeoLocation updates geolocation for a single server.
 func (s *MonitorService) updateServerGeoLocation(serverID string, serverAddr string) {
 	location, err := s.geoService.Lookup(serverAddr)
@@ -176,7 +182,8 @@ func (s *MonitorService) updateServerGeoLocation(serverID string, serverAddr str
 	_, err = s.app.DB().
 		Update("fh_servers",
 			dbx.Params{"geoLocation": string(geoLocationJSON)},
-			dbx.HashExp{"id": serverID},
+			// Skip the write if the address changed while the lookup ran.
+			dbx.HashExp{"id": serverID, "serverAddr": serverAddr},
 		).Execute()
 
 	if err != nil {

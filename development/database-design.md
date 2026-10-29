@@ -44,14 +44,14 @@ Purpose: remote frps connections and shared frpc configuration.
 | `serverAddr` | text | Required | frps address |
 | `serverPort` | text | Required | Read/edited as an integer by the service/frontend |
 | `description` | text | Optional | Description |
-| `auth` | json | Optional | frp authentication; may contain tokens/secrets |
+| `auth` | json | Optional | frp authentication (`method`, `token`, flat `oidcClientId`/`oidcClientSecret`/`oidcAudience`/`oidcTokenEndpoint`, mapped to frp's `auth.oidc` at launch); may contain tokens/secrets |
 | `transport` | json | Optional | frp transport/TLS; may contain certificate private keys |
 | `metadatas` | json | Optional | frp metadata |
 | `log` | json | Optional | frp logging configuration |
 | `serverVersion` | text | Required, auto `built-in` | Current frp source marker |
 | `bootStatus` | text | Required, auto `stopped` | Runtime status; code uses running/stopped |
 | `autoConnection` | bool | Optional | Connect automatically after startup |
-| `geoLocation` | json | Optional | Populated by MonitorService |
+| `geoLocation` | json | Optional | Populated by MonitorService; looked up right after create, cleared and looked up again when `serverAddr` changes |
 | `user` | text | Optional | frp user |
 | `created`,`updated` | autodate | Automatic | Creation/update timestamps |
 
@@ -68,7 +68,7 @@ Purpose: frpc proxy configuration under a server.
 | `serverId` | relation -> `fh_servers` | Required, N:1 | No cascading delete |
 | `localIP`,`localPort`,`remotePort`,`subdomain` | text | Optional | Endpoint configuration; Go maps ports with NullableInt |
 | `customDomains` | json | Optional | Domain array |
-| `transport`,`plugin` | json | Optional | Extended proxy configuration |
+| `transport`,`plugin` | json | Optional | Extended proxy configuration; `transport` uses frp's camelCase keys (`useEncryption`, `useCompression`, …). Records saved by older forms may hold `use_encryption`/`use_compression`, which frpc config generation and the edit form still read |
 | `status` | select | Required | enabled/disabled |
 | `bootStatus` | select | Required | online/offline |
 | `created`,`updated` | autodate | Automatic | Creation/update timestamps |

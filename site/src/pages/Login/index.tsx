@@ -6,5 +6,3 @@ export function LoginPage() {
 
   return <LoginView {...loginState} />;
 }
-
-export default LoginPage;

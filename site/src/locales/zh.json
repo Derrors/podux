@@ -370,6 +370,8 @@
     "errorInvalidIP": "无效的 IP 或主机名",
     "errorInvalidPort": "无效的端口（1-65535）",
     "errorRequired": "必填",
+    "errorInvalidDomain": "无效的域名（不要带 http://、端口或路径）",
+    "errorInvalidSubdomain": "子域名只能包含字母、数字和连字符",
     "errorSubdomainRequired": "子域名或自定义域名为必填项",
     "createSuccess": "代理创建成功",
     "deleteFailed": "删除代理失败",
@@ -499,7 +501,8 @@
     "viewServers": "查看服务器",
     "importSuccess": "导入完成",
     "warnings": {
-      "tls_file_path_ignored": "该文件中的 TLS 证书、私钥或 CA 是文件路径。Podux 保存的是证书内容而不是路径，因此未导入这些路径。导入后请打开该服务器的编辑表单，粘贴证书、私钥和 CA 的内容。"
+      "tls_file_path_ignored": "该文件中的 TLS 证书、私钥或 CA 是文件路径。Podux 保存的是证书内容而不是路径，因此未导入这些路径。导入后请打开该服务器的编辑表单，粘贴证书、私钥和 CA 的内容。",
+      "unsupported_proxy_skipped": "该文件中有 Podux 不支持的代理类型（仅支持 TCP、UDP、HTTP、HTTPS），这些代理不会导入。"
     }
   },
   "error": {

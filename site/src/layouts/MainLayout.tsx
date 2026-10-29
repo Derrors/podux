@@ -466,5 +466,3 @@ export function MainLayout({ children }: MainLayoutProps) {
     </Flex>
   );
 }
-
-export default MainLayout;
