@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   # ──────────────────────────────────────────────
@@ -98,12 +99,18 @@ jobs:
   docker-dev:
     name: Docker (dev tag)
     if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    needs: backend
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      # GHCR image names must be lowercase; github.repository keeps the owner's case.
+      - name: Image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -125,7 +132,7 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
-          tags: ghcr.io/${{ github.repository }}:dev
+          tags: ${{ steps.image.outputs.name }}:dev
           build-args: |
             VERSION=dev
             BUILD_TIME=${{ github.event.head_commit.timestamp }}

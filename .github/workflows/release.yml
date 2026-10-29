@@ -11,7 +11,6 @@ env:
   PNPM_VERSION: '10'
   APP_NAME: podux
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   # ──────────────────────────────────────────────
@@ -37,6 +36,14 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: site
 
+      - name: Lint
+        run: pnpm run lint
+        working-directory: site
+
+      - name: Test
+        run: pnpm run test
+        working-directory: site
+
       - name: Build
         run: pnpm run build
         working-directory: site
@@ -49,11 +56,38 @@ jobs:
           retention-days: 1
 
   # ──────────────────────────────────────────────
-  # Job 2: Cross-compile Go binaries (all platforms)
+  # Job 2: Go vet + tests (nothing is published unless these pass)
+  # ──────────────────────────────────────────────
+  test-backend:
+    name: Test Backend
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ env.GO_VERSION_FILE }}
+          cache: true
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: pb_public/
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race ./...
+
+  # ──────────────────────────────────────────────
+  # Job 3: Cross-compile Go binaries (all platforms)
   # ──────────────────────────────────────────────
   build-binaries:
     name: Build ${{ matrix.platform }}
-    needs: build-frontend
+    needs: [build-frontend, test-backend]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -98,7 +132,7 @@ jobs:
 
           go build \
             -trimpath \
-            -ldflags "-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}" \
+            -ldflags "-s -w -X podux/pkg/buildinfo.AppVersion=${VERSION#v} -X main.BuildTime=${BUILD_TIME}" \
             -o "${OUTPUT_DIR}/${BINARY}" \
             main.go
 
@@ -129,7 +163,7 @@ jobs:
           retention-days: 1
 
   # ──────────────────────────────────────────────
-  # Job 3: Create GitHub Release
+  # Job 4: Create GitHub Release
   # ──────────────────────────────────────────────
   create-release:
     name: Create GitHub Release
@@ -161,17 +195,23 @@ jobs:
           fail_on_unmatched_files: true
 
   # ──────────────────────────────────────────────
-  # Job 4: Build & push multi-arch Docker image
+  # Job 5: Build & push multi-arch Docker image
   # (Dockerfile handles frontend build internally)
   # ──────────────────────────────────────────────
   docker:
     name: Docker (multi-arch)
+    needs: test-backend
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      # GHCR image names must be lowercase; github.repository keeps the owner's case.
+      - name: Image name
+        id: image
+        run: echo "name=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -190,7 +230,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

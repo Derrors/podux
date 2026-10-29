@@ -28,10 +28,12 @@ ARG VERSION=dev
 ARG BUILD_TIME
 ARG TARGETARCH
 ARG TARGETVARIANT
-RUN GOARM=$(echo "${TARGETVARIANT}" | tr -d 'v') \
+# Release tags (v1.2.3) set the app version; other builds keep the default in pkg/buildinfo.
+RUN case "${VERSION}" in v[0-9]*) APP_VERSION="${VERSION#v}" ;; *) APP_VERSION="" ;; esac && \
+    GOARM=$(echo "${TARGETVARIANT}" | tr -d 'v') \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
     -trimpath \
-    -ldflags "-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}" \
+    -ldflags "-s -w ${APP_VERSION:+-X podux/pkg/buildinfo.AppVersion=${APP_VERSION}} -X main.BuildTime=${BUILD_TIME}" \
     -o podux \
     main.go
 

@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   podux:
-    image: ghcr.io/luckjiawei/podux:${VERSION:-latest}
+    image: ghcr.io/derrors/podux:${VERSION:-latest}
     container_name: podux
     restart: unless-stopped
 
