@@ -384,7 +384,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                     Author:
                   </Text>
                   <Link
-                    to="https://github.com/luckjiawei/"
+                    to="https://github.com/Derrors"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="hover:text-gray-12 cursor-pointer no-underline transition-colors"
@@ -397,12 +397,12 @@ export function MainLayout({ children }: MainLayoutProps) {
                   >
                     <Avatar
                       size="1"
-                      src="https://github.com/luckjiawei.png"
-                      fallback="L"
+                      src="https://github.com/Derrors.png"
+                      fallback="D"
                       radius="full"
                     />
                     <Text weight="medium" size="1">
-                      liujiawei
+                      Derrors
                     </Text>
                   </Link>
                 </Flex>
