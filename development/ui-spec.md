@@ -2,7 +2,7 @@
 
 ## Technology Stack, Entry Point, and Theme
 
-The application UI under `site/` uses React 19, TypeScript, and Vite 7 together with Radix Themes, Tailwind CSS 4, Iconify, Framer Motion, Recharts, Sonner, and react-i18next; it does not use Vue. Vue is used only by the VitePress site under `docs/`.
+The application UI under `site/` uses React 19, TypeScript, and Vite 7 together with Radix Themes, Tailwind CSS 4, Iconify (offline: `vite-plugins/iconify-offline.ts` bundles only the `lucide`/`circle-flags` icons the source uses, so import `Icon` from `@iconify/react/offline` and never rely on the Iconify API), Framer Motion, Recharts, Sonner, and react-i18next; it does not use Vue. Vue is used only by the VitePress site under `docs/`.
 
 `site/src/main.tsx` loads Radix CSS, `index.css`, and i18n in that order, then wraps the application in `ThemeProvider`, `LanguageProvider`, and Radix `<Theme>`. Theme settings are `accentColor="indigo"`, `grayColor="slate"`, and `radius="large"`. Appearance is light/dark, initially taken from the system `prefers-color-scheme` and then stored in `localStorage.theme`. `index.css` is the entry point for Tailwind and global status-dot styles. `App.css` is an unused Vite template remnant not imported by `App.tsx`; do not treat it as the current UI baseline.
 
@@ -22,7 +22,7 @@ The project has no custom token file. It primarily consumes Radix CSS variables 
 | Shadows | A few local `0 4px 12px rgba(0,0,0,.05/.2)` and `0 4px 16px rgba(0,0,0,.1)` values; prefer Card/Dialog defaults |
 | Stacking | Sticky top bar uses `z-50`; full-screen Loading uses `z-index: 9999`; otherwise prefer component overlay defaults |
 
-Hard-coded values such as `#22c55e`, `#E5484D`, `#30A46C`, and `#6b7280` remain scattered through charts/status implementations. Prefer existing Radix tokens. Cleanup requires a separate task that verifies SVG chart compatibility; do not replace these values in bulk during ordinary feature work.
+`site/src` contains no hard-coded hex colors; status colors and the Dashboard topology use Radix variables such as `var(--green-9)` and `var(--red-9)`, which resolve per theme. Keep it that way: use Radix tokens for new colors.
 
 ## Layout and Component Patterns
 
@@ -34,7 +34,8 @@ Hard-coded values such as `#22c55e`, `#E5484D`, `#30A46C`, and `#6b7280` remain 
 - Dialogs: use Radix `AlertDialog` for delete confirmation and Radix `Dialog` for editing, passwords, and similar tasks. Mark dangerous actions red, separate cancel and confirm, and prevent duplicate submissions during async work.
 - Charts: reuse `LatencyChart/ProbeHistory` for latency trends and Dashboard `TopologyChart` for topology. Containers must be responsive, with sufficient contrast in both themes.
 - Latency-axis layout: [LatencyChart](../site/src/components/LatencyChart.tsx) keeps a non-negative left chart margin and uses `YAxis width="auto"` so the full formatted tick, including `ms`, fits inside the SVG and reveal-animation clipping bounds. For regression checks, use probe-history values up to 280ms, 1200ms, and 12000ms at 320px mobile and desktop widths in both themes; check the rendered tick bounds, not only their text content. Repeat after a data refresh changes the number of digits. Keep the reveal animation and chart clipping enabled.
-- Notifications: prefer `sonner` toast for operation success/failure (global top-center with richColors). Do not add alerts; the existing `alert` in ProfileSettings is technical debt.
+- Notifications: prefer `sonner` toast for operation success/failure (global top-center with richColors). Do not add native `alert` calls. Report API failures with `notifyError` from `lib/notify.ts`, which shows a translated title with the backend `error` message as the description.
+- Data fetching: poll with `hooks/usePolling.ts` (pauses in hidden tabs, never overlaps) and paginated lists with `hooks/usePaginatedList.ts`; use `lib/latestRequest.ts` so stale responses are dropped. Reuse `PaginationBar`, `SearchField`, `RefreshButton`, and `ConfirmDeleteDialog` for list pages.
 - Empty/loading/error: reuse `EmptyState` for empty lists and `Loading` for route/page loading. Errors should explain the problem and offer a recovery action. There is no unified ErrorState/ErrorBoundary yet; before adding one, assess whether it should become a shared component.
 
 ## Reference Pages
@@ -64,5 +65,4 @@ Hard-coded values such as `#22c55e`, `#E5484D`, `#30A46C`, and `#6b7280` remain 
 - There is no centralized project-owned set of spacing, shadow, z-index, or motion tokens; the UI relies on Radix scales mixed with local pixel values.
 - Settings has only a desktop 240px sidebar, with no dedicated mobile adaptation rules found; verify on a real device.
 - Error state, ErrorBoundary, and form-error presentation do not yet follow a unified shared pattern.
-- ProfileSettings uses native `alert`, Loading defaults to English `Loading...`, and internationalization remains inconsistent.
 - Actual interaction animations do not yet systematically honor `prefers-reduced-motion`.

@@ -91,7 +91,7 @@ Purpose: bind a metric series to a server or proxy. `serverId` is an optional re
 
 ### `fh_metrics_raw`
 
-Purpose: raw metric points. Required non-cascading `targetId` relation to `fh_metrics_targets`; optional `metricKey` select (currently only `frps_delay`); required `t` date; optional `val` number. The composite non-unique index is ordered `(targetId, t, metricKey)`. There are no autodate fields, and all Record API rules are `null`. MonitorService writes non-negative latency for reachable servers; the 01:05 daily job deletes data older than 7 days.
+Purpose: raw metric points. Required non-cascading `targetId` relation to `fh_metrics_targets`; optional `metricKey` select (currently only `frps_delay`); required `t` date; optional `val` number. The composite non-unique index is ordered `(targetId, t, metricKey)`. There are no autodate fields, and all Record API rules are `null`. MonitorService writes non-negative latency for reachable servers (failed probes are kept only in memory as the latest status); the 01:05 daily job deletes data older than 7 days. The latest-status lookup scans only the last 10 minutes and groups by `targetId`, so it uses the `(targetId, t, metricKey)` index instead of a per-row subquery.
 
 ### `fh_metrics_hourly`
 
