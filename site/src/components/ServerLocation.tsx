@@ -1,5 +1,6 @@
 import { Flex, Text } from "@radix-ui/themes";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
+import { useTranslation } from "react-i18next";
 
 interface GeoLocation {
   city?: string;
@@ -15,6 +16,7 @@ interface ServerLocationProps {
 }
 
 export function ServerLocation({ geoLocation, size = "2", showISP = true }: ServerLocationProps) {
+  const { t } = useTranslation();
   if (!geoLocation) {
     return (
       <Text size={size} color="gray">
@@ -30,7 +32,7 @@ export function ServerLocation({ geoLocation, size = "2", showISP = true }: Serv
       <Flex align="center" gap="1">
         <Icon icon="lucide:map-pin" width="12" height="12" color="var(--gray-11)" />
         <Text size={size} weight="medium">
-          {locationText || "Unknown"}
+          {locationText || t("server.unknownLocation")}
         </Text>
       </Flex>
       {showISP && geoLocation.isp && (

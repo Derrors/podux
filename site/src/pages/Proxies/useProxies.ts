@@ -1,154 +1,101 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import pb from "../../lib/pocketbase";
-import { apiPost } from "../../lib/api";
+import { useCallback } from "react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
+import pb from "../../lib/pocketbase";
+import { notifyError } from "../../lib/notify";
+import { usePaginatedList, type PageQuery, type PageResult } from "../../hooks/usePaginatedList";
+import type { Proxy } from "../../types/proxy";
 
-export interface Proxy {
-  id: string;
-  serverId: string;
-  proxyType: "tcp" | "udp" | "http" | "https";
-  name?: string;
-  localIP?: string;
-  localPort?: string;
-  remotePort?: string;
-  subdomain?: string;
-  customDomains?: string[];
-  transport?: Record<string, boolean>;
-  description?: string;
-  status: "enabled" | "disabled";
-  bootStatus: "online" | "offline";
-  created: string;
-  updated: string;
+const PER_PAGE = 10;
+
+interface ProxyPage extends PageResult<Proxy> {
+  onlineCount: number;
 }
 
 export function useProxies() {
-  const [proxies, setProxies] = useState<Proxy[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const initializedRef = useRef(false);
+  const { t } = useTranslation();
 
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
-  const [onlineCount, setOnlineCount] = useState(0);
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const PER_PAGE = 10;
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch]);
-
-  const fetchProxies = useCallback(
-    async (isRefresh = false) => {
-      try {
-        if (!initializedRef.current) {
-          setLoading(true);
-        } else if (isRefresh) {
-          setRefreshing(true);
-        }
-
-        const searchFilter = debouncedSearch
-          ? `name ~ "${debouncedSearch}" || localIP ~ "${debouncedSearch}" || remotePort ~ "${debouncedSearch}"`
-          : "";
-
-        const [result, onlineResult] = await Promise.all([
-          pb.collection("fh_proxies").getList<Proxy>(page, PER_PAGE, {
-            sort: "-created",
-            expand: "serverId",
-            filter: searchFilter,
-          }),
-          pb.collection("fh_proxies").getList(1, 1, {
-            filter: 'bootStatus = "online"',
-          }),
-        ]);
-        setProxies(result.items);
-        setTotalPages(result.totalPages);
-        setTotalItems(result.totalItems);
-        setOnlineCount(onlineResult.totalItems);
-        initializedRef.current = true;
-      } catch (err) {
-        if ((err as Record<string, unknown>)?.isAbort) return;
-        toast.error(err instanceof Error ? err.message : "Failed to fetch proxies");
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
+  const fetchPage = useCallback(
+    async ({ page, perPage, search, signal }: PageQuery): Promise<ProxyPage> => {
+      const filter = search
+        ? pb.filter("name ~ {:q} || localIP ~ {:q} || remotePort ~ {:q}", { q: search })
+        : "";
+      const [result, online] = await Promise.all([
+        pb.collection("fh_proxies").getList<Proxy>(page, perPage, {
+          sort: "-created",
+          expand: "serverId",
+          filter,
+          signal,
+        }),
+        pb.collection("fh_proxies").getList(1, 1, {
+          filter: 'bootStatus = "online"',
+          signal,
+        }),
+      ]);
+      return {
+        items: result.items,
+        totalPages: result.totalPages,
+        totalItems: result.totalItems,
+        onlineCount: online.totalItems,
+      };
     },
-    [page, debouncedSearch]
+    []
   );
 
-  useEffect(() => {
-    fetchProxies();
-  }, [fetchProxies]);
+  const list = usePaginatedList<Proxy, ProxyPage>({
+    fetchPage,
+    perPage: PER_PAGE,
+    onError: (err) => notifyError(t("proxy.fetchFailed"), err, "proxies-fetch"),
+  });
+  const { reload, mutate } = list;
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchProxies(true);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [fetchProxies]);
-
+  // The backend reloads frpc itself on proxy create/update/delete (record hooks).
   const deleteProxy = async (id: string) => {
-    const proxy = proxies.find((p) => p.id === id);
     try {
       await pb.collection("fh_proxies").delete(id);
-      await fetchProxies();
-      toast.success("Proxy deleted successfully");
-      // Reload frp config if we know which server this proxy belonged to
-      if (proxy?.serverId) {
-        await apiPost("/api/frpc/reload", { id: proxy.serverId });
-      }
+      toast.success(t("proxy.deleteSuccess"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete proxy");
+      notifyError(t("proxy.deleteFailed"), err);
     }
+    await reload();
   };
+
+  const setStatus = (id: string, status: Proxy["status"]) =>
+    mutate((current) => ({
+      ...current,
+      items: current.items.map((p) => (p.id === id ? { ...p, status } : p)),
+    }));
 
   const toggleStatus = async (proxy: Proxy) => {
     const newStatus = proxy.status === "enabled" ? "disabled" : "enabled";
-    // Optimistic update
-    setProxies((prev) =>
-      prev.map((p) => (p.id === proxy.id ? { ...p, status: newStatus } : p))
-    );
+    setStatus(proxy.id, newStatus); // optimistic
     try {
       await pb.collection("fh_proxies").update(proxy.id, { status: newStatus });
-      // Reload frp config so the change takes effect immediately
-      await apiPost("/api/frpc/reload", { id: proxy.serverId });
     } catch (err) {
-      // Rollback on failure
-      setProxies((prev) =>
-        prev.map((p) => (p.id === proxy.id ? { ...p, status: proxy.status } : p))
-      );
-      toast.error(err instanceof Error ? err.message : "Failed to update proxy status");
+      setStatus(proxy.id, proxy.status);
+      notifyError(t("proxy.updateStatusFailed"), err);
     }
   };
 
-  const stats = {
-    total: totalItems,
-    online: onlineCount,
-    offline: totalItems - onlineCount,
-  };
-
-  const isEmpty = !loading && proxies.length === 0;
+  const totalItems = list.result?.totalItems ?? 0;
+  const onlineCount = list.result?.onlineCount ?? 0;
 
   return {
-    proxies,
-    loading,
-    refreshing,
-    isEmpty,
+    proxies: list.items,
+    loading: list.initialLoading,
+    refreshing: list.refreshing,
+    stats: {
+      total: totalItems,
+      online: onlineCount,
+      offline: totalItems - onlineCount,
+    },
     deleteProxy,
     toggleStatus,
-    page,
-    setPage,
-    totalPages,
-    stats,
-    search,
-    setSearch,
-    refreshProxies: () => fetchProxies(true),
+    page: list.page,
+    setPage: list.setPage,
+    totalPages: list.totalPages,
+    search: list.search,
+    setSearch: list.setSearch,
+    refreshProxies: list.refresh,
   };
 }

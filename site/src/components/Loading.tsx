@@ -1,8 +1,10 @@
 import { Flex, Text } from "@radix-ui/themes";
 import { motion } from "framer-motion";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
+import { useTranslation } from "react-i18next";
 
 interface LoadingProps {
+  /** Defaults to the translated "Loading..."; pass "" to hide the text. */
   text?: string;
   size?: "small" | "medium" | "large";
   minHeight?: string | number;
@@ -15,12 +17,9 @@ const sizeMap = {
   large: 48,
 };
 
-export function Loading({
-  text = "Loading...",
-  size = "medium",
-  minHeight,
-  fullscreen = false,
-}: LoadingProps) {
+export function Loading({ text, size = "medium", minHeight, fullscreen = false }: LoadingProps) {
+  const { t } = useTranslation();
+  if (text === undefined) text = t("common.loading");
   const iconSize = sizeMap[size];
 
   const containerStyle = fullscreen

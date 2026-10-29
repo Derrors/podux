@@ -9,8 +9,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { PageTransition } from "../components/PageTransition";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { LanguageToggle } from "../components/LanguageToggle";
-import logo from "../assets/logo.svg";
-import { Icon } from "@iconify/react";
+import logo from "../assets/logo.webp";
+import { Icon } from "@iconify/react/offline";
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -87,19 +87,20 @@ export function MainLayout({ children }: MainLayoutProps) {
   const updateAvailable = appVersion && latestVersion ? isNewerVersion(latestVersion, appVersion) : false;
 
   useEffect(() => {
-    apiGet("/api/system/version")
-      .then((res) => res.json())
-      .then((data) => data.version && setAppVersion(data.version))
-      .catch(() => {});
-
-    apiGet("/api/system/latest-version")
-      .then((res) => res.json())
+    // Version info is decorative: failures (e.g. no GitHub access) are ignored on purpose.
+    apiGet<{ version?: string }>("/api/system/version")
       .then((data) => {
-        if (data.tag_name) setLatestVersion(data.tag_name);
-        if (data.html_url) setReleaseUrl(data.html_url);
-        if (data.body) setReleaseBody(data.body);
+        if (data?.version) setAppVersion(data.version);
       })
-      .catch(() => {});
+      .catch(() => undefined);
+
+    apiGet<{ tag_name?: string; html_url?: string; body?: string }>("/api/system/latest-version")
+      .then((data) => {
+        if (data?.tag_name) setLatestVersion(data.tag_name);
+        if (data?.html_url) setReleaseUrl(data.html_url);
+        if (data?.body) setReleaseBody(data.body);
+      })
+      .catch(() => undefined);
   }, []);
 
   // Get current user info from PocketBase authStore
@@ -144,7 +145,7 @@ export function MainLayout({ children }: MainLayoutProps) {
                       whileHover={{ scale: 1.1, rotate: 10 }}
                       whileTap={{ scale: 0.95 }}
                       src={logo}
-                      alt="Podux Logo"
+                      alt={t("common.logoAlt")}
                       className="h-8 w-8 cursor-pointer rounded-2xl object-contain"
                     />
                     <Text size="4" weight="bold">

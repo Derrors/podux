@@ -9,7 +9,9 @@ try {
   if (userLang === "en" || userLang === "zh") {
     initialLanguage = userLang;
   }
-} catch {}
+} catch {
+  // localStorage unavailable (privacy mode): keep the default language.
+}
 
 i18n.use(initReactI18next).init({
   resources: {

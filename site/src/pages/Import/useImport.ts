@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
-import { apiPost } from "../../lib/api";
+import { apiPost, getErrorMessage } from "../../lib/api";
+import { notifyError } from "../../lib/notify";
 
 export interface ImportServerInfo {
   name: string;
@@ -31,6 +32,8 @@ export interface ImportProxyInfo {
 export interface ImportPreview {
   server: ImportServerInfo;
   proxies: ImportProxyInfo[];
+  /** Warning codes, e.g. "tls_file_path_ignored"; omitted when empty. */
+  warnings?: string[];
 }
 
 export interface ProxySelection {
@@ -85,13 +88,8 @@ export function useImport() {
     setParsing(true);
     setParseError(null);
     try {
-      const res = await apiPost("/api/import/preview", { tomlContent });
-      const data = await res.json();
-      if (!res.ok) {
-        setParseError(data.error || t("import.errorParseFailed"));
-        return;
-      }
-      setPreview(data as ImportPreview);
+      const data = await apiPost<ImportPreview>("/api/import/preview", { tomlContent });
+      setPreview(data);
       // Initialize server name from preview
       setServerName(data.server.name);
       // Initialize proxy selections – import all by default
@@ -102,8 +100,8 @@ export function useImport() {
       }));
       setProxySelections(selections);
       setStep(2);
-    } catch {
-      setParseError(t("import.errorParseFailed"));
+    } catch (err) {
+      setParseError(getErrorMessage(err) || t("import.errorParseFailed"));
     } finally {
       setParsing(false);
     }
@@ -126,23 +124,18 @@ export function useImport() {
     if (!preview) return;
     setImporting(true);
     try {
-      const res = await apiPost("/api/import/execute", {
+      const data = await apiPost<{ result: ImportResult }>("/api/import/execute", {
         tomlContent,
         serverName,
         importServer,
         overwriteServer,
         proxies: proxySelections,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || t("import.errorImportFailed"));
-        return;
-      }
-      setResult(data.result as ImportResult);
+      setResult(data.result);
       setStep(3);
       toast.success(t("import.importSuccess"));
-    } catch {
-      toast.error(t("import.errorImportFailed"));
+    } catch (err) {
+      notifyError(t("import.errorImportFailed"), err);
     } finally {
       setImporting(false);
     }

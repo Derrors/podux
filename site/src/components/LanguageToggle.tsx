@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Icon } from "@iconify/react";
-import { useLanguage } from "../contexts/LanguageContext";
+import { Icon } from "@iconify/react/offline";
+import { useLanguage } from "../contexts/language";
 
 interface LanguageToggleProps {
   language?: "en" | "zh";

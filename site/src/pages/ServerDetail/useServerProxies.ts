@@ -1,67 +1,71 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import pb from "../../lib/pocketbase";
-import { apiPost } from "../../lib/api";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import type { Proxy } from "../Proxies/useProxies";
+import { useTranslation } from "react-i18next";
+import pb from "../../lib/pocketbase";
+import { notifyError } from "../../lib/notify";
+import { STALE } from "../../lib/latestRequest";
+import { useLatestRequest } from "../../hooks/useLatestRequest";
+import { usePolling } from "../../hooks/usePolling";
+import type { Proxy } from "../../types/proxy";
 
+const POLL_INTERVAL_MS = 5000;
+
+/** Proxies of a single server, polled every 5s to keep bootStatus in sync. */
 export function useServerProxies(serverId: string | undefined) {
+  const { t } = useTranslation();
   const [proxies, setProxies] = useState<Proxy[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const mountedRef = useRef(true);
+  const request = useLatestRequest();
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-
-  const fetchProxies = useCallback(async (isManual = false) => {
+  const fetchProxies = useCallback(async () => {
     if (!serverId) return;
-    if (isManual) setRefreshing(true);
     try {
-      const result = await pb.collection("fh_proxies").getFullList<Proxy>({
-        filter: `serverId = "${serverId}"`,
-        sort: "-created",
-      });
-      if (!mountedRef.current) return;
+      const result = await request.run((signal) =>
+        pb.collection("fh_proxies").getFullList<Proxy>({
+          filter: pb.filter("serverId = {:serverId}", { serverId }),
+          sort: "-created",
+          signal,
+        })
+      );
+      if (result === STALE) return;
       setProxies(result);
     } catch (err) {
-      if (!mountedRef.current) return;
-      if ((err as Record<string, unknown>)?.isAbort) return;
-      toast.error(err instanceof Error ? err.message : "Failed to fetch proxies");
-    } finally {
-      if (!mountedRef.current) return;
-      setLoading(false);
-      if (isManual) setRefreshing(false);
+      notifyError(t("proxy.fetchFailed"), err, "server-proxies-fetch");
     }
-  }, [serverId]);
+    setLoading(false);
+  }, [serverId, request, t]);
 
   useEffect(() => {
-    fetchProxies();
+    void fetchProxies();
   }, [fetchProxies]);
 
-  // Auto-refresh every 5s to keep bootStatus in sync
-  useEffect(() => {
-    const interval = setInterval(fetchProxies, 5000);
-    return () => clearInterval(interval);
-  }, [fetchProxies]);
+  usePolling(fetchProxies, POLL_INTERVAL_MS, { enabled: !!serverId });
 
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchProxies();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const setStatus = (id: string, status: Proxy["status"]) =>
+    setProxies((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
+
+  // The backend reloads frpc itself on proxy update/delete (record hooks).
   const toggleStatus = async (proxy: Proxy) => {
     if (togglingId === proxy.id) return;
     const newStatus = proxy.status === "enabled" ? "disabled" : "enabled";
-    setProxies((prev) =>
-      prev.map((p) => (p.id === proxy.id ? { ...p, status: newStatus } : p))
-    );
+    setStatus(proxy.id, newStatus); // optimistic
     setTogglingId(proxy.id);
     try {
       await pb.collection("fh_proxies").update(proxy.id, { status: newStatus });
-      if (serverId) await apiPost("/api/frpc/reload", { id: serverId });
     } catch (err) {
-      setProxies((prev) =>
-        prev.map((p) => (p.id === proxy.id ? { ...p, status: proxy.status } : p))
-      );
-      toast.error(err instanceof Error ? err.message : "Failed to update proxy status");
+      setStatus(proxy.id, proxy.status);
+      notifyError(t("proxy.updateStatusFailed"), err);
     } finally {
       setTogglingId(null);
     }
@@ -71,12 +75,13 @@ export function useServerProxies(serverId: string | undefined) {
     try {
       await pb.collection("fh_proxies").delete(id);
       setProxies((prev) => prev.filter((p) => p.id !== id));
-      toast.success("Proxy deleted successfully");
-      if (serverId) await apiPost("/api/frpc/reload", { id: serverId });
+      toast.success(t("proxy.deleteSuccess"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete proxy");
+      notifyError(t("proxy.deleteFailed"), err);
     }
+    // Supersedes a poll that may have started before the delete.
+    await fetchProxies();
   };
 
-  return { proxies, loading, refreshing, togglingId, toggleStatus, deleteProxy, refresh: () => fetchProxies(true) };
+  return { proxies, loading, refreshing, togglingId, toggleStatus, deleteProxy, refresh };
 }

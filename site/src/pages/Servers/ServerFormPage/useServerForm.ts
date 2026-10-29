@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import pb from "../../../lib/pocketbase";
 import { apiGet } from "../../../lib/api";
+import { notifyError } from "../../../lib/notify";
 import { toast } from "sonner";
 import { REGEX } from "../../../lib/regex";
 
@@ -76,6 +78,7 @@ const defaultData: ServerFormData = {
 };
 
 export function useServerForm() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isEditing = !!id;
@@ -87,10 +90,12 @@ export function useServerForm() {
   const [frpVersion, setFrpVersion] = useState("");
 
   useEffect(() => {
-    apiGet("/api/frp/version")
-      .then((res) => res.json())
-      .then((data) => { if (data.frp) setFrpVersion(data.frp); })
-      .catch(console.error);
+    // Only used for a label; the form works without it.
+    apiGet<{ frp?: string }>("/api/frp/version")
+      .then((data) => {
+        if (data?.frp) setFrpVersion(data.frp);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -121,12 +126,12 @@ export function useServerForm() {
           metadatas: record.metadatas || {},
         });
       })
-      .catch(() => {
-        toast.error("Failed to load server");
+      .catch((err) => {
+        notifyError(t("server.failedToLoad"), err);
         navigate("/servers");
       })
       .finally(() => setLoadingServer(false));
-  }, [id, navigate]);
+  }, [id, navigate, t]);
 
   const handleChange = (
     field: keyof Omit<ServerFormData, "auth" | "log" | "transport" | "metadatas">,
@@ -135,15 +140,15 @@ export function useServerForm() {
     setFormData((prev) => ({ ...prev, [field]: value }));
     // Clear error on change, re-validate format
     if (field === "serverName") {
-      const error = value && !REGEX.SERVER_NAME.test(value as string) ? "Invalid server name" : "";
+      const error = value && !REGEX.SERVER_NAME.test(value as string) ? t("server.errorInvalidName") : "";
       setErrors((prev) => ({ ...prev, serverName: error }));
     }
     if (field === "serverAddr") {
-      const error = value && !REGEX.IP_OR_HOSTNAME.test(value as string) ? "Invalid IP or hostname" : "";
+      const error = value && !REGEX.IP_OR_HOSTNAME.test(value as string) ? t("server.errorInvalidAddr") : "";
       setErrors((prev) => ({ ...prev, serverAddr: error }));
     }
     if (field === "serverPort") {
-      const error = value && !REGEX.PORT.test((value as number).toString()) ? "Invalid port" : "";
+      const error = value && !REGEX.PORT.test((value as number).toString()) ? t("server.errorInvalidPort") : "";
       setErrors((prev) => ({ ...prev, serverPort: error }));
     }
   };
@@ -188,12 +193,12 @@ export function useServerForm() {
 
   const validate = (data: ServerFormData): boolean => {
     const newErrors: Record<string, string> = {};
-    if (!data.serverName) newErrors.serverName = "Required";
-    else if (!REGEX.SERVER_NAME.test(data.serverName)) newErrors.serverName = "Invalid server name";
-    if (!data.serverAddr) newErrors.serverAddr = "Required";
-    else if (!REGEX.IP_OR_HOSTNAME.test(data.serverAddr)) newErrors.serverAddr = "Invalid IP or hostname";
-    if (!data.serverPort) newErrors.serverPort = "Required";
-    else if (!REGEX.PORT.test(data.serverPort.toString())) newErrors.serverPort = "Invalid port";
+    if (!data.serverName) newErrors.serverName = t("server.errorRequired");
+    else if (!REGEX.SERVER_NAME.test(data.serverName)) newErrors.serverName = t("server.errorInvalidName");
+    if (!data.serverAddr) newErrors.serverAddr = t("server.errorRequired");
+    else if (!REGEX.IP_OR_HOSTNAME.test(data.serverAddr)) newErrors.serverAddr = t("server.errorInvalidAddr");
+    if (!data.serverPort) newErrors.serverPort = t("server.errorRequired");
+    else if (!REGEX.PORT.test(data.serverPort.toString())) newErrors.serverPort = t("server.errorInvalidPort");
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -206,14 +211,14 @@ export function useServerForm() {
       const payload = { ...formData, serverPort: Number(formData.serverPort) };
       if (isEditing) {
         await pb.collection("fh_servers").update(id!, payload);
-        toast.success("Server updated successfully");
+        toast.success(t("server.updateSuccess"));
       } else {
         await pb.collection("fh_servers").create({ ...payload, bootStatus: "stopped" });
-        toast.success("Server created successfully");
+        toast.success(t("server.createSuccess"));
       }
       navigate("/servers");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save server");
+      notifyError(t("server.saveFailed"), err);
     } finally {
       setSubmitting(false);
     }

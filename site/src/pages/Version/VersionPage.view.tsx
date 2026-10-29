@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import {
   Box,
   Card,
@@ -20,14 +21,15 @@ interface VersionViewProps {
 }
 
 export function VersionView({ releases, loading, error }: VersionViewProps) {
+  const { t } = useTranslation();
   return (
     <>
       <Flex direction="column" gap="5">
         <Flex justify="between" align="center">
           <Box>
-            <Heading size="6">FRP Versions</Heading>
+            <Heading size="6">{t("version.frpVersions")}</Heading>
             <Text color="gray" size="2">
-              Available releases from fatedier/frp
+              {t("version.frpReleasesDesc")}
             </Text>
           </Box>
           {loading && <Spinner />}
@@ -44,10 +46,10 @@ export function VersionView({ releases, loading, error }: VersionViewProps) {
             <Table.Root>
               <Table.Header>
                 <Table.Row>
-                  <Table.ColumnHeaderCell>Version</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell>Release Date</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell>Download</Table.ColumnHeaderCell>
-                  <Table.ColumnHeaderCell>Github</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell>{t("version.columnVersion")}</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell>{t("version.columnReleaseDate")}</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell>{t("version.columnDownload")}</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell>GitHub</Table.ColumnHeaderCell>
                 </Table.Row>
               </Table.Header>
               <Table.Body>
@@ -80,11 +82,11 @@ export function VersionView({ releases, loading, error }: VersionViewProps) {
                             <polyline points="7 10 12 15 17 10" />
                             <line x1="12" y1="15" x2="12" y2="3" />
                           </svg>
-                          Download for Current Arch
+                          {t("version.downloadCurrentArch")}
                         </Button>
                       ) : (
                         <Text size="1" color="gray">
-                          Not found
+                          {t("version.notFound")}
                         </Text>
                       )}
                     </Table.Cell>
@@ -94,7 +96,7 @@ export function VersionView({ releases, loading, error }: VersionViewProps) {
                         size="1"
                         onClick={() => window.open(release.html_url)}
                       >
-                        View on Github
+                        {t("version.viewOnGithub")}
                       </Button>
                     </Table.Cell>
                   </Table.Row>
@@ -106,7 +108,7 @@ export function VersionView({ releases, loading, error }: VersionViewProps) {
 
         {!loading && !error && releases.length === 0 && (
           <Text align="center" color="gray">
-            No releases found.
+            {t("version.noReleases")}
           </Text>
         )}
       </Flex>

@@ -1,5 +1,10 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { apiGet } from "../../lib/api";
+import { notifyError } from "../../lib/notify";
+import { STALE } from "../../lib/latestRequest";
+import { useLatestRequest } from "../../hooks/useLatestRequest";
+import { usePolling } from "../../hooks/usePolling";
 
 export interface DashboardStats {
   totalProxies: number;
@@ -38,107 +43,74 @@ export interface TopologyData {
   proxies: TopologyProxy[];
 }
 
-export interface RecentActivity {
-  id: string;
-  type:
-    | "proxy_started"
-    | "proxy_stopped"
-    | "server_connected"
-    | "server_disconnected"
-    | "config_updated";
-  message: string;
-  timestamp: Date;
+interface DashboardStatsResponse {
+  proxiesEnabledCount: number;
+  proxiesDisabledCount: number;
+  proxiesOnlineCount?: number;
+  runningCount: number;
+  stoppedCount: number;
+  maxLatency?: number;
+  proxyTypeCounts?: Record<string, number>;
+  uptimeSeconds?: number;
 }
 
-export interface TrafficHistoryPoint {
-  time: string;
-  trafficIn: number;
-  trafficOut: number;
+const POLL_INTERVAL_MS = 30_000;
+
+const EMPTY_STATS: DashboardStats = {
+  totalProxies: 0,
+  runningProxies: 0,
+  stoppedProxies: 0,
+  totalServers: 0,
+  onlineServers: 0,
+  offlineServers: 0,
+  maxLatency: 0,
+  uptime: "0h 0m",
+  proxyTypeCounts: {},
+  uptimeSeconds: 0,
+};
+
+function toStats(data: DashboardStatsResponse): DashboardStats {
+  return {
+    totalProxies: data.proxiesEnabledCount + data.proxiesDisabledCount,
+    runningProxies: data.proxiesOnlineCount ?? 0,
+    stoppedProxies: data.proxiesDisabledCount,
+    totalServers: data.runningCount + data.stoppedCount,
+    onlineServers: data.runningCount,
+    offlineServers: data.stoppedCount,
+    maxLatency: data.maxLatency || 0,
+    uptime: "N/A",
+    proxyTypeCounts: data.proxyTypeCounts || {},
+    uptimeSeconds: data.uptimeSeconds || 0,
+  };
 }
 
 export function useDashboard() {
-  const [stats, setStats] = useState<DashboardStats>({
-    totalProxies: 0,
-    runningProxies: 0,
-    stoppedProxies: 0,
-    totalServers: 0,
-    onlineServers: 0,
-    offlineServers: 0,
-    maxLatency: 0,
-    uptime: "0h 0m",
-    proxyTypeCounts: {},
-    uptimeSeconds: 0,
-  });
-  const [activities] = useState<RecentActivity[]>([]);
-  const [trafficHistory, setTrafficHistory] = useState<TrafficHistoryPoint[]>([]);
+  const { t } = useTranslation();
+  const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [topology, setTopology] = useState<TopologyData>({ servers: [], proxies: [] });
+  const request = useLatestRequest();
 
-  useEffect(() => {
-    // Format traffic data
+  const load = useCallback(async () => {
+    try {
+      const result = await request.run((signal) =>
+        Promise.all([
+          apiGet<DashboardStatsResponse>("/api/dashboard/stats", { signal }),
+          apiGet<TopologyData>("/api/dashboard/topology", { signal }),
+        ])
+      );
+      if (result === STALE) return;
+      const [statsData, topologyData] = result;
+      setStats(toStats(statsData));
+      setTopology({
+        servers: topologyData?.servers ?? [],
+        proxies: topologyData?.proxies ?? [],
+      });
+    } catch (err) {
+      notifyError(t("dashboard.loadFailed"), err, "dashboard-load");
+    }
+  }, [request, t]);
 
-    const loadDashboard = async () => {
-      try {
-        // Fetch dashboard stats from API
-        const response = await apiGet(`/api/dashboard/stats`);
+  usePolling(load, POLL_INTERVAL_MS, { immediate: true });
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch dashboard stats");
-        }
-
-        const data = await response.json();
-
-        setStats({
-          totalProxies: data.proxiesEnabledCount + data.proxiesDisabledCount,
-          runningProxies: data.proxiesOnlineCount ?? 0,
-          stoppedProxies: data.proxiesDisabledCount,
-          totalServers: data.runningCount + data.stoppedCount,
-          onlineServers: data.runningCount,
-          offlineServers: data.stoppedCount,
-          maxLatency: data.maxLatency || 0,
-          // totalTrafficOut: formatBytes(data.totalSent).value,
-          // totalTrafficOutUnit: formatBytes(data.totalSent).unit,
-          uptime: "N/A",
-          proxyTypeCounts: data.proxyTypeCounts || {},
-          uptimeSeconds: data.uptimeSeconds || 0,
-        });
-
-        // Fetch topology from API
-        try {
-          const topoResponse = await apiGet(`/api/dashboard/topology`);
-          if (topoResponse.ok) {
-            const topoData = await topoResponse.json();
-            setTopology(topoData);
-          }
-        } catch (topoErr) {
-          console.error("Failed to load topology:", topoErr);
-        }
-
-        // Fetch traffic history from API
-        try {
-          const historyResponse = await apiGet(`/api/dashboard/traffic-history?hours=24`);
-          if (historyResponse.ok) {
-            const historyData = await historyResponse.json();
-            setTrafficHistory(historyData);
-          } else {
-            // If API fails, set empty array
-            setTrafficHistory([]);
-          }
-        } catch (historyErr) {
-          console.error("Failed to load traffic history:", historyErr);
-          // Set empty array on error
-          setTrafficHistory([]);
-        }
-      } catch (err) {
-        console.error("Failed to load dashboard data:", err);
-      }
-    };
-
-    loadDashboard();
-
-    // Poll for updates every 30 seconds
-    const interval = setInterval(loadDashboard, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  return { stats, activities, trafficHistory, topology };
+  return { stats, topology };
 }

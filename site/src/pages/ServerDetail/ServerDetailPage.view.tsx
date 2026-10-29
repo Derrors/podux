@@ -1,115 +1,41 @@
-import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { Card, Flex, Text, Badge, Grid, Button, Heading, Box, Table, AlertDialog } from "@radix-ui/themes";
-import { Icon } from "@iconify/react";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Card, Flex, Text, Badge, Grid, Button, Heading, Box, Table } from "@radix-ui/themes";
+import { Icon } from "@iconify/react/offline";
+import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../components/PageHeader";
 import { Loading } from "../../components/Loading";
-import pb from "../../lib/pocketbase";
-import type { Server } from "../Servers/useServers";
-import { toast } from "sonner";
-import { motion } from "framer-motion";
 import { ServerLocation } from "../../components/ServerLocation";
+import { ServerStatusBadge } from "../../components/ServerStatusBadge";
 import { ProbeHistory } from "../../components/ProbeHistory";
 import { LatencyChart } from "../../components/LatencyChart";
 import { ServerLogViewer } from "../../components/ServerLogViewer";
-import { useTranslation } from "react-i18next";
-import { useServerProxies } from "./useServerProxies";
-import { apiPost } from "../../lib/api";
+import { RefreshButton } from "../../components/RefreshButton";
+import { ConfirmDeleteDialog } from "../../components/ConfirmDeleteDialog";
+import { CopyableText } from "../../components/CopyableText";
+import { ProxyEndpoints } from "../../components/ProxyEndpoints";
+import { ProxyStatusToggle } from "../../components/ProxyStatusToggle";
+import { Reveal } from "../../components/Reveal";
+import { useDelayedMount } from "../../hooks/useDelayedMount";
+import type { useServerDetail } from "./useServerDetail";
 
-export function ServerDetailPage() {
+type ServerDetailViewProps = ReturnType<typeof useServerDetail>;
+
+export function ServerDetailView({
+  serverId,
+  server,
+  loading,
+  error,
+  actionLoading,
+  handleStart,
+  handleStop,
+  proxies: { proxies, togglingId, toggleStatus, deleteProxy, refreshing, refresh },
+  probeHistory,
+}: ServerDetailViewProps) {
   const { t } = useTranslation();
-  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [server, setServer] = useState<Server | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useDelayedMount();
   const [deleteProxyId, setDeleteProxyId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const { proxies, togglingId, toggleStatus, deleteProxy, refreshing, refresh } = useServerProxies(id);
-
-  const handleCopy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedId(key);
-      setTimeout(() => setCopiedId(null), 1500);
-    });
-  };
-
-  useEffect(() => {
-    // Wait for PageTransition to complete before triggering animations
-    const timer = setTimeout(() => setMounted(true), 100);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const [actionLoading, setActionLoading] = useState(false);
-
-  const fetchServer = useCallback(async (showLoading = true) => {
-    if (!id) return;
-    try {
-      if (showLoading) setLoading(true);
-      const record = await pb.collection("fh_servers").getOne<Server>(id);
-      setServer(record);
-    } catch (err: any) {
-      if (err.isAbort) return;
-      console.error("Failed to load server details:", err);
-      setError(err.message || t("server.failedToLoad"));
-      toast.error(t("server.failedToLoad"));
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  useEffect(() => {
-    fetchServer();
-  }, [fetchServer]);
-
-  const handleStart = async () => {
-    if (!id) return;
-    try {
-      setActionLoading(true);
-      const response = await apiPost("/api/frpc/launch", { id });
-      if (response.ok) {
-        toast.success(t("server.startSuccess"));
-        fetchServer(false);
-      } else {
-        toast.error(t("server.startFailed"));
-      }
-    } catch (err: any) {
-      toast.error(err.message || t("server.startFailed"));
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleStop = async () => {
-    if (!id) return;
-    try {
-      setActionLoading(true);
-      const response = await apiPost("/api/frpc/terminate", { id });
-      if (response.ok) {
-        toast.success(t("server.stopSuccess"));
-        fetchServer(false);
-      } else {
-        toast.error(t("server.stopFailed"));
-      }
-    } catch (err: any) {
-      toast.error(err.message || t("server.stopFailed"));
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "running":
-        return "green";
-      case "stopped":
-        return "red";
-      default:
-        return "gray";
-    }
-  };
 
   if (loading) {
     return (
@@ -134,7 +60,7 @@ export function ServerDetailPage() {
     );
   }
 
-  if (!server) return null;
+  if (!server || !serverId) return null;
 
   return (
     <Flex direction="column" gap="5" className="flex-1">
@@ -151,43 +77,30 @@ export function ServerDetailPage() {
             </Button>
             {server.bootStatus === "running" ? (
               <Button size="2" color="red" variant="soft" onClick={handleStop} disabled={actionLoading}>
-                {actionLoading ? <Icon icon="lucide:loader-2" className="animate-spin" /> : <Icon icon="lucide:square" width="16" height="16" />}
+                {actionLoading ? (
+                  <Icon icon="lucide:loader-2" className="animate-spin" />
+                ) : (
+                  <Icon icon="lucide:square" width="16" height="16" />
+                )}
                 {t("server.stop")}
               </Button>
             ) : (
               <Button size="2" color="green" variant="soft" onClick={handleStart} disabled={actionLoading}>
-                {actionLoading ? <Icon icon="lucide:loader-2" className="animate-spin" /> : <Icon icon="lucide:play" width="16" height="16" />}
+                {actionLoading ? (
+                  <Icon icon="lucide:loader-2" className="animate-spin" />
+                ) : (
+                  <Icon icon="lucide:play" width="16" height="16" />
+                )}
                 {t("server.start")}
               </Button>
             )}
           </Flex>
         }
       />
-      {/*<motion.div*/}
-      {/*  initial={{ opacity: 0, y: -20 }}*/}
-      {/*  animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: -20 }}*/}
-      {/*  transition={{ duration: 0.5, ease: "easeOut" }}*/}
-      {/*>*/}
-      {/*  <Flex justify="end" align="center">*/}
-      {/*    <motion.div*/}
-      {/*      whileHover={{ scale: 1.05 }}*/}
-      {/*      whileTap={{ scale: 0.95 }}*/}
-      {/*    >*/}
-      {/*      <Button variant="soft" onClick={() => navigate("/servers")}>*/}
-      {/*        <Icon icon="lucide:arrow-left" width="16" height="16" />*/}
-      {/*        Back to Servers*/}
-      {/*      </Button>*/}
-      {/*    </motion.div>*/}
-      {/*  </Flex>*/}
-      {/*</motion.div>*/}
 
       <Grid columns={{ initial: "1", md: "2" }} gap="4">
         {/* Basic Info Card */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
-        >
+        <Reveal visible={mounted} delay={0.1}>
           <Card size="3">
             <Flex direction="column" gap="4">
               <Heading size="4">{t("server.basicInformation")}</Heading>
@@ -233,33 +146,7 @@ export function ServerDetailPage() {
                     {t("common.status")}
                   </Text>
                   <Flex align="center" gap="2" mt="1">
-                    <Badge
-                      radius="full"
-                      color={getStatusColor(server.bootStatus)}
-                      variant="soft"
-                      className={`animate-status-appear ${
-                        server.bootStatus === "running"
-                          ? "animate-status-pulse"
-                          : server.bootStatus === "stopped"
-                            ? "animate-status-fade"
-                            : ""
-                      }`}
-                    >
-                      <span
-                        className={`status-dot ${
-                          server.bootStatus === "running"
-                            ? "status-dot-green"
-                            : server.bootStatus === "stopped"
-                              ? "status-dot-red"
-                              : "status-dot-gray"
-                        }`}
-                      />
-                      {server.bootStatus === "running"
-                        ? t("server.running")
-                        : server.bootStatus === "stopped"
-                          ? t("server.stopped")
-                          : t("common.status")}
-                    </Badge>
+                    <ServerStatusBadge status={server.bootStatus} variant="soft" />
                   </Flex>
                 </Box>
                 <Box>
@@ -289,14 +176,10 @@ export function ServerDetailPage() {
               </Grid>
             </Flex>
           </Card>
-        </motion.div>
+        </Reveal>
 
-        {/* Configuration Summary or Other Info */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-          transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
-        >
+        {/* Configuration Summary */}
+        <Reveal visible={mounted} delay={0.2}>
           <Card size="3" style={{ height: "100%" }}>
             <Flex direction="column" gap="4">
               <Heading size="4">{t("server.configuration")}</Heading>
@@ -332,57 +215,46 @@ export function ServerDetailPage() {
               )}
             </Flex>
           </Card>
-        </motion.div>
+        </Reveal>
       </Grid>
 
       {/* Probe History */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-        transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
-      >
+      <Reveal visible={mounted} delay={0.3}>
         <Card size="3">
           <Flex direction="column" gap="3">
             <Heading size="4">{t("server.statusCard")}</Heading>
-            <ProbeHistory serverId={id!} />
+            <ProbeHistory
+              points={probeHistory.points}
+              fetchedAt={probeHistory.fetchedAt}
+              loading={probeHistory.loading}
+            />
           </Flex>
         </Card>
-      </motion.div>
+      </Reveal>
 
       {/* Latency Chart */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-        transition={{ duration: 0.5, delay: 0.35, ease: "easeOut" }}
-      >
+      <Reveal visible={mounted} delay={0.35}>
         <Card size="3">
           <Flex direction="column" gap="3">
             <Heading size="4">{t("server.latencyChartCard")}</Heading>
-            <LatencyChart serverId={id!} />
+            <LatencyChart points={probeHistory.points} loading={probeHistory.loading} />
           </Flex>
         </Card>
-      </motion.div>
+      </Reveal>
 
       {/* Proxy List */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-        transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
-      >
+      <Reveal visible={mounted} delay={0.3}>
         <Card size="3">
           <Flex justify="between" align="center" mb="4">
             <Heading size="4">{t("proxy.title")}</Heading>
             <Flex gap="2">
-              <Button size="1" variant="soft" onClick={refresh} disabled={refreshing}>
-                <Icon
-                  icon="lucide:refresh-cw"
-                  width="14"
-                  height="14"
-                  className={refreshing ? "animate-spin" : ""}
-                />
-                {t("proxy.refresh")}
-              </Button>
-              <Button size="1" onClick={() => navigate(`/proxies/new?serverId=${id}`)}>
+              <RefreshButton
+                size="1"
+                onClick={refresh}
+                refreshing={refreshing}
+                label={t("proxy.refresh")}
+              />
+              <Button size="1" onClick={() => navigate(`/proxies/new?serverId=${serverId}`)}>
                 <Icon icon="lucide:plus" width="14" height="14" />
                 {t("proxy.addProxy")}
               </Button>
@@ -392,7 +264,9 @@ export function ServerDetailPage() {
           {proxies.length === 0 ? (
             <Flex direction="column" align="center" gap="2" py="6">
               <Icon icon="lucide:network" width="32" height="32" color="var(--gray-8)" />
-              <Text size="2" color="gray">{t("proxy.noProxies")}</Text>
+              <Text size="2" color="gray">
+                {t("proxy.noProxies")}
+              </Text>
             </Flex>
           ) : (
             <div className="overflow-x-auto">
@@ -419,104 +293,53 @@ export function ServerDetailPage() {
                         <Badge variant="surface">{proxy.proxyType.toUpperCase()}</Badge>
                       </Table.Cell>
                       <Table.Cell>
-                        {(() => {
-                          const ip = proxy.localIP || "127.0.0.1";
-                          const copyKey = `${proxy.id}-localIP`;
-                          const isCopied = copiedId === copyKey;
-                          return (
-                            <Flex align="center" gap="1" style={{ cursor: "pointer" }}
-                              onClick={() => handleCopy(ip, copyKey)}
-                              title={isCopied ? t("common.copied") : t("common.clickToCopy")}>
-                              <Text size="2" color="gray">{ip}</Text>
-                              <Icon icon={isCopied ? "lucide:check" : "lucide:copy"} width="12" height="12"
-                                color={isCopied ? "var(--green-9)" : "var(--gray-8)"} />
-                            </Flex>
-                          );
-                        })()}
+                        <CopyableText text={proxy.localIP || "127.0.0.1"} color="gray" />
                       </Table.Cell>
                       <Table.Cell>
-                        {proxy.localPort ? (() => {
-                          const copyKey = `${proxy.id}-localPort`;
-                          const isCopied = copiedId === copyKey;
-                          return (
-                            <Flex align="center" gap="1" style={{ cursor: "pointer" }}
-                              onClick={() => handleCopy(String(proxy.localPort), copyKey)}
-                              title={isCopied ? t("common.copied") : t("common.clickToCopy")}>
-                              <Text size="2">{proxy.localPort}</Text>
-                              <Icon icon={isCopied ? "lucide:check" : "lucide:copy"} width="12" height="12"
-                                color={isCopied ? "var(--green-9)" : "var(--gray-8)"} />
-                            </Flex>
-                          );
-                        })() : <Text size="2" color="gray">-</Text>}
+                        {proxy.localPort ? (
+                          <CopyableText text={String(proxy.localPort)} />
+                        ) : (
+                          <Text size="2" color="gray">
+                            -
+                          </Text>
+                        )}
                       </Table.Cell>
                       <Table.Cell>
-                        {(() => {
-                          if (proxy.proxyType === "http" || proxy.proxyType === "https") {
-                            const items: string[] = [];
-                            if (proxy.subdomain && server?.serverAddr) items.push(`${proxy.subdomain}.${server.serverAddr}`);
-                            if (proxy.customDomains?.length) items.push(...proxy.customDomains);
-                            if (items.length === 0) return <Text size="2" color="gray">-</Text>;
-                            return (
-                              <Flex direction="column" gap="1">
-                                {items.map((domain, i) => {
-                                  const copyKey = `${proxy.id}-domain-${i}`;
-                                  const isCopied = copiedId === copyKey;
-                                  return (
-                                    <Flex key={i} align="center" gap="1" style={{ cursor: "pointer" }}
-                                      onClick={() => handleCopy(domain, copyKey)}
-                                      title={isCopied ? t("common.copied") : t("common.clickToCopy")}>
-                                      <Text size="2">{domain}</Text>
-                                      <Icon icon={isCopied ? "lucide:check" : "lucide:copy"} width="12" height="12"
-                                        color={isCopied ? "var(--green-9)" : "var(--gray-8)"} />
-                                    </Flex>
-                                  );
-                                })}
-                              </Flex>
-                            );
-                          }
-                          const displayText = proxy.remotePort || "-";
-                          if (displayText === "-") return <Text size="2" color="gray">-</Text>;
-                          const copyKey = `${proxy.id}-port`;
-                          const isCopied = copiedId === copyKey;
-                          return (
-                            <Flex align="center" gap="1" style={{ cursor: "pointer" }}
-                              onClick={() => handleCopy(displayText, copyKey)}
-                              title={isCopied ? t("common.copied") : t("common.clickToCopy")}>
-                              <Text size="2">{displayText}</Text>
-                              <Icon icon={isCopied ? "lucide:check" : "lucide:copy"} width="12" height="12"
-                                color={isCopied ? "var(--green-9)" : "var(--gray-8)"} />
-                            </Flex>
-                          );
-                        })()}
+                        <ProxyEndpoints proxy={proxy} serverAddr={server.serverAddr} />
                       </Table.Cell>
                       <Table.Cell>
                         <Badge radius="full" color={proxy.bootStatus === "online" ? "green" : "red"}>
-                          <span className={`status-dot ${proxy.bootStatus === "online" ? "status-dot-green" : "status-dot-red"}`} />
+                          <span
+                            className={`status-dot ${
+                              proxy.bootStatus === "online" ? "status-dot-green" : "status-dot-red"
+                            }`}
+                          />
                           {proxy.bootStatus === "online" ? t("proxy.online") : t("proxy.offline")}
                         </Badge>
                       </Table.Cell>
                       <Table.Cell>
-                        <button
-                          onClick={() => toggleStatus(proxy)}
-                          disabled={togglingId === proxy.id}
-                          style={{ cursor: togglingId === proxy.id ? "not-allowed" : "pointer", background: "none", border: "none", padding: 0, opacity: togglingId === proxy.id ? 0.6 : 1, transition: "opacity 0.2s" }}
-                          title={proxy.status === "enabled" ? t("proxy.clickToDisable") : t("proxy.clickToEnable")}
-                        >
-                          <Badge color={proxy.status === "enabled" ? "green" : "gray"} style={{ cursor: "inherit" }}>
-                            {togglingId === proxy.id
-                              ? <Icon icon="lucide:loader-2" width="12" height="12" className="animate-spin" />
-                              : <Icon icon={proxy.status === "enabled" ? "lucide:power" : "lucide:power-off"} width="12" height="12" />}
-                            {proxy.status === "enabled" ? t("proxy.enabled") : t("proxy.disabled")}
-                          </Badge>
-                        </button>
+                        <ProxyStatusToggle
+                          enabled={proxy.status === "enabled"}
+                          toggling={togglingId === proxy.id}
+                          onToggle={() => void toggleStatus(proxy)}
+                        />
                       </Table.Cell>
                       <Table.Cell>
                         <Flex gap="2">
-                          <Button size="1" variant="soft" onClick={() => navigate(`/proxies/${proxy.id}/edit`)}>
+                          <Button
+                            size="1"
+                            variant="soft"
+                            onClick={() => navigate(`/proxies/${proxy.id}/edit`)}
+                          >
                             <Icon icon="lucide:pencil" width="14" height="14" />
                             {t("common.edit")}
                           </Button>
-                          <Button size="1" variant="soft" color="red" onClick={() => setDeleteProxyId(proxy.id)}>
+                          <Button
+                            size="1"
+                            variant="soft"
+                            color="red"
+                            onClick={() => setDeleteProxyId(proxy.id)}
+                          >
                             <Icon icon="lucide:trash-2" width="14" height="14" />
                             {t("common.delete")}
                           </Button>
@@ -529,51 +352,25 @@ export function ServerDetailPage() {
             </div>
           )}
         </Card>
-      </motion.div>
+      </Reveal>
 
       {/* Logs Section */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-        transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
-      >
+      <Reveal visible={mounted} delay={0.3}>
         <Card size="3">
-          <ServerLogViewer serverId={id!} />
+          <ServerLogViewer serverId={serverId} />
         </Card>
-      </motion.div>
+      </Reveal>
 
-      {/* Proxy Delete Confirmation */}
-      <AlertDialog.Root open={!!deleteProxyId} onOpenChange={() => setDeleteProxyId(null)}>
-        <AlertDialog.Content maxWidth="450px">
-          <AlertDialog.Title>{t("proxy.confirmDeletion")}</AlertDialog.Title>
-          <AlertDialog.Description size="2">
-            {t("proxy.deleteConfirmMessage")}
-          </AlertDialog.Description>
-          <Flex gap="3" mt="4" justify="end">
-            <AlertDialog.Cancel>
-              <Button variant="soft" color="gray">
-                <Icon icon="lucide:x" width="16" height="16" />
-                {t("common.cancel")}
-              </Button>
-            </AlertDialog.Cancel>
-            <AlertDialog.Action>
-              <Button
-                variant="solid"
-                color="red"
-                onClick={() => {
-                  if (deleteProxyId) {
-                    deleteProxy(deleteProxyId);
-                    setDeleteProxyId(null);
-                  }
-                }}
-              >
-                <Icon icon="lucide:trash-2" width="16" height="16" />
-                {t("common.delete")}
-              </Button>
-            </AlertDialog.Action>
-          </Flex>
-        </AlertDialog.Content>
-      </AlertDialog.Root>
+      <ConfirmDeleteDialog
+        open={deleteProxyId !== null}
+        title={t("proxy.confirmDeletion")}
+        description={t("proxy.deleteConfirmMessage")}
+        onClose={() => setDeleteProxyId(null)}
+        onConfirm={() => {
+          if (deleteProxyId) void deleteProxy(deleteProxyId);
+          setDeleteProxyId(null);
+        }}
+      />
     </Flex>
   );
 }

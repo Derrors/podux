@@ -1,4 +1,4 @@
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { Box, Flex, Text } from "@radix-ui/themes";
 
 interface SectionHeadingProps {

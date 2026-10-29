@@ -1,6 +1,6 @@
 import { Select } from "@radix-ui/themes";
 import { useTranslation } from "react-i18next";
-import { useLanguage } from "../contexts/LanguageContext";
+import { useLanguage } from "../contexts/language";
 
 export default function LanguageSelector() {
   const { t } = useTranslation();

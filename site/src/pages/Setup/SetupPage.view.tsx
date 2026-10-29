@@ -5,8 +5,8 @@ import { PageTransition } from "../../components/PageTransition";
 import { Loading } from "../../components/Loading";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { LanguageToggle } from "../../components/LanguageToggle";
-import { Icon } from "@iconify/react";
-import logo from "../../assets/logo.svg";
+import { Icon } from "@iconify/react/offline";
+import logo from "../../assets/logo.webp";
 import { useTranslation } from "react-i18next";
 
 interface SetupViewProps {
@@ -47,7 +47,7 @@ export function SetupView({
   }
 
   if (loading) {
-    return <Loading fullscreen text={t("setup.initializing", "Initializing...")} />;
+    return <Loading fullscreen text={t("setup.initializing")} />;
   }
 
   return (
@@ -87,7 +87,7 @@ export function SetupView({
                     whileHover={{ scale: 1.1, rotate: 10 }}
                     whileTap={{ scale: 0.95 }}
                     src={logo}
-                    alt="Podux Logo"
+                    alt={t("common.logoAlt")}
                     className="h-16 w-16 cursor-pointer rounded-2xl object-contain"
                   />
                   <Heading size="6">Podux</Heading>
@@ -99,7 +99,7 @@ export function SetupView({
                 transition={{ delay: 0.3, duration: 0.5 }}
               >
                 <Heading size="4" align="center">
-                  {t("setup.title", "System Initialization")}
+                  {t("setup.title")}
                 </Heading>
               </motion.div>
               <motion.div
@@ -108,7 +108,7 @@ export function SetupView({
                 transition={{ delay: 0.4, duration: 0.5 }}
               >
                 <Text color="gray" size="2" align="center">
-                  {t("setup.description", "Set up the administrator account and default language")}
+                  {t("setup.description")}
                 </Text>
               </motion.div>
             </Flex>
@@ -140,7 +140,7 @@ export function SetupView({
             >
               <Flex direction="column" gap="1">
                 <Text as="label" size="3" weight="medium">
-                  {t("setup.language", "Default Language")}
+                  {t("setup.language")}
                 </Text>
                 <Select.Root value={language} onValueChange={handleLanguageChange}>
                   <Select.Trigger className="w-full" />
@@ -148,13 +148,13 @@ export function SetupView({
                     <Select.Item value="en">
                       <Flex align="center" gap="2">
                         <Icon icon="circle-flags:us" width="16" />
-                        {t("language.en", "English")}
+                        {t("language.en")}
                       </Flex>
                     </Select.Item>
                     <Select.Item value="zh">
                       <Flex align="center" gap="2">
                         <Icon icon="circle-flags:cn" width="16" />
-                        {t("language.zh", "中文")}
+                        {t("language.zh")}
                       </Flex>
                     </Select.Item>
                   </Select.Content>
@@ -170,11 +170,11 @@ export function SetupView({
             >
               <Flex direction="column" gap="1">
                 <Text as="label" size="3" weight="medium">
-                  {t("setup.adminEmail", "Administrator Email")}
+                  {t("setup.adminEmail")}
                 </Text>
                 <TextField.Root
                   size="3"
-                  placeholder={t("setup.enterAdminEmail", "Enter admin email")}
+                  placeholder={t("setup.enterAdminEmail")}
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -195,11 +195,11 @@ export function SetupView({
             >
               <Flex direction="column" gap="1">
                 <Text as="label" size="3" weight="medium">
-                  {t("setup.password", "Password")}
+                  {t("setup.password")}
                 </Text>
                 <TextField.Root
                   size="3"
-                  placeholder={t("setup.enterPassword", "At least 8 characters")}
+                  placeholder={t("setup.enterPassword")}
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -227,11 +227,11 @@ export function SetupView({
             >
               <Flex direction="column" gap="1">
                 <Text as="label" size="3" weight="medium">
-                  {t("setup.confirmPassword", "Confirm Password")}
+                  {t("setup.confirmPassword")}
                 </Text>
                 <TextField.Root
                   size="3"
-                  placeholder={t("setup.enterPasswordAgain", "Enter password again")}
+                  placeholder={t("setup.enterPasswordAgain")}
                   type={showConfirmPassword ? "text" : "password"}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
@@ -262,7 +262,7 @@ export function SetupView({
             >
               <Button size="3" type="submit" className="!w-full cursor-pointer">
                 <Icon icon="lucide:check-circle" />
-                {t("setup.complete", "Complete Setup")}
+                {t("setup.complete")}
               </Button>
             </motion.div>
           </Flex>

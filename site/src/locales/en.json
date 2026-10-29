@@ -30,7 +30,11 @@
     "discardChangesDesc": "You have unsaved changes. Are you sure you want to discard them?",
     "discard": "Discard",
     "keepEditing": "Keep Editing",
-    "back": "Back"
+    "back": "Back",
+    "clearSearch": "Clear search",
+    "logoAlt": "Podux logo",
+    "nextPage": "Next page",
+    "previousPage": "Previous page"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -55,7 +59,8 @@
     "loginFailed": "Login failed",
     "signInToAccount": "Sign in to your Podux account",
     "enterEmail": "Enter your email",
-    "enterPassword": "Enter your password"
+    "enterPassword": "Enter your password",
+    "invalidCredentials": "Invalid email or password"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -90,7 +95,8 @@
     "qaServersDesc": "Manage server connections",
     "qaProxiesDesc": "Configure proxy tunnels",
     "qaImportDesc": "Import from TOML config",
-    "qaSettingsDesc": "App preferences & profile"
+    "qaSettingsDesc": "App preferences & profile",
+    "loadFailed": "Failed to load dashboard data"
   },
   "server": {
     "title": "Servers",
@@ -255,7 +261,25 @@
     "latencyMs": "Latency (ms)",
     "viewLogs": "Logs",
     "viewLogsDesc": "Real-time connection log stream",
-    "backToDetail": "Back to Details"
+    "backToDetail": "Back to Details",
+    "createSuccess": "Server created successfully",
+    "deleteFailed": "Failed to delete server",
+    "deleteSuccess": "Server deleted successfully",
+    "errorInvalidAddr": "Invalid IP or hostname",
+    "errorInvalidName": "Invalid server name",
+    "errorRequired": "Required",
+    "fetchFailed": "Failed to load servers",
+    "logStream": {
+      "connecting": "Connecting",
+      "connected": "Live",
+      "reconnecting": "Reconnecting",
+      "disconnected": "Disconnected",
+      "reconnect": "Reconnect"
+    },
+    "saveFailed": "Failed to save server",
+    "unknownLocation": "Unknown",
+    "unreachable": "Unreachable",
+    "updateSuccess": "Server updated successfully"
   },
   "proxy": {
     "title": "Proxies",
@@ -343,7 +367,15 @@
     "errorInvalidIP": "Invalid IP or hostname",
     "errorInvalidPort": "Invalid port (1-65535)",
     "errorRequired": "Required",
-    "errorSubdomainRequired": "Subdomain or custom domains required"
+    "errorSubdomainRequired": "Subdomain or custom domains required",
+    "createSuccess": "Proxy created successfully",
+    "deleteFailed": "Failed to delete proxy",
+    "deleteSuccess": "Proxy deleted successfully",
+    "fetchFailed": "Failed to load proxies",
+    "loadFailed": "Failed to load proxy",
+    "saveFailed": "Failed to save proxy",
+    "updateStatusFailed": "Failed to update proxy status",
+    "updateSuccess": "Proxy updated successfully"
   },
   "settings": {
     "title": "Settings",
@@ -396,7 +428,10 @@
     "passwordsDoNotMatch": "New passwords do not match",
     "passwordTooShort": "Password must be at least 8 characters long",
     "incorrectPassword": "Current password is incorrect",
-    "passwordUpdateSuccess": "Password updated successfully! Please sign in again."
+    "passwordUpdateSuccess": "Password updated successfully! Please sign in again.",
+    "loadFailed": "Failed to load settings",
+    "notAuthenticated": "You are not signed in",
+    "profileUpdateFailed": "Failed to update profile. Please try again."
   },
   "language": {
     "en": "English",
@@ -410,7 +445,17 @@
     "upToDate": "You are up to date",
     "updateAvailable": "Update Available",
     "updateNow": "View Release",
-    "releaseNotes": "Release Notes"
+    "releaseNotes": "Release Notes",
+    "columnDownload": "Download",
+    "columnReleaseDate": "Release Date",
+    "columnVersion": "Version",
+    "downloadCurrentArch": "Download for Current Arch",
+    "fetchFailed": "Failed to load releases",
+    "frpReleasesDesc": "Available releases from fatedier/frp",
+    "frpVersions": "FRP Versions",
+    "noReleases": "No releases found.",
+    "notFound": "Not found",
+    "viewOnGithub": "View on GitHub"
   },
   "import": {
     "title": "Import",
@@ -458,13 +503,18 @@
     "skipped": "Skipped",
     "importAnother": "Import Another",
     "viewServers": "View Servers",
-    "importSuccess": "Import completed successfully"
+    "importSuccess": "Import completed successfully",
+    "warnings": {
+      "tls_file_path_ignored": "The TLS certificate, key or CA in this file are file paths. Podux stores certificate contents, not paths, so they were not imported. After importing, open the server's edit form and paste the certificate, key and CA contents."
+    }
   },
   "error": {
     "notFound": "Page Not Found",
     "goHome": "Go to Home",
     "somethingWrong": "Something went wrong",
-    "tryAgain": "Try Again"
+    "tryAgain": "Try Again",
+    "backendUnavailable": "Cannot reach the Podux server",
+    "backendUnavailableDesc": "The system status could not be checked. Make sure the service is running, then try again."
   },
   "setup": {
     "title": "System Initialization",
@@ -487,5 +537,9 @@
       "setupFailed": "Failed to initialize system. Please try again.",
       "settingsCreateFailed": "Failed to initialize system settings"
     }
+  },
+  "time": {
+    "justNow": "Just now",
+    "never": "Never"
   }
 }

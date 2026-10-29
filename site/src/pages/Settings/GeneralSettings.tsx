@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { apiGet, apiPut } from "../../lib/api";
+import { notifyError } from "../../lib/notify";
 import { Box, Flex, Heading, Text, Separator, TextField, Button } from "@radix-ui/themes";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { FormItem } from "../../components/FormItem";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -26,39 +27,32 @@ export function GeneralSettings() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const response = await apiGet("/api/system/settings");
-        if (response.ok) {
-          const data = await response.json();
-          if (data.general) {
-            setSettings({
-              latencyCheckInterval: data.general.latencyCheckInterval || 30,
-              locationCheckInterval: data.general.locationCheckInterval || 60,
-            });
-          }
+        const data = await apiGet<{ general?: Partial<GeneralSettingsData> }>(
+          "/api/system/settings"
+        );
+        if (data?.general) {
+          setSettings({
+            latencyCheckInterval: data.general.latencyCheckInterval || 30,
+            locationCheckInterval: data.general.locationCheckInterval || 60,
+          });
         }
       } catch (error) {
-        console.error("Failed to load settings:", error);
+        notifyError(t("settings.loadFailed"), error);
       } finally {
         setLoading(false);
       }
     };
 
     loadSettings();
-  }, []);
+  }, [t]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const response = await apiPut("/api/system/settings", { general: settings });
-
-      if (!response.ok) {
-        throw new Error("Failed to save settings");
-      }
-
+      await apiPut("/api/system/settings", { general: settings });
       toast.success(t("settings.saveSuccess"));
     } catch (error) {
-      console.error("Failed to save settings:", error);
-      toast.error(t("settings.saveFailed"));
+      notifyError(t("settings.saveFailed"), error);
     } finally {
       setSaving(false);
     }
@@ -74,7 +68,7 @@ export function GeneralSettings() {
   if (loading) {
     return (
       <Flex justify="center" align="center" style={{ minHeight: "400px" }}>
-        <Icon icon="eos-icons:loading" width="32" height="32" />
+        <Icon icon="lucide:loader-circle" width="32" height="32" className="animate-spin" />
       </Flex>
     );
   }
@@ -160,7 +154,7 @@ export function GeneralSettings() {
         </Button>
         <Button size="2" onClick={handleSave} disabled={saving}>
           {saving ? (
-            <Icon icon="eos-icons:loading" width="16" height="16" />
+            <Icon icon="lucide:loader-circle" width="16" height="16" className="animate-spin" />
           ) : (
             <Icon icon="lucide:check" width="16" height="16" />
           )}

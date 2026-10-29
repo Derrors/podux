@@ -1,6 +1,6 @@
 import { Box, Flex, Text, Button } from "@radix-ui/themes";
 import React from "react";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 
 interface EmptyStateProps {
   icon?: React.ReactNode;

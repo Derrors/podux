@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Dialog, Button, Flex, TextField, Callout } from "@radix-ui/themes";
 import { AnimatePresence, motion } from "framer-motion";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { useNavigate } from "react-router-dom";
 import { FormItem } from "../../components/FormItem";
+import { ClientResponseError } from "pocketbase";
 import pb from "../../lib/pocketbase";
+import { getErrorMessage } from "../../lib/api";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 
@@ -45,7 +47,7 @@ export function ChangePasswordDialog({
 
     setLoading(true);
     try {
-      if (!pb.authStore.record) throw new Error("User not authenticated");
+      if (!pb.authStore.record) throw new Error(t("settings.notAuthenticated"));
 
       const userEmail = pb.authStore.record.email;
       const collectionName = pb.authStore.record.collectionName || "fh_users";
@@ -61,10 +63,7 @@ export function ChangePasswordDialog({
         if (import.meta.env.DEV) {
           console.log("Old password verified successfully");
         }
-      } catch (authErr: any) {
-        if (import.meta.env.DEV) {
-          console.error("Old password verification failed:", authErr);
-        }
+      } catch {
         setError(t("settings.incorrectPassword"));
         setLoading(false);
         return;
@@ -87,14 +86,13 @@ export function ChangePasswordDialog({
       // Logout and redirect to login page
       pb.authStore.clear();
       navigate("/login", { replace: true });
-    } catch (err: any) {
-      if (import.meta.env.DEV) {
-        console.error("Password update error:", err);
-      }
-
+    } catch (err) {
       // Handle PocketBase validation errors
-      if (err.response?.data) {
-        const data = err.response.data;
+      const data =
+        err instanceof ClientResponseError
+          ? (err.response?.data as Record<string, { message?: string }> | undefined)
+          : undefined;
+      if (data && Object.keys(data).length > 0) {
         if (data.oldPassword) {
           setError(t("settings.incorrectPassword"));
         } else if (data.password) {
@@ -102,10 +100,10 @@ export function ChangePasswordDialog({
         } else if (data.passwordConfirm) {
           setError(data.passwordConfirm.message || t("settings.passwordsDoNotMatch"));
         } else {
-          setError(err.message || t("settings.saveFailed"));
+          setError(getErrorMessage(err) || t("settings.saveFailed"));
         }
       } else {
-        setError(err.message || t("settings.saveFailed"));
+        setError(getErrorMessage(err) || t("settings.saveFailed"));
       }
     } finally {
       setLoading(false);

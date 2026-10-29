@@ -4,8 +4,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { PageTransition } from "../../components/PageTransition";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import { LanguageToggle } from "../../components/LanguageToggle";
-import { Icon } from "@iconify/react";
-import logo from "../../assets/logo.svg";
+import { Icon } from "@iconify/react/offline";
+import logo from "../../assets/logo.webp";
 import { useTranslation } from "react-i18next";
 
 interface LoginViewProps {
@@ -66,7 +66,7 @@ export function LoginView({
                     whileHover={{ scale: 1.1, rotate: 10 }}
                     whileTap={{ scale: 0.95 }}
                     src={logo}
-                    alt="Podux Logo"
+                    alt={t("common.logoAlt")}
                     className="h-16 w-16 cursor-pointer rounded-2xl object-contain"
                   />
                   <Heading size="6">Podux</Heading>

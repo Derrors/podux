@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Icon } from "@iconify/react";
-import { useTheme } from "../contexts/ThemeContext";
+import { Icon } from "@iconify/react/offline";
+import { useTheme } from "../contexts/theme";
 
 export function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
@@ -27,7 +27,7 @@ export function ThemeToggle() {
             transition={{ duration: 0.2 }}
           >
             {theme === "light" ? (
-              <Icon icon="lucide:sun" width="20" height="20" color="#f59e0b" />
+              <Icon icon="lucide:sun" width="20" height="20" color="var(--amber-9)" />
             ) : (
               <Icon icon="lucide:moon" width="20" height="20" />
             )}

@@ -10,16 +10,17 @@ import {
   Avatar,
   Badge,
 } from "@radix-ui/themes";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { FormItem } from "../../components/FormItem";
 import pb from "../../lib/pocketbase";
 import { getGravatarUrl } from "../../lib/gravatar";
-import { getTimeAgo } from "../../lib/format";
+import { formatTimeAgo } from "../../lib/format";
+import { notifyError } from "../../lib/notify";
 import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import { useTranslation } from "react-i18next";
 
 export function ProfileSettings() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [nickname, setNickname] = useState(
     pb.authStore.record?.name || pb.authStore.record?.nickname || ""
   );
@@ -83,8 +84,7 @@ export function ProfileSettings() {
       // Force refresh/reload might be needed or just let PB auth store update reactively
       window.location.reload(); // Simple way to refresh state across app
     } catch (error) {
-      console.error("Failed to update profile", error);
-      alert("Failed to update profile. Please try again.");
+      notifyError(t("settings.profileUpdateFailed"), error);
     } finally {
       setSaving(false);
     }
@@ -258,7 +258,7 @@ export function ProfileSettings() {
                   {t("settings.password")}
                 </Text>
                 <Text size="2" color="gray">
-                  {t("settings.lastChanged")} {getTimeAgo(getPasswordChangeTimestamp())}
+                  {t("settings.lastChanged")} {formatTimeAgo(getPasswordChangeTimestamp(), i18n.language, t)}
                 </Text>
               </Box>
               <Button variant="soft" size="1" onClick={() => setIsPasswordDialogOpen(true)}>
@@ -278,7 +278,7 @@ export function ProfileSettings() {
         </Button>
         <Button size="2" onClick={handleSave} disabled={saving}>
           {saving ? (
-            <Icon icon="eos-icons:loading" width="16" height="16" />
+            <Icon icon="lucide:loader-circle" width="16" height="16" className="animate-spin" />
           ) : (
             <Icon icon="lucide:check" width="16" height="16" />
           )}

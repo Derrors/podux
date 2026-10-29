@@ -1,173 +1,76 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useState } from "react";
+import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import pb from "../../lib/pocketbase";
 import { apiGet, apiPost } from "../../lib/api";
-import { toast } from "sonner";
+import { notifyError } from "../../lib/notify";
+import { usePaginatedList, type PageQuery } from "../../hooks/usePaginatedList";
+import type { ServerListItem, ServerListResponse } from "../../types/server";
 
-export interface Server {
-  id: string;
-  serverName: string;
-  user: string;
-  serverAddr: string;
-  serverPort: number;
-  description: string;
-  bootStatus: string;
-  autoConnection: boolean;
-  created: string;
-  updated: string;
-  sendRate: number;
-  recvRate: number;
-  // Network status
-  networkStatus?: {
-    latency: number;
-    reachable: boolean;
-    lastCheckTime: string;
-    error?: string;
-  };
-  geoLocation?: {
-    country: string;
-    countryCode: string;
-    region: string;
-    city: string;
-    isp: string;
-    lat: number;
-    lon: number;
-  };
-  // Extended fields
-  log?: {
-    level: "trace" | "debug" | "info" | "warn" | "error";
-    maxDays: number;
-    to?: string;
-  };
-  auth?: {
-    method: "none" | "token" | "oidc";
-    token: string;
-    oidcClientId: string;
-    oidcClientSecret: string;
-    oidcAudience: string;
-    oidcTokenEndpoint: string;
-  };
-  transport?: {
-    protocol: "tcp" | "kcp" | "quic" | "websocket" | "wss";
-    tls: {
-      enable: boolean;
-      disableCustomTLSFirstByte: boolean;
-      certFile: string;
-      keyFile: string;
-      trustedCaFile: string;
-      serverName: string;
-    };
-    proxyURL: string;
-  };
-  metadatas?: Record<string, string>;
-}
+const PER_PAGE = 10;
 
 export function useServers() {
-  const [servers, setServers] = useState<Server[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const initializedRef = useRef(false);
+  const { t } = useTranslation();
 
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const PER_PAGE = 10;
+  const fetchPage = useCallback(({ page, perPage, search, signal }: PageQuery) => {
+    const params = new URLSearchParams({ page: String(page), perPage: String(perPage) });
+    if (search) params.set("search", search);
+    return apiGet<ServerListResponse>(`/api/servers?${params}`, { signal });
+  }, []);
 
-  const [search, setSearch] = useState("");
+  const list = usePaginatedList<ServerListItem, ServerListResponse>({
+    fetchPage,
+    perPage: PER_PAGE,
+    onError: (err) => notifyError(t("server.fetchFailed"), err, "servers-fetch"),
+  });
+  const { reload } = list;
 
-  const fetchServers = useCallback(
-    async (isRefresh = false) => {
-      try {
-        if (!initializedRef.current) {
-          setLoading(true);
-        } else if (isRefresh) {
-          setRefreshing(true);
-        }
-
-        const params = new URLSearchParams({
-          page: String(page),
-          perPage: String(PER_PAGE),
-        });
-        if (search) params.set("search", search);
-
-        const res = await apiGet(`/api/servers?${params}`);
-        if (!res.ok) throw new Error("Failed to fetch servers");
-        const data = await res.json();
-
-        setServers(data.items);
-        setTotalPages(data.totalPages);
-        initializedRef.current = true;
-      } catch (err) {
-        if ((err as any)?.isAbort) return;
-        toast.error(err instanceof Error ? err.message : "Failed to fetch servers");
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [page, search]
-  );
-
-  useEffect(() => {
-    setPage(1);
-    if (initializedRef.current) {
-      setLoading(true);
-    }
-  }, [search]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchServers();
-    }, 300); // Simple debounce
-    return () => clearTimeout(timer);
-  }, [fetchServers]);
-
-  // Auto-refresh server status every 5 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchServers(true); // Pass true to indicate this is a refresh
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [fetchServers]);
+  // Server id with a launch/terminate request in flight.
+  const [pendingId, setPendingId] = useState<string | null>(null);
 
   const deleteServer = async (id: string) => {
     try {
       await pb.collection("fh_servers").delete(id);
-      await fetchServers();
-      toast.success("Server deleted successfully");
+      toast.success(t("server.deleteSuccess"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete server");
+      notifyError(t("server.deleteFailed"), err);
     }
+    await reload();
   };
 
-  const launchServer = async (id: string) => {
-    console.log("launching server", id);
-    const response = await apiPost("/api/frpc/launch", { id });
-    if (response.ok) {
-      await fetchServers();
-      toast.success("Server launched successfully");
+  const runAction = async (id: string, endpoint: string, successKey: string, failedKey: string) => {
+    if (pendingId) return;
+    setPendingId(id);
+    try {
+      await apiPost(endpoint, { id });
+      toast.success(t(successKey));
+    } catch (err) {
+      notifyError(t(failedKey), err);
+    } finally {
+      setPendingId(null);
     }
+    await reload();
   };
 
-  const terminateServer = async (id: string) => {
-    console.log("terminating server", id);
-    const response = await apiPost("/api/frpc/terminate", { id });
-    if (response.ok) {
-      await fetchServers();
-      toast.success("Server launched successfully");
-    }
-  };
+  const launchServer = (id: string) =>
+    runAction(id, "/api/frpc/launch", "server.startSuccess", "server.startFailed");
+
+  const terminateServer = (id: string) =>
+    runAction(id, "/api/frpc/terminate", "server.stopSuccess", "server.stopFailed");
 
   return {
-    servers,
-    loading,
-    refreshing,
+    servers: list.items,
+    loading: list.loading,
+    refreshing: list.refreshing,
+    page: list.page,
+    setPage: list.setPage,
+    totalPages: list.totalPages,
+    search: list.search,
+    setSearch: list.setSearch,
+    refreshServers: list.refresh,
+    pendingId,
     deleteServer,
-    page,
-    setPage,
-    totalPages,
     launchServer,
     terminateServer,
-    search,
-    setSearch,
-    refreshServers: () => fetchServers(true),
   };
 }

@@ -2,16 +2,7 @@ import { DashboardView } from "./DashboardPage.view";
 import { useDashboard } from "./useDashboard";
 
 export function DashboardPage() {
-  // @ts-ignore
-  const { stats, activities, trafficHistory, topology, loading } = useDashboard();
+  const { stats, topology } = useDashboard();
 
-  return (
-    <DashboardView
-      stats={stats}
-      activities={activities}
-      trafficHistory={trafficHistory}
-      topology={topology}
-      loading={loading}
-    />
-  );
+  return <DashboardView stats={stats} topology={topology} />;
 }

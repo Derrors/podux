@@ -1,10 +1,9 @@
 import { Box, Card, Flex, Text } from "@radix-ui/themes";
-import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../components/PageHeader";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { ProfileSettings } from "./ProfileSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import "./SettingsPage.css";
@@ -12,18 +11,10 @@ import "./SettingsPage.css";
 export function SettingsView() {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState(tabParam || "general");
-
-  useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (tab && tab !== activeTab) {
-      setActiveTab(tab);
-    }
-  }, [searchParams]);
+  // The URL is the single source of truth for the active tab.
+  const activeTab = searchParams.get("tab") || "general";
 
   const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
     setSearchParams({ tab });
   };
 

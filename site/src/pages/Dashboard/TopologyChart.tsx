@@ -10,7 +10,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Flex, Text, useThemeContext } from "@radix-ui/themes";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { useTranslation } from "react-i18next";
 import type { TopologyData } from "./useDashboard";
 
@@ -34,55 +34,39 @@ const COL = {
 };
 
 // ── Colours ───────────────────────────────────────────────────────────────────
+// Radix CSS variables resolve per theme (light/dark), so nodes, edges and the
+// canvas follow the app appearance without a separate palette.
 const C = {
   // edge colours
-  eVisitor: "#6366f1", // visitor → server : indigo (decorative)
-  eOn: "#22c55e", // any active edge  : green
-  eOff: "#71717a", // any inactive edge: gray
+  eVisitor: "var(--accent-9)", // visitor → server : accent (decorative)
+  eOn: "var(--green-9)", // any active edge  : green
+  eOff: "var(--gray-9)", // any inactive edge: gray
 
-  // status
-  online: "#22c55e",
-  offline: "#ef4444",
-
-  // proxy type
-  tcp: "#3b82f6",
-  udp: "#22c55e",
-  http: "#f97316",
-  https: "#a855f7",
+  // proxy type (same scale as the dashboard pie chart)
+  tcp: "var(--blue-9)",
+  udp: "var(--green-9)",
+  http: "var(--orange-9)",
+  https: "var(--purple-9)",
 } as const;
 
+const TYPE_COLORS: Record<string, string> = { tcp: C.tcp, udp: C.udp, http: C.http, https: C.https };
+
 function typeColor(t: string): string {
-  return (C as Record<string, string>)[t.toLowerCase()] ?? "#6b7280";
+  return TYPE_COLORS[t.toLowerCase()] ?? "var(--gray-9)";
 }
 
-// Theme
-const LIGHT = {
-  bg: "#ffffff",
-  text: "#111827",
-  sub: "#6b7280",
-  border: "#e5e7eb",
-  pageBg: "#f3f4f6",
-  dot: "#d1d5db",
+const P = {
+  bg: "var(--color-panel-solid)",
+  text: "var(--gray-12)",
+  sub: "var(--gray-11)",
+  border: "var(--gray-6)",
+  pageBg: "var(--gray-2)",
+  dot: "var(--gray-7)",
 };
-const DARK = {
-  bg: "#1c1c2e",
-  text: "#f0f0f0",
-  sub: "#9ca3af",
-  border: "#2d2d44",
-  pageBg: "#13131f",
-  dot: "#3d3d55",
-};
-type Palette = typeof LIGHT;
 
 // Shared
-function StatusPill({
-  online,
-  labels = ["Online", "Offline"],
-}: {
-  online: boolean;
-  labels?: [string, string];
-}) {
-  const color = online ? C.online : C.offline;
+function StatusPill({ online, labels }: { online: boolean; labels: [string, string] }) {
+  const scale = online ? "green" : "red";
   return (
     <span
       style={{
@@ -93,12 +77,12 @@ function StatusPill({
         borderRadius: 999,
         fontSize: 9,
         fontWeight: 700,
-        background: color + "20",
-        color,
-        border: `1px solid ${color + "60"}`,
+        background: `var(--${scale}-a3)`,
+        color: `var(--${scale}-11)`,
+        border: `1px solid var(--${scale}-a7)`,
       }}
     >
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: color }} />
+      <span style={{ width: 5, height: 5, borderRadius: "50%", background: `var(--${scale}-9)` }} />
       {online ? labels[0] : labels[1]}
     </span>
   );
@@ -113,7 +97,6 @@ function NodeCard({
   targetColor,
   sourcePos,
   sourceColor,
-  p: palette,
 }: {
   w: number;
   h: number;
@@ -123,7 +106,6 @@ function NodeCard({
   targetColor?: string;
   sourcePos?: Position;
   sourceColor?: string;
-  p: Palette;
 }) {
   return (
     <div
@@ -132,14 +114,14 @@ function NodeCard({
         height: h,
         borderRadius: 10,
         boxSizing: "border-box",
-        border: `1.5px solid ${palette.border}`,
+        border: `1.5px solid ${P.border}`,
         borderLeft: `3px solid ${accentColor}`,
-        background: palette.bg,
+        background: P.bg,
         display: "flex",
         flexDirection: "column",
         padding: "8px 10px",
         gap: 4,
-        boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+        boxShadow: "var(--shadow-1)",
       }}
     >
       {targetPos !== undefined && (
@@ -162,9 +144,8 @@ function NodeCard({
 }
 
 // Visitor Node
-function VisitorNode({ data }: { data: Record<string, string> }) {
+function VisitorNode() {
   const { t } = useTranslation();
-  const p = data.isDark === "1" ? DARK : LIGHT;
   return (
     <div
       style={{
@@ -172,8 +153,8 @@ function VisitorNode({ data }: { data: Record<string, string> }) {
         height: VISITOR_H,
         borderRadius: 12,
         boxSizing: "border-box",
-        border: `2px solid ${C.eVisitor}40`,
-        background: C.eVisitor + "12",
+        border: "2px solid var(--accent-a6)",
+        background: "var(--accent-a2)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -191,7 +172,7 @@ function VisitorNode({ data }: { data: Record<string, string> }) {
           width: 36,
           height: 36,
           borderRadius: "50%",
-          background: C.eVisitor + "20",
+          background: "var(--accent-a3)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -200,10 +181,10 @@ function VisitorNode({ data }: { data: Record<string, string> }) {
         <Icon icon="lucide:users" width={18} height={18} color={C.eVisitor} />
       </div>
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: p.text }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: P.text }}>
           {t("dashboard.topologyVisitors")}
         </div>
-        <div style={{ fontSize: 9, color: p.sub }}>{t("dashboard.topologyInternet")}</div>
+        <div style={{ fontSize: 9, color: P.sub }}>{t("dashboard.topologyInternet")}</div>
       </div>
     </div>
   );
@@ -211,28 +192,27 @@ function VisitorNode({ data }: { data: Record<string, string> }) {
 
 // Server Node
 function ServerNode({ data }: { data: Record<string, string> }) {
-  const p = data.isDark === "1" ? DARK : LIGHT;
+  const { t } = useTranslation();
   const online = data.bootStatus === "running";
-  const accent = online ? C.online : C.eOff;
+  const accent = online ? C.eOn : C.eOff;
   const handleColor = online ? C.eOn : C.eOff;
   return (
     <NodeCard
       w={SERVER_W}
       h={SERVER_H}
       accentColor={accent}
-      p={p}
       targetPos={Position.Left}
       targetColor={handleColor}
       sourcePos={Position.Right}
       sourceColor={handleColor}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <Icon icon="lucide:server" width={13} height={13} color={p.sub} />
+        <Icon icon="lucide:server" width={13} height={13} color={P.sub} />
         <span
           style={{
             fontSize: 12,
             fontWeight: 700,
-            color: p.text,
+            color: P.text,
             flex: 1,
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -245,7 +225,7 @@ function ServerNode({ data }: { data: Record<string, string> }) {
       <span
         style={{
           fontSize: 10,
-          color: p.sub,
+          color: P.sub,
           overflow: "hidden",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
@@ -253,14 +233,14 @@ function ServerNode({ data }: { data: Record<string, string> }) {
       >
         {data.serverAddr}
       </span>
-      <StatusPill online={online} labels={["Running", "Stopped"]} />
+      <StatusPill online={online} labels={[t("server.running"), t("server.stopped")]} />
     </NodeCard>
   );
 }
 
 // Proxy Node
 function ProxyNode({ data }: { data: Record<string, string> }) {
-  const p = data.isDark === "1" ? DARK : LIGHT;
+  const { t } = useTranslation();
   const online = data.bootStatus === "online";
   const tc = typeColor(data.proxyType);
   const handleColor = online ? C.eOn : C.eOff;
@@ -268,8 +248,7 @@ function ProxyNode({ data }: { data: Record<string, string> }) {
     <NodeCard
       w={PROXY_W}
       h={PROXY_H}
-      accentColor={online ? C.online : C.eOff}
-      p={p}
+      accentColor={online ? C.eOn : C.eOff}
       targetPos={Position.Left}
       targetColor={handleColor}
       sourcePos={Position.Right}
@@ -277,12 +256,12 @@ function ProxyNode({ data }: { data: Record<string, string> }) {
     >
       {/* icon + name */}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <Icon icon="lucide:network" width={13} height={13} color={p.sub} />
+        <Icon icon="lucide:network" width={13} height={13} color={P.sub} />
         <span
           style={{
             fontSize: 12,
             fontWeight: 700,
-            color: p.text,
+            color: P.text,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
@@ -292,12 +271,12 @@ function ProxyNode({ data }: { data: Record<string, string> }) {
         </span>
       </div>
       {/* protocol + port */}
-      <span style={{ fontSize: 10, color: p.sub }}>
+      <span style={{ fontSize: 10, color: P.sub }}>
         <span style={{ color: tc, fontWeight: 700 }}>{data.proxyType.toUpperCase()}</span>
         {data.remotePort && <span style={{ fontFamily: "monospace" }}> :{data.remotePort}</span>}
       </span>
       {/* status */}
-      <StatusPill online={online} />
+      <StatusPill online={online} labels={[t("proxy.online"), t("proxy.offline")]} />
     </NodeCard>
   );
 }
@@ -305,23 +284,21 @@ function ProxyNode({ data }: { data: Record<string, string> }) {
 // ── Local Service Node ────────────────────────────────────────────────────────
 function LocalServiceNode({ data }: { data: Record<string, string> }) {
   const { t } = useTranslation();
-  const p = data.isDark === "1" ? DARK : LIGHT;
   return (
     <NodeCard
       w={LOCAL_W}
       h={LOCAL_H}
       accentColor={C.eOn}
-      p={p}
       targetPos={Position.Left}
       targetColor={C.eOn}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <Icon icon="lucide:hard-drive" width={13} height={13} color={p.sub} />
-        <span style={{ fontSize: 10, fontWeight: 700, color: p.text }}>
+        <Icon icon="lucide:hard-drive" width={13} height={13} color={P.sub} />
+        <span style={{ fontSize: 10, fontWeight: 700, color: P.text }}>
           {t("dashboard.topologyLocalService")}
         </span>
       </div>
-      <span style={{ fontSize: 11, color: p.sub, fontFamily: "monospace" }}>
+      <span style={{ fontSize: 11, color: P.sub, fontFamily: "monospace" }}>
         {data.localIP}:{data.localPort}
       </span>
     </NodeCard>
@@ -360,7 +337,6 @@ export function TopologyChart({ topology }: TopologyChartProps) {
   const { t } = useTranslation();
   const themeCtx = useThemeContext();
   const isDark = themeCtx.appearance === "dark";
-  const p = isDark ? DARK : LIGHT;
   const { servers, proxies } = topology;
 
   const { nodes, edges, totalRows } = useMemo(() => {
@@ -391,15 +367,14 @@ export function TopologyChart({ topology }: TopologyChartProps) {
 
     const nodes: Node[] = [];
     const edges: Edge[] = [];
-    const dk = isDark ? "1" : "0";
-
+    
     // Visitor node — vertically centred over all content
     const visitorY = (totalRows * ROW_H) / 2 - VISITOR_H / 2;
     nodes.push({
       id: "visitor",
       type: "visitor",
       position: { x: COL.visitor, y: visitorY },
-      data: { isDark: dk },
+      data: {},
       draggable: false,
     });
 
@@ -417,7 +392,6 @@ export function TopologyChart({ topology }: TopologyChartProps) {
           serverName: server.serverName,
           serverAddr: server.serverAddr,
           bootStatus: server.bootStatus,
-          isDark: dk,
         },
         draggable: false,
       });
@@ -445,8 +419,7 @@ export function TopologyChart({ topology }: TopologyChartProps) {
             remotePort: px.remotePort,
             status: px.status,
             bootStatus: px.bootStatus,
-            isDark: dk,
-          },
+            },
           draggable: false,
         });
 
@@ -459,8 +432,7 @@ export function TopologyChart({ topology }: TopologyChartProps) {
             localIP: px.localIP,
             localPort: px.localPort,
             bootStatus: px.bootStatus,
-            isDark: dk,
-          },
+            },
           draggable: false,
         });
 
@@ -474,7 +446,7 @@ export function TopologyChart({ topology }: TopologyChartProps) {
     }
 
     return { nodes, edges, totalRows };
-  }, [servers, proxies, isDark]);
+  }, [servers, proxies]);
 
   if (servers.length === 0) {
     return (
@@ -511,9 +483,9 @@ export function TopologyChart({ topology }: TopologyChartProps) {
         minZoom={0.25}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
-        style={{ background: p.pageBg }}
+        style={{ background: P.pageBg }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color={p.dot} />
+        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color={P.dot} />
       </ReactFlow>
     </div>
   );

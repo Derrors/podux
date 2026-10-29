@@ -1,14 +1,10 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { Flex, Text, Tooltip, Badge } from "@radix-ui/themes";
 import { motion } from "framer-motion";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { useTranslation } from "react-i18next";
-import { apiGet } from "../lib/api";
-
-interface ProbePoint {
-  t: string;
-  val: number;
-}
+import type { ProbePoint } from "../types/server";
+import { parseProbeTime } from "../lib/probe";
 
 interface Bucket {
   start: number;
@@ -19,8 +15,7 @@ interface Bucket {
 const BUCKETS = 30;
 const WINDOW_MS = 30 * 60 * 1000;
 
-function buildBuckets(points: ProbePoint[]): Bucket[] {
-  const now = Date.now();
+function buildBuckets(points: ProbePoint[], now: number): Bucket[] {
   const slotMs = WINDOW_MS / BUCKETS;
 
   const buckets: Bucket[] = Array.from({ length: BUCKETS }, (_, i) => ({
@@ -30,7 +25,7 @@ function buildBuckets(points: ProbePoint[]): Bucket[] {
   }));
 
   for (const p of points) {
-    const ts = new Date(p.t.replace(" ", "T").replace(/Z$/, "+00:00")).getTime();
+    const ts = parseProbeTime(p.t).getTime();
     const idx = Math.floor((ts - (now - WINDOW_MS)) / slotMs);
     if (idx < 0 || idx >= BUCKETS) continue;
     const b = buckets[idx];
@@ -71,40 +66,18 @@ function bucketLabel(b: Bucket, noData: string, unreachable: string): string {
 }
 
 interface ProbeHistoryProps {
-  serverId: string;
+  points: ProbePoint[];
+  /** Fetch time of `points`; the 30-minute window ends here. */
+  fetchedAt: number;
+  loading: boolean;
 }
 
-export function ProbeHistory({ serverId }: ProbeHistoryProps) {
+export function ProbeHistory({ points, fetchedAt, loading }: ProbeHistoryProps) {
   const { t } = useTranslation();
-  const [buckets, setBuckets] = useState<Bucket[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [animKey, setAnimKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const res = await apiGet(`/api/servers/probe-history?serverId=${serverId}`);
-        if (!res.ok || cancelled) return;
-        const points: ProbePoint[] = await res.json();
-        if (cancelled) return;
-        setBuckets(buildBuckets(points));
-        setAnimKey((k) => k + 1);
-      } catch {
-        // silent
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    load();
-    const interval = setInterval(load, 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [serverId]);
+  const buckets = useMemo(() => buildBuckets(points, fetchedAt), [points, fetchedAt]);
+  // Replay the bar animation only when the data changed, not on identical polls.
+  const lastPoint = points[points.length - 1];
+  const animKey = `${points.length}:${lastPoint?.t ?? ""}`;
 
   // Stats
   const valid = buckets.filter((b) => b.avg !== null);
@@ -250,7 +223,7 @@ export function ProbeHistory({ serverId }: ProbeHistoryProps) {
                         position: "absolute",
                         inset: 0,
                         background:
-                          "linear-gradient(to bottom, rgba(255,255,255,0.15) 0%, transparent 60%)",
+                          "linear-gradient(to bottom, var(--white-a3) 0%, transparent 60%)",
                         borderRadius: 4,
                         pointerEvents: "none",
                       }}
@@ -267,7 +240,7 @@ export function ProbeHistory({ serverId }: ProbeHistoryProps) {
                         style={{
                           position: "absolute",
                           inset: 0,
-                          background: "rgba(255,255,255,0.5)",
+                          background: "var(--white-a7)",
                           borderRadius: 4,
                           pointerEvents: "none",
                         }}

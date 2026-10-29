@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { Flex, Text } from "@radix-ui/themes";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
@@ -10,13 +10,10 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  type DotItemDotProps,
 } from "recharts";
-import { apiGet } from "../lib/api";
-
-interface ProbePoint {
-  t: string;
-  val: number;
-}
+import type { ProbePoint } from "../types/server";
+import { parseProbeTime } from "../lib/probe";
 
 interface ChartPoint {
   time: string;
@@ -27,7 +24,7 @@ function toChartPoints(points: ProbePoint[]): ChartPoint[] {
   return points
     .filter((p) => p.val >= 0)
     .map((p) => ({
-      time: new Date(p.t.replace(" ", "T").replace(/Z$/, "+00:00")).toLocaleTimeString([], {
+      time: parseProbeTime(p.t).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
@@ -143,40 +140,17 @@ function ChartSkeleton() {
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface LatencyChartProps {
-  serverId: string;
+  points: ProbePoint[];
+  loading: boolean;
 }
 
-export function LatencyChart({ serverId }: LatencyChartProps) {
+export function LatencyChart({ points, loading }: LatencyChartProps) {
   const { t } = useTranslation();
-  const [data, setData] = useState<ChartPoint[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [animKey, setAnimKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const res = await apiGet(`/api/servers/probe-history?serverId=${serverId}`);
-        if (!res.ok || cancelled) return;
-        const points: ProbePoint[] = await res.json();
-        if (cancelled) return;
-        setData(toChartPoints(points));
-        setAnimKey((k) => k + 1);
-      } catch {
-        // silent
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    load();
-    const interval = setInterval(load, 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [serverId]);
+  const data = useMemo(() => toChartPoints(points), [points]);
+  // Remount (and replay the reveal animation) only when the data actually changed,
+  // not on every poll that returns the same points.
+  const lastPoint = points[points.length - 1];
+  const dataKey = `${points.length}:${lastPoint?.t ?? ""}:${lastPoint?.val ?? ""}`;
 
   const isEmpty = !loading && data.length === 0;
 
@@ -205,7 +179,7 @@ export function LatencyChart({ serverId }: LatencyChartProps) {
           </motion.div>
         ) : (
           <motion.div
-            key={`chart-${animKey}`}
+            key={`chart-${dataKey}`}
             initial={{ opacity: 0, clipPath: "inset(0 100% 0 0)" }}
             animate={{ opacity: 1, clipPath: "inset(0 0% 0 0)" }}
             transition={{ duration: 0.9, ease: [0.25, 0.46, 0.45, 0.94] }}
@@ -249,8 +223,14 @@ export function LatencyChart({ serverId }: LatencyChartProps) {
                   stroke="var(--green-9)"
                   strokeWidth={2}
                   fill="url(#latencyGrad)"
-                  dot={(props: any) => (
-                    <PulsingDot key={props.index} {...props} dataLength={data.length} />
+                  dot={(props: DotItemDotProps) => (
+                    <PulsingDot
+                      key={props.index}
+                      cx={props.cx}
+                      cy={props.cy}
+                      index={props.index}
+                      dataLength={data.length}
+                    />
                   )}
                   activeDot={{
                     r: 5,

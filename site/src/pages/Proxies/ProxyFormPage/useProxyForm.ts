@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import pb from "../../../lib/pocketbase";
 import { apiGet } from "../../../lib/api";
+import { notifyError } from "../../../lib/notify";
 import { toast } from "sonner";
 import { REGEX } from "../../../lib/regex";
 
@@ -69,22 +70,19 @@ export function useProxyForm() {
     const fetchServers = async () => {
       try {
         setLoadingServers(true);
-        const res = await apiGet("/api/servers/options");
-        if (!res.ok) throw new Error("Failed to fetch servers");
-        const list: ServerOption[] = await res.json();
+        const list = (await apiGet<ServerOption[] | null>("/api/servers/options")) ?? [];
         setServers(list);
         if (list.length > 0 && !isEditing) {
           setFormData((prev) => ({ ...prev, serverId: list[0].id }));
         }
       } catch (err) {
-        console.error("Failed to fetch servers:", err);
-        toast.error("Failed to fetch servers");
+        notifyError(t("server.fetchFailed"), err);
       } finally {
         setLoadingServers(false);
       }
     };
     fetchServers();
-  }, [isEditing]);
+  }, [isEditing, t]);
 
   useEffect(() => {
     if (!id) return;
@@ -110,15 +108,15 @@ export function useProxyForm() {
           pluginUsername: plugin?.username || "",
           pluginPassword: plugin?.password || "",
         });
-      } catch {
-        toast.error("Failed to load proxy");
+      } catch (err) {
+        notifyError(t("proxy.loadFailed"), err);
         navigate("/proxies");
       } finally {
         setLoadingProxy(false);
       }
     };
     fetchProxy();
-  }, [id, navigate]);
+  }, [id, navigate, t]);
 
   const validateField = (field: keyof ProxyFormData, value: string) => {
     let error = "";
@@ -216,14 +214,14 @@ export function useProxyForm() {
       setSubmitting(true);
       if (isEditing) {
         await pb.collection("fh_proxies").update(id!, payload);
-        toast.success("Proxy updated successfully");
+        toast.success(t("proxy.updateSuccess"));
       } else {
         await pb.collection("fh_proxies").create({ bootStatus: "offline", ...payload });
-        toast.success("Proxy created successfully");
+        toast.success(t("proxy.createSuccess"));
       }
       navigate("/proxies");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save proxy");
+      notifyError(t("proxy.saveFailed"), err);
     } finally {
       setSubmitting(false);
     }

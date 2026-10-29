@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { Button, Card, Flex } from "@radix-ui/themes";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../components/PageHeader";
 import { ServerLogViewer } from "../../components/ServerLogViewer";

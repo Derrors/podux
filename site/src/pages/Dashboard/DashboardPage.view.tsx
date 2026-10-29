@@ -1,29 +1,20 @@
 import { Box, Card, Flex, Text } from "@radix-ui/themes";
-import type {
-  DashboardStats,
-  RecentActivity,
-  TopologyData,
-  TrafficHistoryPoint,
-} from "./useDashboard";
+import type { DashboardStats, TopologyData } from "./useDashboard";
 import { TopologyChart } from "./TopologyChart";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { PageHeader } from "../../components/PageHeader";
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { AnimateNumber } from "../../components/AnimateNumber";
 import { useTranslation } from "react-i18next";
+import { StatCard } from "../../components/StatCard";
 
 interface DashboardViewProps {
   stats: DashboardStats;
-  activities: RecentActivity[];
-  trafficHistory: TrafficHistoryPoint[];
   topology: TopologyData;
-  loading: boolean;
 }
-
-import { StatCard } from "../../components/StatCard";
 
 // Helper function to format uptime
 function formatUptime(seconds: number): string {
@@ -245,7 +236,7 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
                         labelLine={false}
                         label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
                         outerRadius={100}
-                        fill="#8884d8"
+                        fill="var(--accent-9)"
                         dataKey="value"
                       >
                         {Object.keys(stats.proxyTypeCounts).map((type, index) => {

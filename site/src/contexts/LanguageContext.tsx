@@ -1,8 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-
-type Language = "en" | "zh";
+import { LanguageContext, type Language } from "./language";
 
 const USER_LANG_KEY = "user-language";
 
@@ -15,18 +14,11 @@ function readUserLanguage(): Language | null {
   try {
     const val = localStorage.getItem(USER_LANG_KEY);
     if (val === "en" || val === "zh") return val;
-  } catch {}
+  } catch {
+    // localStorage unavailable: fall back to the browser language.
+  }
   return null;
 }
-
-interface LanguageContextType {
-  language: Language;
-  isManuallySet: boolean;
-  setLanguage: (lang: Language) => void;
-  resetToDefault: () => void;
-}
-
-const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { i18n } = useTranslation();
@@ -40,7 +32,9 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
       } else {
         localStorage.setItem(USER_LANG_KEY, lang);
       }
-    } catch {}
+    } catch {
+      // Persisting is best-effort; the in-memory choice still applies.
+    }
   }, []);
 
   const language: Language = userLanguage ?? getBrowserLanguage();
@@ -75,12 +69,4 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
       {children}
     </LanguageContext.Provider>
   );
-};
-
-export const useLanguage = () => {
-  const context = useContext(LanguageContext);
-  if (context === undefined) {
-    throw new Error("useLanguage must be used within a LanguageProvider");
-  }
-  return context;
 };

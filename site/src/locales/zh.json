@@ -30,7 +30,11 @@
     "discardChangesDesc": "您有未保存的更改。确定要放弃它们吗？",
     "discard": "放弃",
     "keepEditing": "继续编辑",
-    "back": "返回"
+    "back": "返回",
+    "clearSearch": "清除搜索",
+    "logoAlt": "Podux 标志",
+    "nextPage": "下一页",
+    "previousPage": "上一页"
   },
   "nav": {
     "dashboard": "仪表板",
@@ -55,7 +59,8 @@
     "loginFailed": "登录失败",
     "signInToAccount": "登录到您的 Podux 账户",
     "enterEmail": "输入您的邮箱",
-    "enterPassword": "输入您的密码"
+    "enterPassword": "输入您的密码",
+    "invalidCredentials": "邮箱或密码错误"
   },
   "dashboard": {
     "title": "仪表板",
@@ -90,7 +95,8 @@
     "qaServersDesc": "管理服务器连接",
     "qaProxiesDesc": "配置代理隧道",
     "qaImportDesc": "从 TOML 配置文件导入",
-    "qaSettingsDesc": "应用设置与个人资料"
+    "qaSettingsDesc": "应用设置与个人资料",
+    "loadFailed": "加载仪表盘数据失败"
   },
   "server": {
     "title": "服务器",
@@ -255,7 +261,25 @@
     "latencyMs": "延迟 (ms)",
     "viewLogs": "日志",
     "viewLogsDesc": "实时连接日志流",
-    "backToDetail": "返回详情"
+    "backToDetail": "返回详情",
+    "createSuccess": "服务器创建成功",
+    "deleteFailed": "删除服务器失败",
+    "deleteSuccess": "服务器删除成功",
+    "errorInvalidAddr": "无效的 IP 或主机名",
+    "errorInvalidName": "无效的服务器名称",
+    "errorRequired": "必填",
+    "fetchFailed": "加载服务器列表失败",
+    "logStream": {
+      "connecting": "连接中",
+      "connected": "实时",
+      "reconnecting": "重新连接中",
+      "disconnected": "已断开",
+      "reconnect": "重新连接"
+    },
+    "saveFailed": "保存服务器失败",
+    "unknownLocation": "未知",
+    "unreachable": "不可达",
+    "updateSuccess": "服务器更新成功"
   },
   "proxy": {
     "title": "代理",
@@ -343,7 +367,15 @@
     "errorInvalidIP": "无效的 IP 或主机名",
     "errorInvalidPort": "无效的端口（1-65535）",
     "errorRequired": "必填",
-    "errorSubdomainRequired": "子域名或自定义域名为必填项"
+    "errorSubdomainRequired": "子域名或自定义域名为必填项",
+    "createSuccess": "代理创建成功",
+    "deleteFailed": "删除代理失败",
+    "deleteSuccess": "代理删除成功",
+    "fetchFailed": "加载代理列表失败",
+    "loadFailed": "加载代理失败",
+    "saveFailed": "保存代理失败",
+    "updateStatusFailed": "更新代理状态失败",
+    "updateSuccess": "代理更新成功"
   },
   "settings": {
     "title": "设置",
@@ -396,7 +428,10 @@
     "passwordsDoNotMatch": "新密码不匹配",
     "passwordTooShort": "密码长度至少为 8 个字符",
     "incorrectPassword": "当前密码不正确",
-    "passwordUpdateSuccess": "密码更新成功！请重新登录。"
+    "passwordUpdateSuccess": "密码更新成功！请重新登录。",
+    "loadFailed": "加载设置失败",
+    "notAuthenticated": "您尚未登录",
+    "profileUpdateFailed": "更新个人资料失败，请重试。"
   },
   "language": {
     "en": "English",
@@ -410,7 +445,17 @@
     "upToDate": "已是最新版本",
     "updateAvailable": "有可用更新",
     "updateNow": "查看发布",
-    "releaseNotes": "更新内容"
+    "releaseNotes": "更新内容",
+    "columnDownload": "下载",
+    "columnReleaseDate": "发布日期",
+    "columnVersion": "版本",
+    "downloadCurrentArch": "下载当前架构版本",
+    "fetchFailed": "加载版本列表失败",
+    "frpReleasesDesc": "来自 fatedier/frp 的可用版本",
+    "frpVersions": "FRP 版本",
+    "noReleases": "未找到版本。",
+    "notFound": "未找到",
+    "viewOnGithub": "在 GitHub 上查看"
   },
   "import": {
     "title": "导入",
@@ -458,13 +503,18 @@
     "skipped": "已跳过",
     "importAnother": "继续导入",
     "viewServers": "查看服务器",
-    "importSuccess": "导入完成"
+    "importSuccess": "导入完成",
+    "warnings": {
+      "tls_file_path_ignored": "该文件中的 TLS 证书、私钥或 CA 是文件路径。Podux 保存的是证书内容而不是路径，因此未导入这些路径。导入后请打开该服务器的编辑表单，粘贴证书、私钥和 CA 的内容。"
+    }
   },
   "error": {
     "notFound": "页面未找到",
     "goHome": "返回首页",
     "somethingWrong": "出了点问题",
-    "tryAgain": "重试"
+    "tryAgain": "重试",
+    "backendUnavailable": "无法连接 Podux 服务",
+    "backendUnavailableDesc": "无法检查系统状态。请确认服务正在运行后重试。"
   },
   "setup": {
     "title": "系统初始化",
@@ -487,5 +537,9 @@
       "setupFailed": "系统初始化失败。请重试。",
       "settingsCreateFailed": "初始化系统设置失败"
     }
+  },
+  "time": {
+    "justNow": "刚刚",
+    "never": "从未"
   }
 }

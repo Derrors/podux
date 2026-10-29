@@ -1,6 +1,7 @@
 import { Flex } from "@radix-ui/themes";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslation } from "react-i18next";
 
 export interface RadioCardOption {
   value: string;
@@ -18,7 +19,8 @@ interface RadioCardGroupProps {
   comingSoonLabel?: string;
 }
 
-export function RadioCardGroup({ options, value, onChange, comingSoonLabel = "Coming soon" }: RadioCardGroupProps) {
+export function RadioCardGroup({ options, value, onChange, comingSoonLabel }: RadioCardGroupProps) {
+  const { t } = useTranslation();
   return (
     <Flex gap="2" wrap="wrap">
       {options.map((opt) => {
@@ -74,7 +76,7 @@ export function RadioCardGroup({ options, value, onChange, comingSoonLabel = "Co
               {/* Badges */}
               {opt.comingSoon && (
                 <span className="rounded bg-[var(--gray-4)] px-1 py-0.5 text-[10px] text-[var(--gray-9)]">
-                  {comingSoonLabel}
+                  {comingSoonLabel ?? t("common.comingSoon")}
                 </span>
               )}
               {opt.incompatible && opt.incompatibleLabel && (

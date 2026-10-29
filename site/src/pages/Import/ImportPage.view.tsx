@@ -14,7 +14,7 @@ import {
   Callout,
   Tabs,
 } from "@radix-ui/themes";
-import { Icon } from "@iconify/react";
+import { Icon } from "@iconify/react/offline";
 import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../components/PageHeader";
@@ -210,6 +210,17 @@ function Step2({
 
   return (
     <Flex direction="column" gap="5">
+      {/* ── Import warnings ── */}
+      {preview.warnings?.map((code) => (
+        <Callout.Root key={code} color="amber" size="1" role="alert">
+          <Callout.Icon>
+            <Icon icon="lucide:alert-triangle" width="14" height="14" />
+          </Callout.Icon>
+          {/* Unknown codes fall back to the raw code. */}
+          <Callout.Text>{t(`import.warnings.${code}`, { defaultValue: code })}</Callout.Text>
+        </Callout.Root>
+      ))}
+
       {/* ── Server Section ── */}
       <Card>
         <Flex direction="column" gap="3">

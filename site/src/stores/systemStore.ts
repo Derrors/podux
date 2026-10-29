@@ -1,10 +1,15 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { apiGet } from "../lib/api";
+import { apiGet, getErrorMessage } from "../lib/api";
 
 interface SystemSettings {
   initialized: boolean;
   defaultLanguage: "en" | "zh";
+}
+
+interface SystemSettingsResponse {
+  initialized: boolean;
+  general?: { defaultLanguage?: "en" | "zh" };
 }
 
 interface SystemStore {
@@ -13,6 +18,10 @@ interface SystemStore {
   error: string | null;
 
   // Actions
+  /**
+   * Resolves with the backend's `initialized` flag. Network/5xx failures reject
+   * instead of resolving false, so callers never mistake an outage for "not initialized".
+   */
   checkInitialized: () => Promise<boolean>;
   getSettings: () => Promise<void>;
   setSettings: (settings: SystemSettings) => void;
@@ -21,7 +30,7 @@ interface SystemStore {
 
 export const useSystemStore = create<SystemStore>()(
   persist(
-    (set, _get) => ({
+    (set) => ({
       settings: null,
       isLoading: false,
       error: null,
@@ -29,17 +38,11 @@ export const useSystemStore = create<SystemStore>()(
       checkInitialized: async () => {
         set({ isLoading: true, error: null });
         try {
-          const response = await apiGet("/api/system/initialized");
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(data.error || "Failed to check initialization");
-          }
-
-          return data.initialized;
-        } catch (error: any) {
-          set({ error: error.message });
-          return false;
+          const data = await apiGet<{ initialized: boolean }>("/api/system/initialized");
+          return data.initialized === true;
+        } catch (error) {
+          set({ error: getErrorMessage(error) ?? null });
+          throw error;
         } finally {
           set({ isLoading: false });
         }
@@ -48,21 +51,15 @@ export const useSystemStore = create<SystemStore>()(
       getSettings: async () => {
         set({ isLoading: true, error: null });
         try {
-          const response = await apiGet("/api/system/settings");
-          const data = await response.json();
-
-          if (!response.ok) {
-            throw new Error(data.error || "Failed to get settings");
-          }
-
+          const data = await apiGet<SystemSettingsResponse>("/api/system/settings");
           set({
             settings: {
               initialized: data.initialized,
               defaultLanguage: data.general?.defaultLanguage || "en",
             },
           });
-        } catch (error: any) {
-          set({ error: error.message });
+        } catch (error) {
+          set({ error: getErrorMessage(error) ?? null });
         } finally {
           set({ isLoading: false });
         }

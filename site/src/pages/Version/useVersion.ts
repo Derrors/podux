@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { apiGet } from "../../lib/api";
+import { useTranslation } from "react-i18next";
+import { apiGet, getErrorMessage } from "../../lib/api";
 
 export interface GithubRelease {
   tag_name: string;
@@ -10,6 +11,7 @@ export interface GithubRelease {
 }
 
 export function useVersion() {
+  const { t } = useTranslation();
   const [releases, setReleases] = useState<GithubRelease[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,21 +20,17 @@ export function useVersion() {
     async function fetchReleases() {
       try {
         setLoading(true);
-        const response = await apiGet("/api/github/frp/releases");
-        if (!response.ok) {
-          throw new Error("Failed to fetch releases");
-        }
-        const data = await response.json();
-        setReleases(data);
+        const data = await apiGet<GithubRelease[] | null>("/api/github/frp/releases");
+        setReleases(data ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
+        setError(getErrorMessage(err) || t("version.fetchFailed"));
       } finally {
         setLoading(false);
       }
     }
 
     fetchReleases();
-  }, []);
+  }, [t]);
 
   return {
     releases,

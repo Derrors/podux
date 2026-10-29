@@ -1,3 +1,5 @@
+import type { TFunction } from "i18next";
+
 export const formatBytes = (bytes: number): { value: number; unit: string } => {
   if (bytes === 0) return { value: 0, unit: "B" };
   const k = 1024;
@@ -8,32 +10,29 @@ export const formatBytes = (bytes: number): { value: number; unit: string } => {
 };
 
 /**
- * Format a timestamp into a human-readable "time ago" string
+ * Format a timestamp into a localized "time ago" string ("5 minutes ago", "5 分钟前").
  * @param timestamp - ISO date string or Date object
- * @returns Formatted string like "5 minutes ago", "2 days ago", etc.
+ * @param locale - current UI language (i18n.language)
  */
-export const getTimeAgo = (timestamp: string | Date | null | undefined): string => {
-  if (!timestamp) return "Never";
+export const formatTimeAgo = (
+  timestamp: string | Date | null | undefined,
+  locale: string,
+  t: TFunction
+): string => {
+  if (!timestamp) return t("time.never");
 
-  const date = new Date(timestamp);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-
-  // Handle future dates
-  if (diffMs < 0) return "Just now";
-
+  const diffMs = Date.now() - new Date(timestamp).getTime();
   const diffMinutes = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  // Future dates and anything under a minute
+  if (diffMinutes < 1) return t("time.justNow");
 
-  if (diffMinutes < 1) return "Just now";
-  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes > 1 ? "s" : ""} ago`;
-  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
-  if (diffDays < 30) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
-  if (diffDays < 365) {
-    const months = Math.floor(diffDays / 30);
-    return `${months} month${months > 1 ? "s" : ""} ago`;
-  }
-  const years = Math.floor(diffDays / 365);
-  return `${years} year${years > 1 ? "s" : ""} ago`;
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "always" });
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffMinutes < 60) return rtf.format(-diffMinutes, "minute");
+  if (diffHours < 24) return rtf.format(-diffHours, "hour");
+  if (diffDays < 30) return rtf.format(-diffDays, "day");
+  if (diffDays < 365) return rtf.format(-Math.floor(diffDays / 30), "month");
+  return rtf.format(-Math.floor(diffDays / 365), "year");
 };
