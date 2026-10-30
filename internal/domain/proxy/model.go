@@ -18,8 +18,10 @@ type Proxy struct {
 	SecretKey     string                `db:"secretKey" json:"secretKey,omitempty"`
 	AllowUsers    types.JSONStringArray `db:"allowUsers" json:"allowUsers,omitempty"`
 	HealthCheck   types.JSONMap         `db:"healthCheck" json:"healthCheck,omitempty"`
-	Description   string                `db:"description" json:"description"`
-	Status        string                `db:"status" json:"status"`
+	// Options holds extra frp proxy keys (see frpc.proxyOptionKeys); merged into the config.
+	Options     types.JSONMap `db:"options" json:"options,omitempty"`
+	Description string        `db:"description" json:"description"`
+	Status      string        `db:"status" json:"status"`
 }
 
 type ProxyStatus string

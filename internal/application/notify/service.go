@@ -229,6 +229,16 @@ func (s *Service) FrpcExited(serverID, serverName string, exitErr error) {
 	s.send(render(s.language(), EventFrpcExited, serverID, serverName, reason))
 }
 
+// ProxiesExpired reports temporary proxies that were disabled because they expired.
+func (s *Service) ProxiesExpired(serverID, serverName string, names []string) {
+	settings, err := s.GetSettings()
+	if err != nil || !settings.Enabled || !settings.Events.ProxyExpired {
+		return
+	}
+	sort.Strings(names)
+	s.send(render(s.language(), EventProxyExpired, serverID, serverName, joinNames(names)))
+}
+
 // ServerStopped clears a server's proxy state, e.g. when the user stops it, so its
 // proxies don't count as down and nothing is reported as recovered later.
 func (s *Service) ServerStopped(serverID string) {

@@ -15,6 +15,9 @@ const (
 	EventProxyDown         = "proxy_down"
 	EventProxyRecovered    = "proxy_recovered"
 	EventFrpcExited        = "frpc_exited"
+	EventProxyUnreachable  = "proxy_unreachable"
+	EventProxyReachable    = "proxy_reachable"
+	EventProxyExpired      = "proxy_expired"
 	EventTest              = "test"
 )
 
@@ -46,6 +49,9 @@ var templates = map[string]map[string]texts{
 		EventProxyDown:         {"代理掉线", "以下代理已离线超过 %d 秒：%s"},                           // seconds, names
 		EventProxyRecovered:    {"代理已恢复", "以下代理已重新上线：%s"},                               // names
 		EventFrpcExited:        {"frpc 意外退出", "该服务器的 frpc 已退出：%s。请在 Podux 中查看日志后重新启动。"}, // error
+		EventProxyUnreachable:  {"代理外网不可达", "以下代理在 frpc 中在线，但从外部连续 %d 次探测都连不上：%s"},      // count, endpoints
+		EventProxyReachable:    {"代理外网已恢复", "以下代理可以从外部重新访问：%s"},                         // endpoints
+		EventProxyExpired:      {"临时代理已到期", "以下代理已到期并自动停用：%s"},                          // names
 		EventTest:              {"测试通知", "如果你收到这条消息，说明通知渠道配置正确。"},
 	},
 	"en": {
@@ -56,6 +62,9 @@ var templates = map[string]map[string]texts{
 		EventProxyDown:         {"Proxies offline", "These proxies have been offline for over %d seconds: %s"},
 		EventProxyRecovered:    {"Proxies recovered", "These proxies are back online: %s"},
 		EventFrpcExited:        {"frpc exited", "frpc for this server exited: %s. Check its log in Podux and start it again."},
+		EventProxyUnreachable:  {"Proxies unreachable", "These proxies are online in frpc but failed %d external probes in a row: %s"},
+		EventProxyReachable:    {"Proxies reachable", "These proxies are reachable from outside again: %s"},
+		EventProxyExpired:      {"Temporary proxies expired", "These proxies expired and were disabled: %s"},
 		EventTest:              {"Test notification", "If you received this, the notification channel works."},
 	},
 }

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 
+	"podux/internal/application/backup"
 	"podux/internal/application/dashboard"
 	"podux/internal/application/frpc"
 	"podux/internal/application/importer"
@@ -65,6 +66,8 @@ func main() {
 	importHandler := httphandler.NewImportHandler(app, importService)
 	serverHandler := httphandler.NewServerHandler(app, metricsService)
 	notifyHandler := httphandler.NewNotifyHandler(notifyService)
+	proxyHandler := httphandler.NewProxyHandler(app)
+	backupHandler := httphandler.NewBackupHandler(app, backup.NewService(app))
 
 	// Hooks: reload the running frpc whenever one of its proxies or visitors changes.
 	reloadServers := func(e *core.RecordEvent, serverIds ...string) {
@@ -75,9 +78,7 @@ func main() {
 			}
 			seen[serverId] = true
 			app.Logger().Info("Config changed, reloading frpc", "collection", e.Record.Collection().Name, "recordId", e.Record.Id, "serverId", serverId)
-			if err := frpcService.ReloadFrpc(&serverId); err != nil {
-				app.Logger().Error("Failed to reload frpc after proxy change", "error", err, "serverId", serverId)
-			}
+			frpcService.RequestReload(serverId)
 		}
 	}
 	app.OnRecordAfterCreateSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
@@ -126,6 +127,8 @@ func main() {
 
 	// Reject enabled proxies/visitors whose port or domain collides with another one.
 	proxy.RegisterConflictChecks(app)
+	// Disable temporary proxies once they expire.
+	proxy.RegisterExpiry(app, notifyService.ProxiesExpired)
 
 	// Deleting a server also deletes its proxies, visitors and metrics, then stops its frpc.
 	server.RegisterDeleteHooks(app, func(serverId string) {
@@ -169,6 +172,8 @@ func main() {
 		importHandler.RegisterHandlers(e)
 		serverHandler.RegisterHandlers(e)
 		notifyHandler.RegisterHandlers(e)
+		proxyHandler.RegisterHandlers(e)
+		backupHandler.RegisterHandlers(e)
 
 		// Serve static files from embedded FS
 		content, err := fs.Sub(pbPublicDir, "pb_public")

@@ -1,6 +1,7 @@
 package frpc
 
 import (
+	"os"
 	"testing"
 
 	"podux/internal/infrastructure/persistence"
@@ -158,5 +159,87 @@ func TestGenVisitorCfgs(t *testing.T) {
 	if v.Name != "nas-"+x.Id || v.ServerName != "nas-abc" || v.ServerUser != "home" || v.SecretKey != "k" ||
 		v.BindAddr != "127.0.0.1" || v.BindPort != 6000 || !v.KeepTunnelOpen || !v.Transport.UseEncryption {
 		t.Errorf("visitor = %+v", v.VisitorBaseConfig)
+	}
+}
+
+func TestGenProxyCfgsOptionsPluginsAndFallback(t *testing.T) {
+	app := testutil.NewApp(t)
+	server := testutil.SaveRecord(t, app, "fh_servers", map[string]any{
+		"serverName": "s", "serverAddr": "127.0.0.1", "serverPort": 7000, "bootStatus": "stopped",
+	})
+	pem := "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+	web := testutil.SaveRecord(t, app, "fh_proxies", map[string]any{
+		"name": "web", "proxyType": "http", "serverId": server.Id, "localPort": 80, "status": "enabled", "bootStatus": "offline",
+		"customDomains": []string{"a.example.com"},
+		"options": map[string]any{
+			"httpUser": "u", "httpPassword": "p", "hostHeaderRewrite": "internal", "locations": []string{"/api"},
+			"requestHeaders": map[string]any{"set": map[string]any{"X-From": "podux"}},
+			"multiplexer":    "ignored for http", "loadBalancer": map[string]any{"group": "", "groupKey": ""},
+		},
+	})
+	mux := testutil.SaveRecord(t, app, "fh_proxies", map[string]any{
+		"name": "mux", "proxyType": "tcpmux", "serverId": server.Id, "localPort": 22, "status": "enabled", "bootStatus": "offline",
+		"customDomains": []string{"ssh.example.com"}, "options": map[string]any{"loadBalancer": map[string]any{"group": "g", "groupKey": "k"}},
+	})
+	tls := testutil.SaveRecord(t, app, "fh_proxies", map[string]any{
+		"name": "tls", "proxyType": "https", "serverId": server.Id, "status": "enabled", "bootStatus": "offline",
+		"customDomains": []string{"b.example.com"},
+		"plugin":        map[string]any{"type": "https2http", "localAddr": "127.0.0.1:80", "crtPath": pem, "keyPath": "/etc/key.pem"},
+	})
+	stcp := testutil.SaveRecord(t, app, "fh_visitors", map[string]any{
+		"name": "fb", "visitorType": "stcp", "serverId": server.Id, "serverName": "nas", "bindPort": -1, "status": "enabled",
+	})
+	xtcp := testutil.SaveRecord(t, app, "fh_visitors", map[string]any{
+		"name": "p2p", "visitorType": "xtcp", "serverId": server.Id, "serverName": "nas", "bindPort": 6000, "status": "enabled",
+		"fallbackTo": stcp.Id, "fallbackTimeoutMs": 800,
+	})
+	fs := NewService(app, persistence.NewServerRepository(app), persistence.NewProxyRepository(app), persistence.NewVisitorRepository(app))
+
+	proxies, err := fs.genProxyCfgs(&server.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]v1.ProxyConfigurer{}
+	for _, c := range proxies {
+		c.Complete()
+		if err := validation.ValidateProxyConfigurerForClient(c); err != nil {
+			t.Errorf("%s fails frp validation: %v", c.GetBaseConfig().Name, err)
+		}
+		byName[c.GetBaseConfig().Name] = c
+	}
+
+	h := byName["web-"+web.Id].(*v1.HTTPProxyConfig)
+	if h.HTTPUser != "u" || h.HTTPPassword != "p" || h.HostHeaderRewrite != "internal" ||
+		len(h.Locations) != 1 || h.RequestHeaders.Set["X-From"] != "podux" || h.LoadBalancer.Group != "" {
+		t.Errorf("http options = %+v", h)
+	}
+	m := byName["mux-"+mux.Id].(*v1.TCPMuxProxyConfig)
+	if m.Multiplexer != "httpconnect" || m.LoadBalancer.Group != "g" || m.LoadBalancer.GroupKey != "k" {
+		t.Errorf("tcpmux = %+v", m)
+	}
+
+	if err := fs.writePluginCerts(server.Id, proxies); err != nil {
+		t.Fatal(err)
+	}
+	opts := byName["tls-"+tls.Id].GetBaseConfig().Plugin.ClientPluginOptions.(*v1.HTTPS2HTTPPluginOptions)
+	if data, err := os.ReadFile(opts.CrtPath); err != nil || string(data) != pem {
+		t.Errorf("pasted certificate not written to a file: %q (%v)", opts.CrtPath, err)
+	}
+	if opts.KeyPath != "/etc/key.pem" {
+		t.Errorf("a key path must be kept as is, got %q", opts.KeyPath)
+	}
+
+	visitors, err := fs.genVisitorCfgs(&server.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range visitors {
+		if v.GetBaseConfig().Name != "p2p-"+xtcp.Id {
+			continue
+		}
+		x := v.(*v1.XTCPVisitorConfig)
+		if x.FallbackTo != "fb-"+stcp.Id || x.FallbackTimeoutMs != 800 {
+			t.Errorf("fallback = %q/%d", x.FallbackTo, x.FallbackTimeoutMs)
+		}
 	}
 }

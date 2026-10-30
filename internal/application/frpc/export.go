@@ -59,6 +59,8 @@ func (fs *Service) ExportToml(serverID string, includeSecrets bool) ([]byte, err
 		}
 	}
 
+	files = append(files, exportPluginCerts(proxies)...)
+
 	var out bytes.Buffer
 	out.WriteString("# frpc configuration exported from Podux / 由 Podux 导出的 frpc 配置\n")
 	out.WriteString("# Proxy and visitor names are \"<name>-<Podux ID>\", as Podux runs them on frps.\n")
@@ -66,7 +68,7 @@ func (fs *Service) ExportToml(serverID string, includeSecrets bool) ([]byte, err
 		fmt.Fprintf(&out, "# Secrets were replaced with %q; fill them in before use. / 密钥已替换为 %q，使用前请填写。\n", RedactedValue, RedactedValue)
 	}
 	for _, f := range files {
-		fmt.Fprintf(&out, "# Save the TLS file from the server settings as %s / 请把服务器设置中的证书内容保存为 %s\n", f, f)
+		fmt.Fprintf(&out, "# Save the TLS file from the Podux settings as %s / 请把 Podux 中配置的证书内容保存为 %s\n", f, f)
 	}
 	out.WriteString("\n")
 

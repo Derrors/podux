@@ -134,3 +134,55 @@ func TestVisitorConflicts(t *testing.T) {
 		})
 	}
 }
+
+func TestProxyConflictExceptions(t *testing.T) {
+	app := testutil.NewApp(t)
+	RegisterConflictChecks(app)
+
+	s := testutil.SaveRecord(t, app, "fh_servers", map[string]any{"serverName": "a", "serverAddr": "1.1.1.1", "serverPort": 7000})
+	base := func(fields map[string]any) map[string]any {
+		out := map[string]any{"serverId": s.Id, "status": "enabled", "bootStatus": "offline", "localPort": 80}
+		for k, v := range fields {
+			out[k] = v
+		}
+		return out
+	}
+	lb := map[string]any{"loadBalancer": map[string]any{"group": "web", "groupKey": "k"}}
+	testutil.SaveRecord(t, app, "fh_proxies", base(map[string]any{"name": "a", "proxyType": "tcp", "remotePort": 6000, "options": lb}))
+	testutil.SaveRecord(t, app, "fh_proxies", base(map[string]any{
+		"name": "api", "proxyType": "http", "customDomains": []string{"x.example.com"},
+		"options": map[string]any{"locations": []string{"/api"}},
+	}))
+	testutil.SaveRecord(t, app, "fh_proxies", base(map[string]any{"name": "m", "proxyType": "tcpmux", "customDomains": []string{"m.example.com"}}))
+
+	cases := []struct {
+		name   string
+		fields map[string]any
+		field  string
+	}{
+		{"same load balancing group", map[string]any{"proxyType": "tcp", "remotePort": 6000, "options": lb}, ""},
+		{"other group key", map[string]any{"proxyType": "tcp", "remotePort": 6000,
+			"options": map[string]any{"loadBalancer": map[string]any{"group": "web", "groupKey": "other"}}}, "remotePort"},
+		{"other location", map[string]any{"proxyType": "http", "customDomains": []string{"x.example.com"}}, ""},
+		{"same location", map[string]any{"proxyType": "http", "customDomains": []string{"x.example.com"},
+			"options": map[string]any{"locations": []string{"/api", "/v2"}}}, "customDomains"},
+		{"routed by another user", map[string]any{"proxyType": "http", "customDomains": []string{"x.example.com"},
+			"options": map[string]any{"locations": []string{"/api"}, "routeByHTTPUser": "bob"}}, ""},
+		{"tcpmux domain", map[string]any{"proxyType": "tcpmux", "customDomains": []string{"m.example.com"}}, "customDomains"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRecord(t, app, "fh_proxies", base(tc.fields))
+			r.Set("name", "new")
+			err := app.Save(r)
+			if got := conflictField(err); got != tc.field {
+				t.Fatalf("conflict field %q, want %q (err %v)", got, tc.field, err)
+			}
+			if err == nil {
+				if err := app.Delete(r); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}

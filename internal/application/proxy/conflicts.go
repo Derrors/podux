@@ -24,10 +24,13 @@ const (
 // the local machine would refuse at runtime, so the error shows up in the form
 // instead of only in the frpc log:
 //   - tcp/udp proxies on one server sharing a remote port (tcp and udp ports are separate)
-//   - http/https proxies on one server sharing a subdomain or custom domain
+//   - http/https/tcpmux proxies on one server sharing a subdomain or custom domain
+//     (http only when they also share a location)
 //   - visitors on any server listening on the same local address and port
 //
-// Disabled records are not checked, so an alternative config can be kept disabled.
+// Proxies in the same load balancing group (same group and group key) may share
+// a port or domain, as may proxies routed by different HTTP users. Disabled
+// records are not checked, so an alternative config can be kept disabled.
 func RegisterConflictChecks(app core.App) {
 	app.OnRecordValidate("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
 		if err := proxyConflicts(e.App, e.Record); err != nil {
@@ -49,7 +52,7 @@ func proxyConflicts(app core.App, r *core.Record) error {
 	}
 	proxyType := r.GetString("proxyType")
 	switch proxyType {
-	case "tcp", "udp", "http", "https":
+	case "tcp", "udp", "http", "https", "tcpmux":
 	default:
 		return nil
 	}
@@ -62,6 +65,7 @@ func proxyConflicts(app core.App, r *core.Record) error {
 	if err != nil {
 		return err
 	}
+	opts := optionsOf(r)
 
 	if proxyType == "tcp" || proxyType == "udp" {
 		port := r.GetInt("remotePort")
@@ -69,7 +73,7 @@ func proxyConflicts(app core.App, r *core.Record) error {
 			return nil // 0 lets frps pick a free port
 		}
 		for _, o := range others {
-			if o.GetInt("remotePort") == port {
+			if o.GetInt("remotePort") == port && !opts.sharesWith(optionsOf(o)) {
 				return validation.Errors{"remotePort": conflictError(CodePortConflict,
 					fmt.Sprintf("Remote %s port %d is already used by proxy %q.", proxyType, port, o.GetString("name")),
 					o.GetString("name"))}
@@ -81,6 +85,10 @@ func proxyConflicts(app core.App, r *core.Record) error {
 	subdomain := strings.ToLower(strings.TrimSpace(r.GetString("subdomain")))
 	domains := lowerAll(r.GetStringSlice("customDomains"))
 	for _, o := range others {
+		other := optionsOf(o)
+		if opts.sharesWith(other) || (proxyType == "http" && !overlaps(opts.locations(), other.locations())) {
+			continue
+		}
 		if subdomain != "" && strings.EqualFold(strings.TrimSpace(o.GetString("subdomain")), subdomain) {
 			return validation.Errors{"subdomain": conflictError(CodeDomainConflict,
 				fmt.Sprintf("Subdomain %q is already used by proxy %q.", subdomain, o.GetString("name")),
@@ -96,6 +104,49 @@ func proxyConflicts(app core.App, r *core.Record) error {
 		}
 	}
 	return nil
+}
+
+// proxyOptions is the part of fh_proxies.options that decides whether two proxies
+// may share a port or domain.
+type proxyOptions struct {
+	LoadBalancer struct {
+		Group    string `json:"group"`
+		GroupKey string `json:"groupKey"`
+	} `json:"loadBalancer"`
+	Locations       []string `json:"locations"`
+	RouteByHTTPUser string   `json:"routeByHTTPUser"`
+}
+
+func optionsOf(r *core.Record) proxyOptions {
+	var o proxyOptions
+	_ = r.UnmarshalJSONField("options", &o)
+	return o
+}
+
+// sharesWith reports whether frps routes both proxies apart or balances between them.
+func (o proxyOptions) sharesWith(other proxyOptions) bool {
+	if o.LoadBalancer.Group != "" && o.LoadBalancer.Group == other.LoadBalancer.Group &&
+		o.LoadBalancer.GroupKey == other.LoadBalancer.GroupKey {
+		return true
+	}
+	return o.RouteByHTTPUser != other.RouteByHTTPUser
+}
+
+// locations defaults to the catch-all location frp uses when none is set.
+func (o proxyOptions) locations() []string {
+	if len(o.Locations) == 0 {
+		return []string{""}
+	}
+	return o.Locations
+}
+
+func overlaps(a, b []string) bool {
+	for _, x := range a {
+		if slices.Contains(b, x) {
+			return true
+		}
+	}
+	return false
 }
 
 func visitorConflicts(app core.App, r *core.Record) error {

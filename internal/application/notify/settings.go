@@ -28,6 +28,8 @@ type Events struct {
 	HighLatency       bool `json:"highLatency"`
 	ProxyDown         bool `json:"proxyDown"`
 	FrpcExited        bool `json:"frpcExited"`
+	ProxyUnreachable  bool `json:"proxyUnreachable"`
+	ProxyExpired      bool `json:"proxyExpired"`
 	Recovered         bool `json:"recovered"`
 }
 
@@ -70,7 +72,8 @@ type EmailChannel struct {
 func DefaultSettings() Settings {
 	return Settings{
 		Events: Events{
-			ServerUnreachable: true, HighLatency: true, ProxyDown: true, FrpcExited: true, Recovered: true,
+			ServerUnreachable: true, HighLatency: true, ProxyDown: true, FrpcExited: true,
+			ProxyUnreachable: true, ProxyExpired: true, Recovered: true,
 		},
 		LatencyThresholdMs: 500,
 		Webhook:            WebhookChannel{Format: FormatGeneric},

@@ -67,6 +67,33 @@ type Service struct {
 	visitorRepo visitordomain.Repository
 	logger      sharedLogger
 	observer    StatusObserver
+	// reloadTimers holds pending RequestReload calls per server (guarded by mu).
+	reloadTimers map[string]*time.Timer
+}
+
+// reloadDelay batches the reloads of quick successive changes, e.g. a batch edit.
+const reloadDelay = 300 * time.Millisecond
+
+// RequestReload reloads a running server's frpc after reloadDelay; further requests
+// within that time are merged into the same reload.
+func (fs *Service) RequestReload(serverID string) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if t := fs.reloadTimers[serverID]; t != nil {
+		t.Reset(reloadDelay)
+		return
+	}
+	fs.reloadTimers[serverID] = time.AfterFunc(reloadDelay, func() {
+		fs.mu.Lock()
+		delete(fs.reloadTimers, serverID)
+		fs.mu.Unlock()
+		if !fs.IsServerRunning(serverID) {
+			return
+		}
+		if err := fs.ReloadFrpc(&serverID); err != nil {
+			fs.app.Logger().Error("Failed to reload frpc", "error", err, "serverId", serverID)
+		}
+	})
 }
 
 // StatusObserver is told about proxy status checks and frpc stopping, e.g. to send alerts.
@@ -93,11 +120,12 @@ func (fs *Service) serverName(id string) string {
 
 func NewService(app core.App, serverRepo serverdomain.Repository, proxyRepo proxydomain.Repository, visitorRepo visitordomain.Repository) *Service {
 	return &Service{
-		visitorRepo: visitorRepo,
-		app:         app,
-		instances:   make(map[string]*instance),
-		serverRepo:  serverRepo,
-		proxyRepo:   proxyRepo,
+		visitorRepo:  visitorRepo,
+		app:          app,
+		instances:    make(map[string]*instance),
+		reloadTimers: make(map[string]*time.Timer),
+		serverRepo:   serverRepo,
+		proxyRepo:    proxyRepo,
 	}
 }
 
@@ -236,6 +264,14 @@ func (fs *Service) buildCommonCfg(id *string) (*v1.ClientCommonConfig, error) {
 	return cfg, nil
 }
 
+// proxyOptionKeys are the frp proxy keys fh_proxies.options may set, per proxy type.
+// Keys for other types are ignored rather than sent to frp.
+var proxyOptionKeys = map[string][]string{
+	"tcp":    {"loadBalancer"},
+	"http":   {"locations", "httpUser", "httpPassword", "hostHeaderRewrite", "requestHeaders", "responseHeaders", "routeByHTTPUser", "loadBalancer"},
+	"tcpmux": {"httpUser", "httpPassword", "routeByHTTPUser", "multiplexer", "loadBalancer"},
+}
+
 var legacyTransportKeys = map[string]string{
 	"use_encryption":  "useEncryption",
 	"use_compression": "useCompression",
@@ -261,9 +297,22 @@ func (fs *Service) genProxyCfgs(serverId *string) ([]v1.ProxyConfigurer, error) 
 			return nil, err
 		}
 
+		options, _ := proxyData["options"].(map[string]interface{})
+		delete(proxyData, "options")
+		for _, key := range proxyOptionKeys[proxyMap.ProxyType] {
+			if v, ok := options[key]; ok && !isEmptyOption(v) {
+				proxyData[key] = v
+			}
+		}
+
 		switch proxyMap.ProxyType {
 		case "http", "https":
 			delete(proxyData, "remotePort")
+		case "tcpmux":
+			delete(proxyData, "remotePort")
+			if proxyData["multiplexer"] == nil {
+				proxyData["multiplexer"] = string(v1.TCPMultiplexerHTTPConnect)
+			}
 		case "stcp", "sudp", "xtcp":
 			// Reached through visitors, not a public port or domain.
 			delete(proxyData, "remotePort")
@@ -329,6 +378,11 @@ func (fs *Service) genVisitorCfgs(serverId *string) ([]v1.VisitorConfigurer, err
 		return nil, err
 	}
 
+	byID := make(map[string]visitordomain.Visitor, len(visitors))
+	for _, v := range visitors {
+		byID[v.Id] = v
+	}
+
 	var cfgs []v1.VisitorConfigurer
 	for _, v := range visitors {
 		data := map[string]any{
@@ -350,6 +404,15 @@ func (fs *Service) genVisitorCfgs(serverId *string) ([]v1.VisitorConfigurer, err
 		}
 		if v.VisitorType == "xtcp" {
 			data["keepTunnelOpen"] = v.KeepTunnelOpen
+			// Fall back to another visitor of this server (usually stcp) when p2p fails.
+			if fb, ok := byID[v.FallbackTo]; ok && v.FallbackTo != v.Id {
+				data["fallbackTo"] = fb.Name + "-" + fb.Id
+				if v.FallbackTimeoutMs > 0 {
+					data["fallbackTimeoutMs"] = v.FallbackTimeoutMs
+				}
+			} else if v.FallbackTo != "" {
+				fs.app.Logger().Warn("Visitor fallback is not an enabled visitor of this server", "visitorId", v.Id, "fallbackTo", v.FallbackTo)
+			}
 		}
 		jsonData, err := json.Marshal(data)
 		if err != nil {
@@ -441,6 +504,9 @@ func (fs *Service) newClient(serverId *string) (*client.Service, *v1.ClientCommo
 	}
 	visitorCfgs, err := fs.genVisitorCfgs(serverId)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := fs.writePluginCerts(*serverId, proxyCfgs); err != nil {
 		return nil, nil, err
 	}
 
@@ -761,6 +827,9 @@ func (fs *Service) ReloadFrpc(serverId *string) error {
 	if err != nil {
 		return err
 	}
+	if err := fs.writePluginCerts(*serverId, proxyCfgs); err != nil {
+		return err
+	}
 
 	proxyCfgsBytes, _ := json.Marshal(proxyCfgs)
 	visitorCfgsBytes, _ := json.Marshal(visitorCfgs)
@@ -807,4 +876,24 @@ func (fs *Service) AutoStartServers() {
 	}
 
 	fs.app.Logger().Info("Auto-start initiated for servers", "count", len(records))
+}
+
+// isEmptyOption reports whether an options value means "not set": "", nil, or an empty list/object.
+func isEmptyOption(v interface{}) bool {
+	switch t := v.(type) {
+	case nil:
+		return true
+	case string:
+		return t == ""
+	case []interface{}:
+		return len(t) == 0
+	case map[string]interface{}:
+		for _, inner := range t {
+			if !isEmptyOption(inner) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
