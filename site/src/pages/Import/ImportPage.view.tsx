@@ -180,6 +180,11 @@ function Step2({
                  updateProxySelection,
                  selectAllProxies,
                  selectedProxiesCount,
+                 importVisitors,
+                 setImportVisitors,
+                 overwriteVisitors,
+                 setOverwriteVisitors,
+                 visitorCount,
                  importing,
                  handleExecute,
                  goBack,
@@ -196,6 +201,11 @@ function Step2({
   | "updateProxySelection"
   | "selectAllProxies"
   | "selectedProxiesCount"
+  | "importVisitors"
+  | "setImportVisitors"
+  | "overwriteVisitors"
+  | "setOverwriteVisitors"
+  | "visitorCount"
   | "importing"
   | "handleExecute"
   | "goBack"
@@ -547,6 +557,78 @@ function Step2({
         </Flex>
       </Card>
 
+      {/* ── Visitor Section ── */}
+      {preview.visitors && preview.visitors.length > 0 && (
+        <Card>
+          <Flex direction="column" gap="3">
+            <Flex align="center" justify="between" wrap="wrap" gap="2">
+              <Flex align="center" gap="2">
+                <Icon icon="lucide:door-open" width="18" height="18" color="var(--accent-9)" />
+                <Text size="3" weight="bold">
+                  {t("import.visitorSection")}
+                </Text>
+                <Badge variant="surface" size="1">
+                  {preview.visitors.length}
+                </Badge>
+              </Flex>
+              <Flex gap="4" align="center" wrap="wrap">
+                <Text as="label" size="2">
+                  <Flex gap="2" align="center">
+                    <Checkbox checked={importVisitors} onCheckedChange={(v) => setImportVisitors(v === true)} />
+                    {t("import.importVisitors")}
+                  </Flex>
+                </Text>
+                {importVisitors && preview.visitors.some((v) => v.isDuplicate) && (
+                  <Text as="label" size="2">
+                    <Flex gap="2" align="center">
+                      <Switch size="1" checked={overwriteVisitors} onCheckedChange={setOverwriteVisitors} />
+                      {t("import.overwriteVisitors")}
+                    </Flex>
+                  </Text>
+                )}
+              </Flex>
+            </Flex>
+            <Separator size="4" />
+            <Table.Root variant="surface" style={{ opacity: importVisitors ? 1 : 0.45 }}>
+              <Table.Header>
+                <Table.Row>
+                  <Table.ColumnHeaderCell>{t("common.name")}</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell>{t("common.type")}</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell>{t("visitor.target")}</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell>{t("visitor.localAddress")}</Table.ColumnHeaderCell>
+                  <Table.ColumnHeaderCell>{t("common.status")}</Table.ColumnHeaderCell>
+                </Table.Row>
+              </Table.Header>
+              <Table.Body>
+                {preview.visitors.map((v) => (
+                  <Table.Row key={v.name}>
+                    <Table.Cell>
+                      <Text size="2" weight="medium">{v.name}</Text>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Badge variant="surface" size="1">{v.type}</Badge>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Text size="2" className="font-mono">{v.serverName}</Text>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Text size="2" className="font-mono">
+                        {v.bindAddr || "127.0.0.1"}:{v.bindPort || "-"}
+                      </Text>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Badge color={v.isDuplicate ? "orange" : "green"} variant="soft" size="1">
+                        {v.isDuplicate ? t("import.exists") : t("import.new")}
+                      </Badge>
+                    </Table.Cell>
+                  </Table.Row>
+                ))}
+              </Table.Body>
+            </Table.Root>
+          </Flex>
+        </Card>
+      )}
+
       {/* ── Actions ── */}
       <Flex justify="between">
         <Button variant="soft" color="gray" size="2" onClick={goBack}>
@@ -556,7 +638,7 @@ function Step2({
         <Button
           size="2"
           onClick={handleExecute}
-          disabled={importing || (!importServer && selectedProxiesCount === 0)}
+          disabled={importing || (!importServer && selectedProxiesCount === 0 && !(importVisitors && visitorCount > 0))}
           style={{
             background: "linear-gradient(135deg, var(--accent-9) 0%, var(--accent-10) 100%)",
             color: "white",
@@ -635,6 +717,17 @@ function Step3({ result, handleReset }: Pick<ImportViewProps, "result" | "handle
               {result.proxiesSkipped}
             </Badge>
           </Flex>
+          {(result.visitorsImported > 0 || result.visitorsSkipped > 0) && (
+            <Flex justify="between" align="center">
+              <Flex align="center" gap="2">
+                <Icon icon="lucide:door-open" width="16" height="16" color="var(--gray-9)" />
+                <Text size="2">{t("import.visitorsImported")}</Text>
+              </Flex>
+              <Badge color="green" variant="soft">
+                {result.visitorsImported} / {result.visitorsImported + result.visitorsSkipped}
+              </Badge>
+            </Flex>
+          )}
         </Flex>
       </Card>
 
@@ -707,6 +800,11 @@ export function ImportPageView(props: ImportViewProps) {
                 updateProxySelection={props.updateProxySelection}
                 selectAllProxies={props.selectAllProxies}
                 selectedProxiesCount={props.selectedProxiesCount}
+                importVisitors={props.importVisitors}
+                setImportVisitors={props.setImportVisitors}
+                overwriteVisitors={props.overwriteVisitors}
+                setOverwriteVisitors={props.setOverwriteVisitors}
+                visitorCount={props.visitorCount}
                 importing={props.importing}
                 handleExecute={props.handleExecute}
                 goBack={props.goBack}

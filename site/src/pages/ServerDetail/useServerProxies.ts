@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import pb from "../../lib/pocketbase";
 import { notifyError } from "../../lib/notify";
+import { firstFieldError } from "../../lib/fieldErrors";
 import { STALE } from "../../lib/latestRequest";
 import { createMutationGuard } from "../../lib/mutationGuard";
 import { useLatestRequest } from "../../hooks/useLatestRequest";
@@ -74,7 +75,9 @@ export function useServerProxies(serverId: string | undefined) {
         await pb.collection("fh_proxies").update(proxy.id, { status: newStatus });
       } catch (err) {
         setStatus(proxy.id, proxy.status);
-        notifyError(t("proxy.updateStatusFailed"), err);
+        const conflict = firstFieldError(err, t);
+        if (conflict) toast.error(t("proxy.updateStatusFailed"), { description: conflict });
+        else notifyError(t("proxy.updateStatusFailed"), err);
       }
     });
     setTogglingId(null);

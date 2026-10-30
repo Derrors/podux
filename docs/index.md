@@ -26,10 +26,10 @@ features:
     details: 轻松创建、配置和管理多个 frpc 服务器，支持自动连接和状态监控
   - icon: 🔌
     title: 代理配置
-    details: 支持 HTTP、HTTPS、TCP、UDP 等多种代理类型，配置简单直观
+    details: 支持 TCP、UDP、HTTP、HTTPS、STCP、SUDP、XTCP 代理与访问端，可设置限速和健康检查
   - icon: 📊
     title: 实时监控
-    details: 实时网络延迟监控、地理位置展示，一目了然
+    details: 实时网络延迟监控、地理位置展示；异常时通过 Webhook、Telegram、Bark 或邮件告警
   - icon: 🔄
     title: 热重载
     details: 配置更改后自动重载 frpc，无需手动重启服务

@@ -79,7 +79,7 @@ Once connected, the server shows as running and starts displaying latency and lo
 You can now reach the machine with `ssh -p 6022 user@your-server.com`.
 
 ::: tip Already have an frpc config?
-Upload your existing `frpc.toml` on the **Import** page to preview and import its server and proxies in one go. Unsupported proxy types (such as STCP and XTCP) are skipped with a warning.
+Upload your existing `frpc.toml` on the **Import** page to preview and import its server, proxies and visitors in one go. Unsupported proxy types (such as TCPMUX) are skipped with a warning.
 :::
 
 ## PocketBase Admin UI (Optional)
@@ -95,6 +95,8 @@ Podux includes the PocketBase admin UI (`/_/`) for inspecting the underlying dat
 
 ## Next Steps
 
+- [STCP/XTCP and Visitors](/en/guide/secret-proxies): reach internal services without a public port
+- [Alerts](/en/guide/notifications): get notified when a server or proxy has a problem
 - [Data and Backups](/en/deploy/backup): what is in the data directory and how to back it up
 - [Docker Upgrade](/en/deploy/upgrade/docker): upgrade to a new version
 - [FAQ](/en/troubleshoot/faq)

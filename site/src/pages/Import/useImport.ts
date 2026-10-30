@@ -29,9 +29,19 @@ export interface ImportProxyInfo {
   existingId: string;
 }
 
+export interface ImportVisitorInfo {
+  name: string;
+  type: string;
+  serverName: string;
+  bindAddr: string;
+  bindPort: number;
+  isDuplicate: boolean;
+}
+
 export interface ImportPreview {
   server: ImportServerInfo;
   proxies: ImportProxyInfo[];
+  visitors?: ImportVisitorInfo[];
   /** Warning codes, e.g. "tls_file_path_ignored"; omitted when empty. */
   warnings?: string[];
 }
@@ -46,6 +56,8 @@ export interface ImportResult {
   serverImported: boolean;
   proxiesImported: number;
   proxiesSkipped: number;
+  visitorsImported: number;
+  visitorsSkipped: number;
 }
 
 export type ImportStep = 1 | 2 | 3;
@@ -60,6 +72,9 @@ export function useImport() {
   const [importServer, setImportServer] = useState(true);
   const [overwriteServer, setOverwriteServer] = useState(false);
   const [proxySelections, setProxySelections] = useState<ProxySelection[]>([]);
+  // Visitors are imported all together; duplicates (same name on the server) are skipped unless overwriting.
+  const [importVisitors, setImportVisitors] = useState(true);
+  const [overwriteVisitors, setOverwriteVisitors] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
@@ -130,6 +145,8 @@ export function useImport() {
         importServer,
         overwriteServer,
         proxies: proxySelections,
+        importVisitors,
+        overwriteVisitors,
       });
       setResult(data.result);
       setStep(3);
@@ -139,7 +156,7 @@ export function useImport() {
     } finally {
       setImporting(false);
     }
-  }, [preview, tomlContent, serverName, importServer, overwriteServer, proxySelections, t]);
+  }, [preview, tomlContent, serverName, importServer, overwriteServer, proxySelections, importVisitors, overwriteVisitors, t]);
 
   const handleReset = useCallback(() => {
     setStep(1);
@@ -149,6 +166,8 @@ export function useImport() {
     setImportServer(true);
     setOverwriteServer(false);
     setProxySelections([]);
+    setImportVisitors(true);
+    setOverwriteVisitors(false);
     setParseError(null);
     setResult(null);
   }, []);
@@ -159,6 +178,7 @@ export function useImport() {
 
   // Derived: count selected proxies
   const selectedProxiesCount = proxySelections.filter((s) => s.import).length;
+  const visitorCount = preview?.visitors?.length ?? 0;
 
   return {
     step,
@@ -172,6 +192,11 @@ export function useImport() {
     overwriteServer,
     setOverwriteServer,
     proxySelections,
+    importVisitors,
+    setImportVisitors,
+    overwriteVisitors,
+    setOverwriteVisitors,
+    visitorCount,
     parsing,
     importing,
     parseError,

@@ -32,6 +32,14 @@ export default defineConfig({
             ]
           },
           {
+            text: '功能',
+            items: [
+              { text: 'STCP/XTCP 与访问端', link: '/guide/secret-proxies' },
+              { text: '告警通知', link: '/guide/notifications' },
+              { text: '导出配置', link: '/guide/export' },
+            ]
+          },
+          {
             text: '安装部署',
             items: [
               {
@@ -88,6 +96,14 @@ export default defineConfig({
               { text: 'Screenshots', link: '/en/guide/screenshots' },
               { text: 'Getting Started', link: '/en/guide/getting-started' },
               { text: 'Compatibility', link: '/en/guide/compatibility' }
+            ]
+          },
+          {
+            text: 'Features',
+            items: [
+              { text: 'STCP/XTCP and Visitors', link: '/en/guide/secret-proxies' },
+              { text: 'Alerts', link: '/en/guide/notifications' },
+              { text: 'Export Config', link: '/en/guide/export' }
             ]
           },
           {

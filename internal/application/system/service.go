@@ -80,15 +80,13 @@ func (s *Service) GetSettings() (*SettingsResponse, error) {
 		return nil, fmt.Errorf("failed to find settings record: %w", err)
 	}
 
+	// JSON fields come back as types.JSONRaw, so decode them rather than type-assert.
 	general := make(map[string]interface{})
-	if generalField := record.Get("general"); generalField != nil {
-		if generalMap, ok := generalField.(map[string]interface{}); ok {
-			general = generalMap
-		} else if generalStr, ok := generalField.(string); ok {
-			if err := json.Unmarshal([]byte(generalStr), &general); err != nil {
-				s.app.Logger().Warn("Failed to unmarshal general settings", "error", err)
-			}
-		}
+	if err := record.UnmarshalJSONField("general", &general); err != nil {
+		s.app.Logger().Warn("Failed to unmarshal general settings", "error", err)
+	}
+	if general == nil {
+		general = make(map[string]interface{}) // stored as JSON null
 	}
 
 	return &SettingsResponse{
@@ -104,7 +102,19 @@ func (s *Service) UpdateSettings(req *UpdateSettingsRequest) error {
 		return errors.New("general settings cannot be nil")
 	}
 
-	generalJSON, err := json.Marshal(req.General)
+	// Merge into the stored settings: the settings page only sends the keys it edits,
+	// and replacing the whole object dropped others such as defaultLanguage.
+	merged := map[string]interface{}{}
+	if current, err := s.GetSettings(); err == nil {
+		for k, v := range current.General {
+			merged[k] = v
+		}
+	}
+	for k, v := range req.General {
+		merged[k] = v
+	}
+
+	generalJSON, err := json.Marshal(merged)
 	if err != nil {
 		return fmt.Errorf("failed to marshal general settings: %w", err)
 	}

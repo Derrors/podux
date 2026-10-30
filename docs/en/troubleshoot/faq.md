@@ -20,16 +20,24 @@ See [Data and Backups](/en/deploy/backup).
 
 Yes. Upload the TOML file on the **Import** page, preview it, and choose which proxies to import. A server with the same address and port, and proxies with the same name under it, are recognized as existing. Note:
 
-- Unsupported proxy types such as STCP and XTCP are skipped with a warning
+- STCP, SUDP and XTCP proxies and `[[visitors]]` are imported too; unsupported proxy types such as TCPMUX are skipped with a warning
 - TLS certificates are imported by content only; certificate file paths in the config are ignored, so paste the certificate contents into the server settings after importing
 
 ### How do configuration changes take effect?
 
-After you save a proxy, Podux hot-reloads that server's frpc. Only proxies whose configuration changed are restarted; other tunnels on the same server are not affected. Changes to a server's own connection settings take effect after you restart that server.
+After you save a proxy or visitor, Podux hot-reloads that server's frpc. Only proxies whose configuration changed are restarted; other tunnels on the same server are not affected. Changes to a server's own connection settings take effect after you restart that server.
 
 ### Which proxy types are supported?
 
-**TCP**, **UDP**, **HTTP** and **HTTPS**. STCP, SUDP, XTCP and TCPMUX are not supported yet.
+**TCP**, **UDP**, **HTTP**, **HTTPS**, **STCP**, **SUDP** and **XTCP**, plus visitors for STCP/SUDP/XTCP. TCPMUX is not supported yet. See [Compatibility](/en/guide/compatibility).
+
+### Saving a proxy says a port or domain is already used
+
+On one server, enabled TCP proxies can't share a remote port, nor can enabled UDP proxies; HTTP proxies can't share a subdomain or custom domain, nor can HTTPS proxies. Visitors listen on this machine, so no two visitors, on any server, can use the same local address and port. The message names the conflicting proxy or visitor; change one of them, or disable the other first.
+
+### How do I move back to native frpc?
+
+On the server's detail page, click **Export config** to download `frpc.toml`; see [Export Config](/en/guide/export).
 
 ## Troubleshooting
 

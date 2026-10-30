@@ -55,6 +55,11 @@ const navItems = [
     path: "/proxies",
     icon: <Icon icon="lucide:network" width="18" height="18" />,
   },
+  {
+    labelKey: "nav.visitors",
+    path: "/visitors",
+    icon: <Icon icon="lucide:door-open" width="18" height="18" />,
+  },
 ];
 
 const mobileBottomNavItems = navItems;

@@ -5,6 +5,9 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	"podux/internal/testutil"
 )
 
 func TestGetLatestVersionCachesAndFallsBack(t *testing.T) {
@@ -45,5 +48,41 @@ func TestGetLatestVersionCachesAndFallsBack(t *testing.T) {
 	// With nothing cached, the error is returned.
 	if _, err := NewService(nil).GetLatestVersion(); err == nil {
 		t.Fatal("expected error when GitHub fails and nothing is cached")
+	}
+}
+
+func TestUpdateSettingsKeepsOtherKeys(t *testing.T) {
+	app := testutil.NewApp(t)
+	s := NewService(app)
+	if err := s.InitializeSystem(&InitializeRequest{Email: "a@example.com", Password: "12345678", Language: "zh"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.UpdateSettings(&UpdateSettingsRequest{General: map[string]interface{}{"latencyCheckInterval": 60}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.General["defaultLanguage"] != "zh" || got.General["latencyCheckInterval"] != float64(60) {
+		t.Fatalf("general = %v, want defaultLanguage kept and the interval updated", got.General)
+	}
+}
+
+func TestMonitoringIntervalsFromSavedSettings(t *testing.T) {
+	app := testutil.NewApp(t)
+	s := NewService(app)
+	if err := s.InitializeSystem(&InitializeRequest{Email: "a@example.com", Password: "12345678"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateSettings(&UpdateSettingsRequest{General: map[string]interface{}{
+		"latencyCheckInterval": 45, "locationCheckInterval": 120,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	latency, geo := s.GetMonitoringIntervals()
+	if latency != 45*time.Second || geo != 120*time.Second {
+		t.Fatalf("intervals = %v, %v; want the saved 45s and 120s", latency, geo)
 	}
 }

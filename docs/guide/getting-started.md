@@ -79,7 +79,7 @@ docker compose up -d
 之后即可通过 `ssh -p 6022 user@your-server.com` 访问本机。
 
 ::: tip 已有 frpc 配置？
-在 **导入** 页面上传现有的 `frpc.toml`，预览后即可批量导入服务器和代理。暂不支持的代理类型（如 STCP、XTCP）会被跳过并提示。
+在 **导入** 页面上传现有的 `frpc.toml`，预览后即可批量导入服务器、代理和访问端。暂不支持的代理类型（如 TCPMUX）会被跳过并提示。
 :::
 
 ## PocketBase 管理后台（可选）
@@ -95,6 +95,8 @@ Podux 内置 PocketBase 管理后台（`/_/`），可以直接查看底层数据
 
 ## 下一步
 
+- [STCP/XTCP 与访问端](/guide/secret-proxies)：不开放公网端口访问内网服务
+- [告警通知](/guide/notifications)：服务器或代理异常时收到提醒
 - [数据与备份](/deploy/backup)：数据目录里有什么、如何备份
 - [Docker 升级](/deploy/upgrade/docker)：升级到新版本
 - [常见问题](/troubleshoot/faq)

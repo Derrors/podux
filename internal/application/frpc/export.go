@@ -120,9 +120,9 @@ func toPlain(v any, includeSecrets bool) (any, error) {
 	return prune(plain, includeSecrets), nil
 }
 
-// prune removes nulls, empty strings and empty tables/arrays, which frp treats as
-// unset, so the export only shows configured values. false and 0 are kept: they
-// can be meaningful (tls.enable = false).
+// prune removes nulls, empty strings, zero numbers and empty tables/arrays, which
+// frp treats as unset (it fills in defaults for zeros, e.g. log.maxDays), so the
+// export only shows configured values. false is kept: tls.enable = false matters.
 func prune(v any, includeSecrets bool) any {
 	switch t := v.(type) {
 	case map[string]any:
@@ -167,6 +167,9 @@ func prune(v any, includeSecrets bool) any {
 	case nil:
 		return nil
 	case float64:
+		if t == 0 {
+			return nil
+		}
 		// JSON numbers decode as float64; keep whole numbers as TOML integers (7000, not 7000.0).
 		if t == float64(int64(t)) {
 			return int64(t)

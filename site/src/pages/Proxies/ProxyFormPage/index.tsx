@@ -21,8 +21,11 @@ export function ProxyFormPage() {
       submitting={form.submitting}
       errors={form.errors}
       isHttpType={form.isHttpType}
+      isSecretType={form.isSecretType}
       isSocks5Plugin={form.isSocks5Plugin}
+      runtimeName={form.runtimeName}
       mounted={mounted}
+      onRegenerateSecretKey={form.regenerateSecretKey}
       onChange={form.handleChange}
       onSubmit={form.handleSubmit}
       onCancel={() => form.navigate("/proxies")}

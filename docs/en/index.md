@@ -25,10 +25,10 @@ features:
     details: Easily create, configure, and manage multiple frpc servers with auto-connection and status monitoring.
   - icon: 🔌
     title: Proxy Configuration
-    details: Supports HTTP, HTTPS, TCP, UDP, and more proxy types with simple and intuitive configuration.
+    details: TCP, UDP, HTTP, HTTPS, STCP, SUDP and XTCP proxies and visitors, with bandwidth limits and health checks.
   - icon: 📊
     title: Real-time Monitoring
-    details: Real-time network latency monitoring and geolocation display at a glance.
+    details: Real-time latency monitoring and geolocation, with alerts by webhook, Telegram, Bark or email.
   - icon: 🔄
     title: Hot Reload
     details: Automatically reloads frpc after configuration changes without manual service restart.

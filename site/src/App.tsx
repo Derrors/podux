@@ -22,6 +22,10 @@ const NotFoundPage = lazy(() =>
 const ServerDetailPage = lazy(() =>
   import("./pages/ServerDetail").then((m) => ({ default: m.ServerDetailPage }))
 );
+const VisitorsPage = lazy(() => import("./pages/Visitors").then((m) => ({ default: m.VisitorsPage })));
+const VisitorFormPage = lazy(() =>
+  import("./pages/Visitors/VisitorFormPage").then((m) => ({ default: m.VisitorFormPage }))
+);
 const ImportPage = lazy(() => import("./pages/Import").then((m) => ({ default: m.ImportPage })));
 const ProxyFormPage = lazy(() =>
   import("./pages/Proxies/ProxyFormPage").then((m) => ({ default: m.ProxyFormPage }))
@@ -69,6 +73,9 @@ function App() {
             <Route path="/proxies" element={<ProxiesPage />} />
             <Route path="/proxies/new" element={<ProxyFormPage />} />
             <Route path="/proxies/:id/edit" element={<ProxyFormPage />} />
+            <Route path="/visitors" element={<VisitorsPage />} />
+            <Route path="/visitors/new" element={<VisitorFormPage />} />
+            <Route path="/visitors/:id/edit" element={<VisitorFormPage />} />
             <Route path="/servers" element={<ServersPage />} />
             <Route path="/servers/new" element={<ServerFormPage />} />
             <Route path="/servers/:id/edit" element={<ServerFormPage />} />

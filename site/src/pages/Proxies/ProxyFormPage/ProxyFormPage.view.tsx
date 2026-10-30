@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { useRef } from "react";
 
 import { FormItem } from "../../../components/FormItem";
+import { CopyableText } from "../../../components/CopyableText";
 import { PageHeader } from "../../../components/PageHeader";
 import { SectionHeading } from "../../../components/SectionHeading";
 import { RadioCardGroup } from "../../../components/RadioCardGroup";
@@ -29,9 +30,9 @@ const proxyTypes = [
   { value: "http",   label: "HTTP",   icon: "lucide:globe",            comingSoon: false },
   { value: "https",  label: "HTTPS",  icon: "lucide:lock",             comingSoon: false },
   { value: "tcpmux", label: "TCPMUX", icon: "lucide:split",            comingSoon: true  },
-  { value: "stcp",   label: "STCP",   icon: "lucide:shield",           comingSoon: true  },
-  { value: "sudp",   label: "SUDP",   icon: "lucide:shield-ellipsis",  comingSoon: true  },
-  { value: "xtcp",   label: "XTCP",   icon: "lucide:share-2",          comingSoon: true  },
+  { value: "stcp",   label: "STCP",   icon: "lucide:shield",           comingSoon: false },
+  { value: "sudp",   label: "SUDP",   icon: "lucide:shield-ellipsis",  comingSoon: false },
+  { value: "xtcp",   label: "XTCP",   icon: "lucide:share-2",          comingSoon: false },
 ];
 
 const BASE_PLUGIN_TYPES = [
@@ -56,8 +57,12 @@ interface ProxyFormPageViewProps {
   submitting: boolean;
   errors: Partial<Record<keyof ProxyFormData, string>>;
   isHttpType: boolean;
+  isSecretType: boolean;
   isSocks5Plugin: boolean;
+  /** "<name>-<id>" of a saved stcp/sudp/xtcp proxy, for visitors; empty when new. */
+  runtimeName: string;
   mounted: boolean;
+  onRegenerateSecretKey: () => void;
   onChange: (field: keyof ProxyFormData, value: string | boolean | string[]) => void;
   onSubmit: () => void;
   onCancel: () => void;
@@ -73,8 +78,11 @@ export function ProxyFormPageView({
   submitting,
   errors,
   isHttpType,
+  isSecretType,
   isSocks5Plugin,
+  runtimeName,
   mounted,
+  onRegenerateSecretKey,
   onChange,
   onSubmit,
   onCancel,
@@ -291,6 +299,58 @@ export function ProxyFormPageView({
                         </Text>
                       </FormItem>
                     </>
+                  ) : isSecretType ? (
+                    <>
+                      <Callout.Root size="1" color="blue">
+                        <Callout.Icon>
+                          <Icon icon="lucide:info" width="14" height="14" />
+                        </Callout.Icon>
+                        <Callout.Text>{t("proxy.secretTypeHint")}</Callout.Text>
+                      </Callout.Root>
+                      <FormItem label={t("proxy.secretKey")} required error={errors.secretKey}>
+                        <Flex gap="2">
+                          <TextField.Root
+                            size="2"
+                            style={{ flex: 1 }}
+                            className="font-mono"
+                            value={formData.secretKey}
+                            onChange={(e) => onChange("secretKey", e.target.value)}
+                            color={errors.secretKey ? "red" : undefined}
+                            autoComplete="off"
+                          />
+                          <Button type="button" size="2" variant="soft" onClick={onRegenerateSecretKey}>
+                            <Icon icon="lucide:refresh-cw" width="14" height="14" />
+                            {t("proxy.generateSecretKey")}
+                          </Button>
+                        </Flex>
+                        <Text size="1" color="gray" mt="1">
+                          {t("proxy.secretKeyDesc")}
+                        </Text>
+                      </FormItem>
+                      <FormItem label={t("proxy.allowUsers")}>
+                        <TextField.Root
+                          size="2"
+                          placeholder={t("proxy.allowUsersPlaceholder")}
+                          value={formData.allowUsers}
+                          onChange={(e) => onChange("allowUsers", e.target.value)}
+                        />
+                        <Text size="1" color="gray" mt="1">
+                          {t("proxy.allowUsersDesc")}
+                        </Text>
+                      </FormItem>
+                      <FormItem label={t("proxy.visitorServerName")}>
+                        {runtimeName ? (
+                          <CopyableText text={runtimeName} />
+                        ) : (
+                          <Text size="2" color="gray">
+                            {t("proxy.visitorServerNameAfterSave")}
+                          </Text>
+                        )}
+                        <Text size="1" color="gray" mt="1" as="p">
+                          {t("proxy.visitorServerNameDesc")}
+                        </Text>
+                      </FormItem>
+                    </>
                   ) : (
                     <FormItem label={t("proxy.remotePortLabel")} required error={errors.remotePort}>
                       <TextField.Root
@@ -338,8 +398,106 @@ export function ProxyFormPageView({
                       onCheckedChange={(v) => onChange("compression", v)}
                     />
                   </Flex>
+                  <Separator size="4" />
+                  <FormItem label={t("proxy.bandwidthLimit")} error={errors.bandwidthLimit}>
+                    <Flex gap="2" wrap="wrap">
+                      <TextField.Root
+                        size="2"
+                        type="number"
+                        min="1"
+                        style={{ flex: 1, minWidth: 120 }}
+                        placeholder={t("proxy.bandwidthLimitPlaceholder")}
+                        value={formData.bandwidthLimit}
+                        onChange={(e) => onChange("bandwidthLimit", e.target.value)}
+                        color={errors.bandwidthLimit ? "red" : undefined}
+                      />
+                      <Select.Root value={formData.bandwidthUnit} onValueChange={(v) => onChange("bandwidthUnit", v)}>
+                        <Select.Trigger aria-label={t("proxy.bandwidthUnit")} />
+                        <Select.Content>
+                          <Select.Item value="KB">KB/s</Select.Item>
+                          <Select.Item value="MB">MB/s</Select.Item>
+                        </Select.Content>
+                      </Select.Root>
+                      <Select.Root value={formData.bandwidthMode} onValueChange={(v) => onChange("bandwidthMode", v)}>
+                        <Select.Trigger aria-label={t("proxy.bandwidthMode")} />
+                        <Select.Content>
+                          <Select.Item value="client">{t("proxy.bandwidthModeClient")}</Select.Item>
+                          <Select.Item value="server">{t("proxy.bandwidthModeServer")}</Select.Item>
+                        </Select.Content>
+                      </Select.Root>
+                    </Flex>
+                    <Text size="1" color="gray" mt="1" as="p">
+                      {t("proxy.bandwidthLimitDesc")}
+                    </Text>
+                  </FormItem>
                 </Flex>
               </section>
+
+              {!isSocks5Plugin && (
+                <>
+                  <Separator size="4" />
+
+                  {/* 健康检查 */}
+                  <section>
+                    <SectionHeading id="section-health" title={t("proxy.sectionHealthCheck")} icon="lucide:heart-pulse" />
+                    <Flex direction="column" gap="4">
+                      <FormItem label={t("proxy.healthCheckType")}>
+                        <Select.Root
+                          value={formData.healthCheckType || "none"}
+                          onValueChange={(v) => onChange("healthCheckType", v === "none" ? "" : v)}
+                        >
+                          <Select.Trigger style={{ width: "100%" }} />
+                          <Select.Content>
+                            <Select.Item value="none">{t("proxy.healthCheckNone")}</Select.Item>
+                            <Select.Item value="tcp">TCP</Select.Item>
+                            <Select.Item value="http">HTTP</Select.Item>
+                          </Select.Content>
+                        </Select.Root>
+                        <Text size="1" color="gray" mt="1" as="p">
+                          {t("proxy.healthCheckDesc")}
+                        </Text>
+                      </FormItem>
+                      {formData.healthCheckType && (
+                        <Flex direction="column" gap="4" className="border-l-2 border-[var(--accent-6)] pl-4">
+                          {formData.healthCheckType === "http" && (
+                            <FormItem label={t("proxy.healthCheckPath")} required error={errors.healthCheckPath}>
+                              <TextField.Root
+                                size="2"
+                                placeholder="/health"
+                                value={formData.healthCheckPath}
+                                onChange={(e) => onChange("healthCheckPath", e.target.value)}
+                                color={errors.healthCheckPath ? "red" : undefined}
+                              />
+                            </FormItem>
+                          )}
+                          <Flex gap="3" wrap="wrap">
+                            {(
+                              [
+                                ["healthCheckInterval", "proxy.healthCheckInterval"],
+                                ["healthCheckTimeout", "proxy.healthCheckTimeout"],
+                                ["healthCheckMaxFailed", "proxy.healthCheckMaxFailed"],
+                              ] as const
+                            ).map(([field, label]) => (
+                              <Box key={field} className="min-w-[140px] flex-1">
+                                <FormItem label={t(label)} required error={errors[field]}>
+                                  <TextField.Root
+                                    size="2"
+                                    type="number"
+                                    min="1"
+                                    value={formData[field]}
+                                    onChange={(e) => onChange(field, e.target.value)}
+                                    color={errors[field] ? "red" : undefined}
+                                  />
+                                </FormItem>
+                              </Box>
+                            ))}
+                          </Flex>
+                        </Flex>
+                      )}
+                    </Flex>
+                  </section>
+                </>
+              )}
 
               <Separator size="4" />
 

@@ -7,6 +7,8 @@ import { apiGet } from "../../../lib/api";
 import { notifyError } from "../../../lib/notify";
 import { toast } from "sonner";
 import { REGEX } from "../../../lib/regex";
+import { fieldErrors } from "../../../lib/fieldErrors";
+import { isSecretProxyType, type HealthCheck } from "../../../types/proxy";
 
 export interface ProxyFormData {
   serverId: string;
@@ -24,6 +26,18 @@ export interface ProxyFormData {
   pluginType: "socks5";
   pluginUsername: string;
   pluginPassword: string;
+  /** stcp/sudp/xtcp: key visitors must present, and frp users allowed to visit ("*" = any). */
+  secretKey: string;
+  allowUsers: string;
+  /** Bandwidth limit as a number of `bandwidthUnit`; empty = unlimited. */
+  bandwidthLimit: string;
+  bandwidthUnit: "KB" | "MB";
+  bandwidthMode: "client" | "server";
+  healthCheckType: "" | "tcp" | "http";
+  healthCheckPath: string;
+  healthCheckInterval: string;
+  healthCheckTimeout: string;
+  healthCheckMaxFailed: string;
 }
 
 const DEFAULT_FORM: ProxyFormData = {
@@ -42,6 +56,41 @@ const DEFAULT_FORM: ProxyFormData = {
   pluginType: "socks5",
   pluginUsername: "",
   pluginPassword: "",
+  secretKey: "",
+  allowUsers: "",
+  bandwidthLimit: "",
+  bandwidthUnit: "MB",
+  bandwidthMode: "client",
+  healthCheckType: "",
+  healthCheckPath: "/",
+  healthCheckInterval: "10",
+  healthCheckTimeout: "3",
+  healthCheckMaxFailed: "1",
+};
+
+/** Random hex secret key for stcp/sudp/xtcp proxies. */
+export const generateSecretKey = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+
+/** Splits frp's bandwidth quantity ("1MB", "500KB") into the form's number and unit. */
+const parseBandwidth = (value: unknown): Pick<ProxyFormData, "bandwidthLimit" | "bandwidthUnit"> => {
+  const m = typeof value === "string" ? /^(\d+)\s*(KB|MB)$/i.exec(value.trim()) : null;
+  return m
+    ? { bandwidthLimit: m[1], bandwidthUnit: m[2].toUpperCase() as "KB" | "MB" }
+    : { bandwidthLimit: "", bandwidthUnit: "MB" };
+};
+
+const POSITIVE_INT = /^[1-9][0-9]{0,5}$/;
+
+/** Backend record fields whose validation errors map onto form fields. */
+const RECORD_TO_FORM: Record<string, keyof ProxyFormData> = {
+  name: "name",
+  localIP: "localIp",
+  localPort: "localPort",
+  remotePort: "remotePort",
+  subdomain: "subdomain",
+  customDomains: "customDomains",
+  secretKey: "secretKey",
 };
 
 type Transport = Record<string, unknown>;
@@ -102,6 +151,7 @@ export function useProxyForm() {
         const record = await pb.collection("fh_proxies").getOne(id);
         const plugin = record.plugin as Record<string, string> | null | undefined;
         const transport = (record.transport as Transport | null | undefined) ?? {};
+        const healthCheck = (record.healthCheck as HealthCheck | null | undefined) ?? {};
         loadedTransport.current = transport;
         setFormData({
           serverId: record.serverId as string,
@@ -119,6 +169,15 @@ export function useProxyForm() {
           pluginType: (plugin?.type as ProxyFormData["pluginType"]) || "socks5",
           pluginUsername: plugin?.username || "",
           pluginPassword: plugin?.password || "",
+          secretKey: (record.secretKey as string) || "",
+          allowUsers: ((record.allowUsers as string[] | null) ?? []).join(", "),
+          ...parseBandwidth(transport.bandwidthLimit),
+          bandwidthMode: transport.bandwidthLimitMode === "server" ? "server" : "client",
+          healthCheckType: healthCheck.type || "",
+          healthCheckPath: healthCheck.path || "/",
+          healthCheckInterval: String(healthCheck.intervalSeconds || 10),
+          healthCheckTimeout: String(healthCheck.timeoutSeconds || 3),
+          healthCheckMaxFailed: String(healthCheck.maxFailed || 1),
         });
       } catch (err) {
         notifyError(i18n.t("proxy.loadFailed"), err);
@@ -147,6 +206,15 @@ export function useProxyForm() {
         case "subdomain":
           if (!REGEX.SUBDOMAIN.test(value)) error = t("proxy.errorInvalidSubdomain");
           break;
+        case "bandwidthLimit":
+        case "healthCheckInterval":
+        case "healthCheckTimeout":
+        case "healthCheckMaxFailed":
+          if (!POSITIVE_INT.test(value)) error = t("proxy.errorPositiveInteger");
+          break;
+        case "healthCheckPath":
+          if (!value.startsWith("/")) error = t("proxy.errorHealthCheckPath");
+          break;
       }
     }
     setErrors((prev) => ({ ...prev, [field]: error }));
@@ -158,6 +226,10 @@ export function useProxyForm() {
       if (field === "type" && value !== "tcp" && prev.pluginEnabled && prev.pluginType === "socks5") {
         next.pluginEnabled = false;
       }
+      // A new stcp/sudp/xtcp proxy starts with a random secret key.
+      if (field === "type" && typeof value === "string" && isSecretProxyType(value) && !prev.secretKey) {
+        next.secretKey = generateSecretKey();
+      }
       return next;
     });
     if (typeof value === "string") validateField(field, value);
@@ -168,6 +240,7 @@ export function useProxyForm() {
 
   const validate = (data: ProxyFormData): boolean => {
     const isHttp = data.type === "http" || data.type === "https";
+    const isSecret = isSecretProxyType(data.type);
     const isSocks5 = data.pluginEnabled && data.pluginType === "socks5";
     const newErrors: Partial<Record<keyof ProxyFormData, string>> = {};
 
@@ -183,9 +256,24 @@ export function useProxyForm() {
       else if (!REGEX.PORT.test(data.localPort)) newErrors.localPort = t("proxy.errorInvalidPort");
     }
 
-    if (!isHttp && !isSocks5) {
+    if (!isHttp && !isSecret && !isSocks5) {
       if (!data.remotePort) newErrors.remotePort = t("proxy.errorRequired");
       else if (!REGEX.PORT.test(data.remotePort)) newErrors.remotePort = t("proxy.errorInvalidPort");
+    }
+
+    if (isSecret && !data.secretKey.trim()) newErrors.secretKey = t("proxy.errorRequired");
+
+    if (data.bandwidthLimit && !POSITIVE_INT.test(data.bandwidthLimit)) {
+      newErrors.bandwidthLimit = t("proxy.errorPositiveInteger");
+    }
+
+    if (data.healthCheckType && !isSocks5) {
+      for (const field of ["healthCheckInterval", "healthCheckTimeout", "healthCheckMaxFailed"] as const) {
+        if (!POSITIVE_INT.test(data[field])) newErrors[field] = t("proxy.errorPositiveInteger");
+      }
+      if (data.healthCheckType === "http" && !data.healthCheckPath.startsWith("/")) {
+        newErrors.healthCheckPath = t("proxy.errorHealthCheckPath");
+      }
     }
 
     if (isHttp) {
@@ -221,9 +309,28 @@ export function useProxyForm() {
       }
       : null;
 
+    const isSecret = isSecretProxyType(data.type);
+    const isSocks5 = data.pluginEnabled && data.pluginType === "socks5";
     const keptTransport = { ...loadedTransport.current };
     delete keptTransport.use_encryption;
     delete keptTransport.use_compression;
+    delete keptTransport.bandwidthLimit;
+    delete keptTransport.bandwidthLimitMode;
+    if (data.bandwidthLimit) {
+      keptTransport.bandwidthLimit = `${data.bandwidthLimit}${data.bandwidthUnit}`;
+      if (data.bandwidthMode === "server") keptTransport.bandwidthLimitMode = "server";
+    }
+    const healthCheck =
+      data.healthCheckType && !isSocks5
+        ? {
+          type: data.healthCheckType,
+          ...(data.healthCheckType === "http" ? { path: data.healthCheckPath } : {}),
+          intervalSeconds: Number(data.healthCheckInterval),
+          timeoutSeconds: Number(data.healthCheckTimeout),
+          maxFailed: Number(data.healthCheckMaxFailed),
+        }
+        : null;
+    const allowUsers = data.allowUsers.split(",").map((u) => u.trim()).filter(Boolean);
     // status is left out: an update keeps the proxy enabled or disabled as it was.
     const payload = {
       serverId: data.serverId,
@@ -231,9 +338,13 @@ export function useProxyForm() {
       name: data.name,
       localIP: data.localIp,
       localPort: data.localPort,
-      remotePort: data.remotePort,
-      subdomain: data.subdomain,
-      customDomains: data.customDomains,
+      // stcp/sudp/xtcp have no public endpoint; clear what a previous type left behind.
+      remotePort: isSecret ? "" : data.remotePort,
+      subdomain: isSecret ? "" : data.subdomain,
+      customDomains: isSecret ? [] : data.customDomains,
+      secretKey: isSecret ? data.secretKey.trim() : "",
+      allowUsers: isSecret && allowUsers.length > 0 ? allowUsers : null,
+      healthCheck,
       transport: {
         ...keptTransport,
         useEncryption: data.encryption,
@@ -254,17 +365,37 @@ export function useProxyForm() {
       }
       navigate("/proxies");
     } catch (err) {
-      notifyError(t("proxy.saveFailed"), err);
+      // Conflicts and other field errors go under their fields; the toast names the first.
+      const mapped: Partial<Record<keyof ProxyFormData, string>> = {};
+      for (const [field, message] of Object.entries(fieldErrors(err, t))) {
+        const formField = RECORD_TO_FORM[field];
+        if (formField) mapped[formField] = message;
+      }
+      const first = Object.values(mapped)[0];
+      if (first) {
+        setErrors((prev) => ({ ...prev, ...mapped }));
+        toast.error(t("proxy.saveFailed"), { description: first });
+      } else {
+        notifyError(t("proxy.saveFailed"), err);
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
   const isHttpType = formData.type === "http" || formData.type === "https";
+  const isSecretType = isSecretProxyType(formData.type);
   const isSocks5Plugin = formData.pluginEnabled && formData.pluginType === "socks5";
+  // Visitors reach an stcp/sudp/xtcp proxy by the name frpc registers: "<name>-<id>".
+  const runtimeName = isEditing && formData.name ? `${formData.name}-${id}` : "";
+
+  const regenerateSecretKey = () => handleChange("secretKey", generateSecretKey());
 
   return {
     isEditing,
+    isSecretType,
+    runtimeName,
+    regenerateSecretKey,
     formData,
     servers,
     loadingServers,

@@ -58,8 +58,9 @@ func TestExportTomlLoadsInFrpc(t *testing.T) {
 				t.Errorf("export lacks %q:\n%s", want, text)
 			}
 		}
-		if strings.Contains(text, "BEGIN CERTIFICATE") || strings.Contains(text, "off-") || strings.Count(text, "[proxies.healthCheck]") != 1 {
-			t.Errorf("export has certificate contents, a disabled proxy or an empty health check:\n%s", text)
+		if strings.Contains(text, "BEGIN CERTIFICATE") || strings.Contains(text, "off-") ||
+			strings.Count(text, "[proxies.healthCheck]") != 1 || strings.Contains(text, "= 0\n") {
+			t.Errorf("export has certificate contents, a disabled proxy, an empty health check or a zero value:\n%s", text)
 		}
 
 		// Strict loading rejects unknown keys, so this checks every exported key is frpc's.

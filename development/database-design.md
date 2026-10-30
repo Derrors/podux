@@ -2,11 +2,11 @@
 
 ## Sources of Truth and Migration Constraints
 
-PocketBase uses SQLite and registers Go migrations through the blank import of `migrations` in `main.go`; `migratecmd` enables `Automigrate: true`. `migrations/1774402980_collections_snapshot.go` imports the collection snapshot with `ImportCollectionsByMarshaledJSON(..., false)`; its rollback function is currently empty. `migrations/1793274060_enable_rate_limits.go` turns on PocketBase's built-in rate limiting (off by default) and ensures a `*:auth` rule (2 password logins per 3 seconds per client IP); existing rules are kept, and its rollback disables rate limiting. `migrations/1793360460_proxy_description.go` adds the optional `fh_proxies.description` text field; its rollback removes the field. The migration, not any running `pb_data/data.db`, is therefore the primary schema source of truth.
+PocketBase uses SQLite and registers Go migrations through the blank import of `migrations` in `main.go`; `migratecmd` enables `Automigrate: true`. `migrations/1774402980_collections_snapshot.go` imports the collection snapshot with `ImportCollectionsByMarshaledJSON(..., false)`; its rollback function is currently empty. `migrations/1793274060_enable_rate_limits.go` turns on PocketBase's built-in rate limiting (off by default) and ensures a `*:auth` rule (2 password logins per 3 seconds per client IP); existing rules are kept, and its rollback disables rate limiting. `migrations/1793360460_proxy_description.go` adds the optional `fh_proxies.description` text field; its rollback removes the field. `migrations/1793446860_stcp_visitors.go` adds stcp/sudp/xtcp to `fh_proxies.proxyType`, adds `secretKey`, `allowUsers`, and `healthCheck` to `fh_proxies`, and creates `fh_visitors`; its rollback drops the collection and fields. `migrations/1793533260_notifications.go` adds `fh_settings.notifications`; its rollback removes it. Migration tests roll back with `revertThrough` in `migrations/helpers_test.go`, which keeps working as migrations are added. The migration, not any running `pb_data/data.db`, is therefore the primary schema source of truth.
 
 Every structure/rule/index change must add a reviewable migration with an appropriate rollback. Never modify production SQLite directly or make changes only through the PocketBase Admin UI. "Default" below records only snapshot autogeneration behavior; fields without an explicit statement have no verified schema default.
 
-The snapshot also contains PocketBase system collections such as `_mfas`, `_otps`, `_externalAuths`, `_authOrigins`, and `_superusers`, which are not individually modeled here. There are nine application collections: `fh_users`, `fh_servers`, `fh_proxies`, `fh_version`, `fh_settings`, `fh_metrics_targets`, `fh_metrics_raw`, `fh_metrics_hourly`, and `fh_metrics_daily`.
+The snapshot also contains PocketBase system collections such as `_mfas`, `_otps`, `_externalAuths`, `_authOrigins`, and `_superusers`, which are not individually modeled here. There are ten application collections: `fh_users`, `fh_servers`, `fh_proxies`, `fh_visitors`, `fh_version`, `fh_settings`, `fh_metrics_targets`, `fh_metrics_raw`, `fh_metrics_hourly`, and `fh_metrics_daily`.
 
 Every base collection has a required system text primary key named `id`, automatically generated as 15 lowercase alphanumeric characters. Collections with `created`/`updated` use autodate fields. In the descriptions below, `—` means an empty rule, so only a superuser may perform that operation through the PocketBase Record API; this does not restrict internal server-side database/service access.
 
@@ -17,6 +17,7 @@ erDiagram
   fh_servers ||--o{ fh_proxies : "serverId (no cascade)"
   fh_servers ||--o{ fh_metrics_targets : "serverId (optional, no cascade)"
   fh_proxies ||--o{ fh_metrics_targets : "proxyId (optional, no cascade)"
+  fh_servers ||--o{ fh_visitors : "serverId (no cascade)"
   fh_metrics_targets ||--o{ fh_metrics_raw : "targetId (no cascade)"
   fh_metrics_targets ||--o{ fh_metrics_hourly : "targetId (no cascade)"
   fh_metrics_targets ||--o{ fh_metrics_daily : "targetId (no cascade)"
@@ -64,10 +65,13 @@ Purpose: frpc proxy configuration under a server.
 | Field | Type | Required/default | Description |
 | --- | --- | --- | --- |
 | `name` | text | Required | Proxy name; the record ID is appended to the runtime name |
-| `proxyType` | select | Required | One of tcp, udp, http, or https |
+| `proxyType` | select | Required | One of tcp, udp, http, https, stcp, sudp, or xtcp |
 | `serverId` | relation -> `fh_servers` | Required, N:1 | No cascading delete |
 | `localIP`,`localPort`,`remotePort`,`subdomain` | text | Optional | Endpoint configuration; Go maps ports with NullableInt |
 | `description` | text | Optional, max 1000 | Free-form note edited in the proxy form; not passed to frp |
+| `secretKey` | text | Optional, max 255 | stcp/sudp/xtcp key visitors must present; secret |
+| `allowUsers` | json | Optional | stcp/sudp/xtcp: frp users allowed to visit (`*` = any); empty = same user only |
+| `healthCheck` | json | Optional | frp `healthCheck` (`type` tcp/http, `path`, `intervalSeconds`, `timeoutSeconds`, `maxFailed`); dropped from the frp config when `type` is empty |
 | `customDomains` | json | Optional | Domain array |
 | `transport`,`plugin` | json | Optional | Extended proxy configuration; `transport` uses frp's camelCase keys (`useEncryption`, `useCompression`, …). Records saved by older forms may hold `use_encryption`/`use_compression`, which frpc config generation and the edit form still read |
 | `status` | select | Required | enabled/disabled |
@@ -76,11 +80,35 @@ Purpose: frpc proxy configuration under a server.
 
 Indexes: non-unique `serverId`, `proxyType`, and `status`. All CRUD/list/view rules require authentication. Mapping: `domain/proxy.Proxy`, the proxy repository/service, frpc configuration generation, and dashboard; used by React Proxies, ProxyForm, and ServerDetail. A successful update hook reloads a running server.
 
+Bandwidth limits live in `transport` as frp's `bandwidthLimit` (e.g. `"10MB"`) and `bandwidthLimitMode` (`server`; omitted = client).
+
+Saving an **enabled** proxy fails with a field error if another enabled proxy on the same server and of the same type uses the same `remotePort` (tcp, udp; 0 = random is not checked) or shares a `subdomain`/`customDomains` entry (http, https; case-insensitive). See [conflicts.go](../internal/application/proxy/conflicts.go).
+
+### `fh_visitors`
+
+Purpose: frpc visitors that listen on the Podux host and reach an stcp/sudp/xtcp proxy through the server's frps.
+
+| Field | Type | Required/default | Description |
+| --- | --- | --- | --- |
+| `name` | text | Required | Visitor name; the record ID is appended to the runtime name |
+| `visitorType` | select | Required | stcp, sudp, or xtcp |
+| `serverId` | relation -> `fh_servers` | Required, N:1 | No cascading delete; server delete hooks remove visitors |
+| `serverName`, `serverUser` | text | `serverName` required | Target proxy name and user as registered on frps (Podux proxies are `<name>-<id>`) |
+| `secretKey` | text | Optional | Must match the proxy; secret |
+| `bindAddr`, `bindPort` | text, number | Optional | Local listener; empty address means 127.0.0.1, port ≤ 0 means not bound |
+| `keepTunnelOpen` | bool | Optional | xtcp only |
+| `transport` | json | Optional | `useEncryption`, `useCompression` |
+| `status` | select | Required | enabled/disabled |
+| `description` | text | Optional, max 1000 | Note |
+| `created`,`updated` | autodate | Automatic | Creation/update timestamps |
+
+Index: non-unique `serverId`. All rules require authentication (`@request.auth.id != ''`). Saving an enabled visitor fails if another enabled visitor, on any server, listens on the same port with the same address or either address is 0.0.0.0. Successful create/update/delete hooks reload the affected running server. Mapping: `domain/visitor`, `persistence.VisitorRepository`, frpc config generation/export, importer (`[[visitors]]`), React Visitors pages.
+
 ### `fh_settings`
 
-Purpose: system initialization state and general settings. Fields are optional `initialized` bool, optional `general` JSON, and autodate `created`/`updated`; there are no application indexes. All list/view/create/update/delete rules require authentication, but the unauthenticated custom initialization API writes the fixed ID `wcstsqmz8hur331` inside a server-side transaction. Used `general` keys include `defaultLanguage`, `latencyCheckInterval`, and `locationCheckInterval`.
+Purpose: system initialization state and general settings. Fields are optional `initialized` bool, optional `general` JSON, and autodate `created`/`updated`; there are no application indexes. All list/view/create/update/delete rules require authentication, but the unauthenticated custom initialization API writes the fixed ID `wcstsqmz8hur331` inside a server-side transaction. Used `general` keys include `defaultLanguage`, `latencyCheckInterval`, and `locationCheckInterval`; updates merge into the stored keys. The optional `notifications` JSON holds alert settings (`enabled`, `events`, `latencyThresholdMs`, and `webhook`/`telegram`/`bark`/`email` channels); it may contain bot tokens and webhook URLs, so treat it as secret.
 
-Mapping: `application/system.Service`, the system handler, React GeneralSettings, and the initialization flow.
+Mapping: `application/system.Service`, the system handler, React GeneralSettings, and the initialization flow; `notifications` maps to `application/notify`, the notify handler, and React NotificationSettings.
 
 ### `fh_version`
 
@@ -106,8 +134,8 @@ Purpose: daily aggregates. Fields match hourly, and all three value fields are o
 
 - Server/proxy runtime statuses are reset at startup. Status is a transient runtime projection; configuration itself is persistent.
 - Aggregation follows raw -> hourly -> daily. Raw data is retained for 7 days and hourly data for 30 days; no verified limit exists for daily data.
-- Every relation uses `cascadeDelete: false`. Deleting an `fh_servers` record is handled by hooks in [cleanup.go](../internal/application/server/cleanup.go): in one transaction it deletes the server's proxies (as records, so their hooks fire), its metrics targets and their raw/hourly/daily rows, then the server; after the commit its frpc is stopped and cached metrics are dropped. Deleting a single proxy still leaves its proxy-level metrics targets, if any.
-- PocketBase protects `fh_users.password/tokenKey`; `fh_servers.auth/transport` may contain tokens, OIDC secrets, and TLS private keys. Logs mask common JSON key names, but original values must still never be exported, committed, or echoed.
+- Every relation uses `cascadeDelete: false`. Deleting an `fh_servers` record is handled by hooks in [cleanup.go](../internal/application/server/cleanup.go): in one transaction it deletes the server's proxies and visitors (as records, so their hooks fire), its metrics targets and their raw/hourly/daily rows, then the server; after the commit its frpc is stopped and cached metrics are dropped. Deleting a single proxy still leaves its proxy-level metrics targets, if any.
+- PocketBase protects `fh_users.password/tokenKey`; `fh_servers.auth/transport` may contain tokens, OIDC secrets, and TLS private keys; `fh_proxies.secretKey`, `fh_visitors.secretKey`, and `fh_settings.notifications` hold secrets too. The frpc.toml export redacts secrets unless asked to include them. Logs mask common JSON key names, but original values must still never be exported, committed, or echoed.
 - Migration workflow: identify callers -> add forward/down migrations -> update models/repositories/services/UI -> update this document -> verify upgrade and rollback against a temporary database -> run the full checks. Never rewrite the snapshot to falsify existing deployment history.
 
 ## Current Discrepancies / To Be Confirmed

@@ -11,6 +11,7 @@ import { ProbeHistory } from "../../components/ProbeHistory";
 import { LatencyChart } from "../../components/LatencyChart";
 import { ServerLogViewer } from "../../components/ServerLogViewer";
 import { RefreshButton } from "../../components/RefreshButton";
+import { ExportConfigDialog } from "../../components/ExportConfigDialog";
 import { ConfirmDeleteDialog } from "../../components/ConfirmDeleteDialog";
 import { CopyableText } from "../../components/CopyableText";
 import { ProxyEndpoints } from "../../components/ProxyEndpoints";
@@ -70,11 +71,12 @@ export function ServerDetailView({
         description={t("server.detailsAndLogs")}
         visible={mounted}
         extra={
-          <Flex gap="3" align="center">
+          <Flex gap="3" align="center" wrap="wrap">
             <Button variant="soft" color="gray" onClick={() => navigate("/servers")}>
               <Icon icon="lucide:arrow-left" width="16" height="16" />
               {t("server.backToServers")}
             </Button>
+            <ExportConfigDialog serverId={serverId} serverName={server.serverName} />
             {server.bootStatus === "running" ? (
               <Button size="2" color="red" variant="soft" onClick={handleStop} disabled={actionLoading}>
                 {actionLoading ? (

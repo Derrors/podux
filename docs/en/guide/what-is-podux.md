@@ -55,12 +55,23 @@ Create and manage proxy tunnels via visual forms. Supported proxy types:
 | UDP | UDP traffic forwarding |
 | HTTP | HTTP reverse proxy |
 | HTTPS | HTTPS reverse proxy |
+| STCP / SUDP | No public port; only visitors with the secret key can connect |
+| XTCP | Same, over a direct peer-to-peer connection that skips frps |
 
-STCP, SUDP, XTCP and other types are not supported yet; when an imported TOML config contains them, those proxies are skipped with a warning.
+Each proxy can also use encryption, compression, a bandwidth limit and a health check. Saving checks for port and domain conflicts on the same server and names the conflicting proxy in the form.
+
+### Visitors
+
+Listen on a local port to reach STCP/SUDP/XTCP proxies published by other machines; see [STCP/XTCP and Visitors](/en/guide/secret-proxies).
+
+### Alerts and Export
+
+- Get notified through webhooks (including WeCom, DingTalk and Feishu), Telegram, Bark or email when frps is unreachable or slow, proxies go offline or frpc exits; see [Alerts](/en/guide/notifications)
+- Export a server's configuration as an `frpc.toml` native frpc can run; see [Export Config](/en/guide/export)
 
 ### Hot Reload
 
-After modifying proxy configurations, Podux automatically triggers an frpc reload — **no manual restart required**. Only proxies whose config changed are restarted; the server's other proxies keep running.
+After changing proxies or visitors, Podux automatically triggers an frpc reload — **no manual restart required**. Only proxies whose config changed are restarted; the server's other proxies keep running.
 
 ### Modern Interface
 

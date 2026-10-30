@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import pb from "../../lib/pocketbase";
 import { notifyError } from "../../lib/notify";
+import { firstFieldError } from "../../lib/fieldErrors";
 import { usePaginatedList, type PageQuery, type PageResult } from "../../hooks/usePaginatedList";
 import type { Proxy } from "../../types/proxy";
 
@@ -78,7 +79,10 @@ export function useProxies() {
         await pb.collection("fh_proxies").update(proxy.id, { status: newStatus });
       } catch (err) {
         setStatus(proxy.id, proxy.status);
-        notifyError(t("proxy.updateStatusFailed"), err);
+        // Enabling can collide with another proxy's port or domain; say which.
+        const conflict = firstFieldError(err, t);
+        if (conflict) toast.error(t("proxy.updateStatusFailed"), { description: conflict });
+        else notifyError(t("proxy.updateStatusFailed"), err);
       }
     });
   };
