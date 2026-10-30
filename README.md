@@ -26,7 +26,7 @@
   <p align="center">
     <a href="#快速开始"><strong>🚀 快速开始</strong></a>
     &nbsp;·&nbsp;
-    <a href="#文档"><strong>📖 文档</strong></a>
+    <a href="https://derrors.github.io/podux/"><strong>📖 文档</strong></a>
     &nbsp;·&nbsp;
     <a href="https://github.com/Derrors/podux/releases">📦 版本发布</a>
     &nbsp;·&nbsp;
@@ -35,7 +35,7 @@
 </div>
 
 > [!NOTE]
-> 本仓库是 [luckjiawei/podux](https://github.com/luckjiawei/podux) 的**独立维护分支**，从 v0.2.0 起独立迭代，不再与上游同步。版本、安装包与 Docker 镜像（`ghcr.io/derrors/podux`）均从这里发布，问题与建议请在本仓库提交。详见[与上游的关系](docs/guide/what-is-podux.md#与上游的关系)。
+> 本仓库是 [luckjiawei/podux](https://github.com/luckjiawei/podux) 的**独立维护分支**，从 v0.2.0 起独立迭代，不再与上游同步。版本、安装包与 Docker 镜像（`ghcr.io/derrors/podux`）均从这里发布，问题与建议请在本仓库提交。详见[与上游的关系](https://derrors.github.io/podux/guide/what-is-podux.html#与上游的关系)。
 
 ## 简介
 
@@ -51,7 +51,7 @@ Podux 把 frpc 作为库内嵌在程序里，后端基于 [PocketBase](https://p
 - **导入**：导入现有 frpc 的 TOML 配置，导入前可预览并识别重复项
 - **其他**：首次访问引导创建管理员，登录限流；中英文界面、深浅色主题、适配手机
 
-目前不支持 STCP、XTCP 等代理类型，完整的支持范围见[兼容性](docs/guide/compatibility.md)。
+目前不支持 STCP、XTCP 等代理类型，完整的支持范围见[兼容性](https://derrors.github.io/podux/guide/compatibility.html)。
 
 ## 界面截图
 
@@ -99,16 +99,16 @@ docker compose up -d
 > [!TIP]
 > 使用默认的 bridge 网络（`-p 8090:8090`）时，代理"本地地址"里的 `127.0.0.1` 指向的是**容器自身**，而不是宿主机。要转发宿主机上的服务，请使用 host 网络，或在代理中填写宿主机的局域网 IP。
 
-也可以直接运行[二进制文件](docs/deploy/install/binary.md)（Linux、macOS、Windows），或参考 [Docker 安装](docs/deploy/install/docker.md)使用 `docker run`。
+也可以直接运行[二进制文件](https://derrors.github.io/podux/deploy/install/binary.html)（Linux、macOS、Windows），或参考 [Docker 安装](https://derrors.github.io/podux/deploy/install/docker.html)使用 `docker run`。
 
 ## 文档
 
 | | |
 | --- | --- |
-| 入门 | [什么是 Podux](docs/guide/what-is-podux.md) · [快速开始](docs/guide/getting-started.md) · [兼容性](docs/guide/compatibility.md) |
-| 安装 | [Docker](docs/deploy/install/docker.md) · [二进制](docs/deploy/install/binary.md) |
-| 运维 | [数据与备份](docs/deploy/backup.md) · 升级：[Docker](docs/deploy/upgrade/docker.md) / [二进制](docs/deploy/upgrade/binary.md) |
-| 问题 | [常见问题](docs/troubleshoot/faq.md) · [Issues](https://github.com/Derrors/podux/issues) |
+| 入门 | [什么是 Podux](https://derrors.github.io/podux/guide/what-is-podux.html) · [快速开始](https://derrors.github.io/podux/guide/getting-started.html) · [兼容性](https://derrors.github.io/podux/guide/compatibility.html) |
+| 安装 | [Docker](https://derrors.github.io/podux/deploy/install/docker.html) · [二进制](https://derrors.github.io/podux/deploy/install/binary.html) |
+| 运维 | [数据与备份](https://derrors.github.io/podux/deploy/backup.html) · 升级：[Docker](https://derrors.github.io/podux/deploy/upgrade/docker.html) / [二进制](https://derrors.github.io/podux/deploy/upgrade/binary.html) |
+| 问题 | [常见问题](https://derrors.github.io/podux/troubleshoot/faq.html) · [Issues](https://github.com/Derrors/podux/issues) |
 | 版本 | [Releases](https://github.com/Derrors/podux/releases)：每个版本的变化说明 |
 | 开发 | [贡献指南](CONTRIBUTING.md) · [设计文档](development/README.md) |
 

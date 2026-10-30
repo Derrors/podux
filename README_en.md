@@ -26,7 +26,7 @@
   <p align="center">
     <a href="#quick-start"><strong>🚀 Quick Start</strong></a>
     &nbsp;·&nbsp;
-    <a href="#documentation"><strong>📖 Docs</strong></a>
+    <a href="https://derrors.github.io/podux/en/"><strong>📖 Docs</strong></a>
     &nbsp;·&nbsp;
     <a href="https://github.com/Derrors/podux/releases">📦 Releases</a>
     &nbsp;·&nbsp;
@@ -35,7 +35,7 @@
 </div>
 
 > [!NOTE]
-> This repository is an **independently maintained fork** of [luckjiawei/podux](https://github.com/luckjiawei/podux). Since v0.2.0 it evolves on its own and is no longer kept in sync with upstream. Versions, release packages and Docker images (`ghcr.io/derrors/podux`) are published from here; please file issues and suggestions in this repository. See [Relationship to upstream](docs/en/guide/what-is-podux.md#relationship-to-upstream).
+> This repository is an **independently maintained fork** of [luckjiawei/podux](https://github.com/luckjiawei/podux). Since v0.2.0 it evolves on its own and is no longer kept in sync with upstream. Versions, release packages and Docker images (`ghcr.io/derrors/podux`) are published from here; please file issues and suggestions in this repository. See [Relationship to upstream](https://derrors.github.io/podux/en/guide/what-is-podux.html#relationship-to-upstream).
 
 ## Overview
 
@@ -51,7 +51,7 @@ Podux embeds frpc as a library. The backend is built on [PocketBase](https://poc
 - **Import**: import an existing frpc TOML config, with a preview and duplicate detection
 - **More**: first-run admin setup and rate-limited login; Chinese / English UI, light / dark theme, mobile-friendly layout
 
-STCP, XTCP and some other proxy types are not supported yet; see [Compatibility](docs/en/guide/compatibility.md) for the full scope.
+STCP, XTCP and some other proxy types are not supported yet; see [Compatibility](https://derrors.github.io/podux/en/guide/compatibility.html) for the full scope.
 
 ## Screenshots
 
@@ -99,16 +99,16 @@ Then open `http://<host>:8090`. The first visit walks you through creating the a
 > [!TIP]
 > With the default bridge network (`-p 8090:8090`), `127.0.0.1` as a proxy's local address points to **the container itself**, not the host. To forward services running on the host, use the host network or enter the host's LAN IP in the proxy.
 
-You can also run the [binary](docs/en/deploy/install/binary.md) directly (Linux, macOS, Windows), or use `docker run` as described in [Docker Installation](docs/en/deploy/install/docker.md).
+You can also run the [binary](https://derrors.github.io/podux/en/deploy/install/binary.html) directly (Linux, macOS, Windows), or use `docker run` as described in [Docker Installation](https://derrors.github.io/podux/en/deploy/install/docker.html).
 
 ## Documentation
 
 | | |
 | --- | --- |
-| Getting started | [What is Podux](docs/en/guide/what-is-podux.md) · [Getting started](docs/en/guide/getting-started.md) · [Compatibility](docs/en/guide/compatibility.md) |
-| Install | [Docker](docs/en/deploy/install/docker.md) · [Binary](docs/en/deploy/install/binary.md) |
-| Operations | [Data and backups](docs/en/deploy/backup.md) · Upgrade: [Docker](docs/en/deploy/upgrade/docker.md) / [Binary](docs/en/deploy/upgrade/binary.md) |
-| Help | [FAQ](docs/en/troubleshoot/faq.md) · [Issues](https://github.com/Derrors/podux/issues) |
+| Getting started | [What is Podux](https://derrors.github.io/podux/en/guide/what-is-podux.html) · [Getting started](https://derrors.github.io/podux/en/guide/getting-started.html) · [Compatibility](https://derrors.github.io/podux/en/guide/compatibility.html) |
+| Install | [Docker](https://derrors.github.io/podux/en/deploy/install/docker.html) · [Binary](https://derrors.github.io/podux/en/deploy/install/binary.html) |
+| Operations | [Data and backups](https://derrors.github.io/podux/en/deploy/backup.html) · Upgrade: [Docker](https://derrors.github.io/podux/en/deploy/upgrade/docker.html) / [Binary](https://derrors.github.io/podux/en/deploy/upgrade/binary.html) |
+| Help | [FAQ](https://derrors.github.io/podux/en/troubleshoot/faq.html) · [Issues](https://github.com/Derrors/podux/issues) |
 | Versions | [Releases](https://github.com/Derrors/podux/releases): what changed in each version |
 | Development | [Contributing](CONTRIBUTING_en.md) · [Design docs](development/README.md) |
 

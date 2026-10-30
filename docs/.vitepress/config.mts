@@ -2,12 +2,13 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-  // base: '/podux-doc/',
+  // Published to GitHub Pages at https://derrors.github.io/podux/
+  base: '/podux/',
   title: "Podux",
   description: "现代化的 Frpc 管理平台 - 基于 PocketBase 和 React 构建的强大内网穿透管理系统",
   head: [
-    ['link', { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' }],
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
+    ['link', { rel: 'icon', type: 'image/x-icon', href: '/podux/favicon.ico' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/podux/logo.svg' }],
   ],
   metaChunk: true,
 

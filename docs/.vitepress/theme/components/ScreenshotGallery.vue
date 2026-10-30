@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { withBase } from 'vitepress'
 
 interface Image {
   src: string
@@ -57,7 +58,7 @@ onUnmounted(() => {
       class="sg-item"
       @click="open(i)"
     >
-      <img :src="img.src" :alt="img.caption" loading="lazy" />
+      <img :src="withBase(img.src)" :alt="img.caption" loading="lazy" />
       <div class="sg-caption">{{ img.caption }}</div>
     </div>
   </div>
@@ -67,7 +68,7 @@ onUnmounted(() => {
       <div v-if="active" class="sg-lightbox" @click="close">
         <button class="sg-close" aria-label="关闭" @click.stop="close">✕</button>
         <div class="sg-lightbox-inner" @click.stop>
-          <img :src="active.src" :alt="active.caption" />
+          <img :src="withBase(active.src)" :alt="active.caption" />
           <p class="sg-lightbox-caption">{{ active.caption }}</p>
         </div>
         <button

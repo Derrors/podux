@@ -1,4 +1,10 @@
-version: '3.8'
+# Podux with Docker Compose. See https://derrors.github.io/podux/deploy/install/docker.html
+#
+# The container runs as UID 1000, so create the data directory and hand it over first:
+#   mkdir -p data && sudo chown 1000:1000 data
+#   docker compose up -d
+#
+# Pin a version with VERSION=0.2.3 docker compose up -d (defaults to latest).
 
 services:
   podux:
@@ -6,47 +12,21 @@ services:
     container_name: podux
     restart: unless-stopped
 
-    ports:
-      - "8090:8090"
+    # Host network: 127.0.0.1 in a proxy's local address is the host itself.
+    # For the bridge network, remove this line and publish the port instead:
+    #   ports:
+    #     - "8090:8090"
+    # 127.0.0.1 then means the container, so enter the host's LAN IP in proxies.
+    network_mode: host
 
     volumes:
-      - podux-data:/app/pb_data
+      - ./data:/app/pb_data
 
     environment:
       - TZ=Asia/Shanghai
 
-    # Resource limits (optional)
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 256M
-
-    # Network mode (optional)
-    # Uncomment if you need host network for better frpc performance
-    # network_mode: host
-
-    # Logging
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/api/health"]
-      interval: 30s
-      timeout: 3s
-      start_period: 10s
-      retries: 3
-
-volumes:
-  podux-data:
-    driver: local
-
-networks:
-  default:
-    name: podux-network

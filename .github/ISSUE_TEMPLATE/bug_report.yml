@@ -1,0 +1,56 @@
+name: 问题反馈 / Bug report
+description: Podux 运行出错或行为不符合预期 / Something in Podux is broken or behaves unexpectedly
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先查看[常见问题](https://derrors.github.io/podux/troubleshoot/faq.html)。日志中的 token、证书私钥等敏感信息请先打码。
+        Please check the [FAQ](https://derrors.github.io/podux/en/troubleshoot/faq.html) first, and mask tokens, private keys and other secrets in logs.
+  - type: input
+    id: version
+    attributes:
+      label: Podux 版本 / Podux version
+      description: 页面底部可以看到 / Shown in the page footer
+      placeholder: v0.2.3
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: 部署方式 / Deployment
+      options:
+        - Docker（host 网络 / host network）
+        - Docker（bridge 网络 / bridge network）
+        - 二进制 / Binary
+        - 从源码运行 / From source
+    validations:
+      required: true
+  - type: input
+    id: frps
+    attributes:
+      label: frps 版本 / frps version
+      placeholder: v0.71.1
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述 / What happened
+      description: 实际发生了什么，你期望的结果是什么 / What you saw and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志 / Logs
+      description: 服务器日志页的 frpc 输出、容器日志（docker compose logs podux）或浏览器控制台报错 / frpc output from the server log page, container logs, or browser console errors
+      render: text
