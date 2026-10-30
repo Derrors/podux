@@ -10,6 +10,9 @@ export interface Visitor {
   bindAddr?: string;
   bindPort?: number;
   keepTunnelOpen?: boolean;
+  /** ID of the stcp visitor an xtcp visitor falls back to. */
+  fallbackTo?: string;
+  fallbackTimeoutMs?: number;
   transport?: Record<string, unknown> | null;
   status: "enabled" | "disabled";
   description?: string;

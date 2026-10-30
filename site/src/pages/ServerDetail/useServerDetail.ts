@@ -4,13 +4,29 @@ import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import pb from "../../lib/pocketbase";
-import { apiPost, getErrorMessage, isUnauthorizedError } from "../../lib/api";
+import { apiGet, apiPost, getErrorMessage, isUnauthorizedError } from "../../lib/api";
+import { useProxyStatus } from "../../hooks/useProxyStatus";
 import { notifyError } from "../../lib/notify";
 import { STALE } from "../../lib/latestRequest";
 import { useLatestRequest } from "../../hooks/useLatestRequest";
 import type { ServerRecord } from "../../types/server";
 import { useServerProxies } from "./useServerProxies";
 import { useProbeHistory } from "./useProbeHistory";
+
+export interface FrpsSummary {
+  configured: boolean;
+  error?: string;
+  info?: {
+    version: string;
+    totalTrafficIn: number;
+    totalTrafficOut: number;
+    curConns: number;
+    clientCounts: number;
+    vhostHTTPPort: number;
+    vhostHTTPSPort: number;
+    subdomainHost: string;
+  };
+}
 
 export function useServerDetail() {
   const { t } = useTranslation();
@@ -23,6 +39,16 @@ export function useServerDetail() {
 
   const proxies = useServerProxies(id);
   const probeHistory = useProbeHistory(id);
+  const { statuses } = useProxyStatus(id);
+  const [frps, setFrps] = useState<FrpsSummary | null>(null);
+
+  // frps info from the server's dashboard, if one is configured.
+  useEffect(() => {
+    if (!id) return;
+    apiGet<FrpsSummary>(`/api/servers/${id}/frps`)
+      .then(setFrps)
+      .catch(() => setFrps(null));
+  }, [id, server?.updated]);
 
   const fetchServer = useCallback(async () => {
     if (!id) return;
@@ -73,5 +99,7 @@ export function useServerDetail() {
     handleStop,
     proxies,
     probeHistory,
+    proxyStatuses: statuses,
+    frps,
   };
 }

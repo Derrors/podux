@@ -22,6 +22,11 @@ export interface VisitorFormData {
   bindAddr: string;
   bindPort: string;
   keepTunnelOpen: boolean;
+  /** stcp only: don't listen; the visitor only serves as an xtcp visitor's fallback. */
+  noBind: boolean;
+  /** xtcp only: ID of the stcp visitor to fall back to when p2p fails. */
+  fallbackTo: string;
+  fallbackTimeoutMs: string;
   encryption: boolean;
   compression: boolean;
   description: string;
@@ -37,6 +42,9 @@ const DEFAULT_FORM: VisitorFormData = {
   bindAddr: "127.0.0.1",
   bindPort: "",
   keepTunnelOpen: false,
+  noBind: false,
+  fallbackTo: "",
+  fallbackTimeoutMs: "",
   encryption: false,
   compression: false,
   description: "",
@@ -58,7 +66,15 @@ const RECORD_TO_FORM: Record<string, keyof VisitorFormData> = {
   bindAddr: "bindAddr",
   bindPort: "bindPort",
   secretKey: "secretKey",
+  fallbackTo: "fallbackTo",
 };
+
+/** An stcp visitor an xtcp visitor can fall back to. */
+export interface FallbackOption {
+  id: string;
+  name: string;
+  serverId: string;
+}
 
 type Errors = Partial<Record<keyof VisitorFormData, string>>;
 
@@ -71,6 +87,7 @@ export function useVisitorForm() {
   const [formData, setFormData] = useState<VisitorFormData>(DEFAULT_FORM);
   const [servers, setServers] = useState<ServerOption[]>([]);
   const [secretProxies, setSecretProxies] = useState<SecretProxyOption[]>([]);
+  const [fallbacks, setFallbacks] = useState<FallbackOption[]>([]);
   const [loadingServers, setLoadingServers] = useState(false);
   const [loading, setLoading] = useState(isEditing);
   const [submitting, setSubmitting] = useState(false);
@@ -82,14 +99,16 @@ export function useVisitorForm() {
     const load = async () => {
       try {
         setLoadingServers(true);
-        const [list, proxies] = await Promise.all([
+        const [list, proxies, stcpVisitors] = await Promise.all([
           apiGet<ServerOption[] | null>("/api/servers/options"),
           pb.collection("fh_proxies").getFullList<Proxy>({
             filter: SECRET_PROXY_TYPES.map((type) => `proxyType = "${type}"`).join(" || "),
             expand: "serverId",
             sort: "name",
           }),
+          pb.collection("fh_visitors").getFullList<Visitor>({ filter: 'visitorType = "stcp"', sort: "name" }),
         ]);
+        setFallbacks(stcpVisitors.map((v) => ({ id: v.id, name: v.name, serverId: v.serverId })));
         setServers(list ?? []);
         if (list && list.length > 0 && !isEditing) {
           setFormData((prev) => ({ ...prev, serverId: prev.serverId || list[0].id }));
@@ -130,8 +149,11 @@ export function useVisitorForm() {
           serverUser: v.serverUser ?? "",
           secretKey: v.secretKey ?? "",
           bindAddr: v.bindAddr || "127.0.0.1",
-          bindPort: v.bindPort ? String(v.bindPort) : "",
+          bindPort: v.bindPort && v.bindPort > 0 ? String(v.bindPort) : "",
           keepTunnelOpen: !!v.keepTunnelOpen,
+          noBind: v.visitorType === "stcp" && (v.bindPort ?? 0) < 0,
+          fallbackTo: v.fallbackTo ?? "",
+          fallbackTimeoutMs: v.fallbackTimeoutMs ? String(v.fallbackTimeoutMs) : "",
           encryption: Boolean(transport.useEncryption),
           compression: Boolean(transport.useCompression),
           description: v.description ?? "",
@@ -155,8 +177,14 @@ export function useVisitorForm() {
     if (!data.secretKey.trim()) next.secretKey = t("proxy.errorRequired");
     if (!data.bindAddr) next.bindAddr = t("proxy.errorRequired");
     else if (!REGEX.IP_OR_HOSTNAME.test(data.bindAddr)) next.bindAddr = t("proxy.errorInvalidIP");
-    if (!data.bindPort) next.bindPort = t("proxy.errorRequired");
-    else if (!REGEX.PORT.test(data.bindPort)) next.bindPort = t("proxy.errorInvalidPort");
+    const noBind = data.noBind && data.type === "stcp";
+    if (!noBind) {
+      if (!data.bindPort) next.bindPort = t("proxy.errorRequired");
+      else if (!REGEX.PORT.test(data.bindPort)) next.bindPort = t("proxy.errorInvalidPort");
+    }
+    if (data.fallbackTimeoutMs && !/^[1-9][0-9]{0,5}$/.test(data.fallbackTimeoutMs)) {
+      next.fallbackTimeoutMs = t("proxy.errorPositiveInteger");
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -193,8 +221,10 @@ export function useVisitorForm() {
       serverUser: data.serverUser.trim(),
       secretKey: data.secretKey,
       bindAddr: data.bindAddr,
-      bindPort: Number(data.bindPort),
+      bindPort: data.noBind && data.type === "stcp" ? -1 : Number(data.bindPort),
       keepTunnelOpen: data.type === "xtcp" && data.keepTunnelOpen,
+      fallbackTo: data.type === "xtcp" ? data.fallbackTo : "",
+      fallbackTimeoutMs: data.type === "xtcp" && data.fallbackTo ? Number(data.fallbackTimeoutMs || 0) : 0,
       transport: { ...loadedTransport.current, useEncryption: data.encryption, useCompression: data.compression },
       description: data.description,
     };
@@ -232,6 +262,8 @@ export function useVisitorForm() {
     formData,
     servers,
     secretProxies,
+    // Fallbacks must be stcp visitors of the same server, and not this visitor.
+    fallbacks: fallbacks.filter((f) => f.serverId === formData.serverId && f.id !== id),
     loadingServers,
     loading,
     submitting,

@@ -305,7 +305,51 @@ function LocalServiceNode({ data }: { data: Record<string, string> }) {
   );
 }
 
+// ── frp Visitor Node (stcp/sudp/xtcp visitor running on this machine) ─────────
+function FrpVisitorNode({ data }: { data: Record<string, string> }) {
+  const { t } = useTranslation();
+  const enabled = data.status === "enabled";
+  return (
+    <NodeCard
+      w={PROXY_W}
+      h={PROXY_H}
+      accentColor={enabled ? C.eOn : C.eOff}
+      targetPos={Position.Left}
+      targetColor={enabled ? C.eOn : C.eOff}
+      sourcePos={Position.Right}
+      sourceColor={enabled ? C.eOn : C.eOff}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <Icon icon="lucide:door-open" width={13} height={13} color={P.sub} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: P.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {data.name}
+        </span>
+      </div>
+      <span style={{ fontSize: 10, color: P.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ fontWeight: 700 }}>{data.visitorType.toUpperCase()}</span> → {data.serverName}
+      </span>
+      <StatusPill online={enabled} labels={[t("proxy.enabled"), t("proxy.disabled")]} />
+    </NodeCard>
+  );
+}
+
+// ── Local listener of a visitor ───────────────────────────────────────────────
+function LocalListenerNode({ data }: { data: Record<string, string> }) {
+  const { t } = useTranslation();
+  return (
+    <NodeCard w={LOCAL_W} h={LOCAL_H} accentColor={C.eOn} targetPos={Position.Left} targetColor={C.eOn}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <Icon icon="lucide:monitor" width={13} height={13} color={P.sub} />
+        <span style={{ fontSize: 10, fontWeight: 700, color: P.text }}>{t("dashboard.topologyLocalListener")}</span>
+      </div>
+      <span style={{ fontSize: 11, color: P.sub, fontFamily: "monospace" }}>{data.listen}</span>
+    </NodeCard>
+  );
+}
+
 const nodeTypes = {
+  frpVisitor: FrpVisitorNode,
+  localListener: LocalListenerNode,
   visitor: VisitorNode,
   server: ServerNode,
   proxy: ProxyNode,
@@ -337,30 +381,37 @@ export function TopologyChart({ topology }: TopologyChartProps) {
   const { t } = useTranslation();
   const themeCtx = useThemeContext();
   const isDark = themeCtx.appearance === "dark";
-  const { servers, proxies } = topology;
+  const { servers, proxies, visitors } = topology;
 
   const { nodes, edges, totalRows } = useMemo(() => {
     if (servers.length === 0) return { nodes: [], edges: [], totalRows: 0 };
 
-    // group proxies by server
+    // group proxies and visitors by server; visitors take rows after the proxies
     const groups = new Map<string, typeof proxies>();
     for (const px of proxies) {
       if (!groups.has(px.serverId)) groups.set(px.serverId, []);
       groups.get(px.serverId)!.push(px);
+    }
+    const visitorGroups = new Map<string, typeof visitors>();
+    for (const v of visitors) {
+      if (!visitorGroups.has(v.serverId)) visitorGroups.set(v.serverId, []);
+      visitorGroups.get(v.serverId)!.push(v);
     }
 
     // build row assignments
     const serverRows: Array<{
       server: (typeof servers)[0];
       sProxies: typeof proxies;
+      sVisitors: typeof visitors;
       startRow: number;
       rowCount: number;
     }> = [];
     let row = 0;
     for (const server of servers) {
       const sProxies = groups.get(server.id) ?? [];
-      const rowCount = Math.max(sProxies.length, 1);
-      serverRows.push({ server, sProxies, startRow: row, rowCount });
+      const sVisitors = visitorGroups.get(server.id) ?? [];
+      const rowCount = Math.max(sProxies.length + sVisitors.length, 1);
+      serverRows.push({ server, sProxies, sVisitors, startRow: row, rowCount });
       row += rowCount;
     }
     const totalRows = row;
@@ -378,7 +429,7 @@ export function TopologyChart({ topology }: TopologyChartProps) {
       draggable: false,
     });
 
-    for (const { server, sProxies, startRow, rowCount } of serverRows) {
+    for (const { server, sProxies, sVisitors, startRow, rowCount } of serverRows) {
       const serverOnline = server.bootStatus === "running";
       const serverCY = (startRow + rowCount / 2) * ROW_H;
       const serverY = serverCY - SERVER_H / 2;
@@ -399,6 +450,30 @@ export function TopologyChart({ topology }: TopologyChartProps) {
       // Visitor → Server
       edges.push(mkEdge(`e-vis-${server.id}`, "visitor", server.id, C.eOn, serverOnline));
 
+      sVisitors.forEach((v, vi) => {
+        const enabled = v.status === "enabled";
+        const rowCY = (startRow + sProxies.length + vi) * ROW_H + ROW_H / 2;
+        const listenId = `listen-${v.id}`;
+        nodes.push({
+          id: v.id,
+          type: "frpVisitor",
+          position: { x: COL.proxy, y: rowCY - PROXY_H / 2 },
+          data: { name: v.name, visitorType: v.visitorType, serverName: v.serverName, status: v.status },
+          draggable: false,
+        });
+        nodes.push({
+          id: listenId,
+          type: "localListener",
+          position: { x: COL.local, y: rowCY - LOCAL_H / 2 },
+          data: {
+            listen: v.bindPort > 0 ? `${v.bindAddr || "127.0.0.1"}:${v.bindPort}` : t("dashboard.topologyFallbackOnly"),
+          },
+          draggable: false,
+        });
+        edges.push(mkEdge(`e-${server.id}-${v.id}`, server.id, v.id, C.eOn, serverOnline && enabled));
+        edges.push(mkEdge(`e-${v.id}-${listenId}`, v.id, listenId, C.eOn, serverOnline && enabled));
+      });
+
       if (sProxies.length === 0) continue;
 
       sProxies.forEach((px, pi) => {
@@ -416,7 +491,7 @@ export function TopologyChart({ topology }: TopologyChartProps) {
           data: {
             name: px.name,
             proxyType: px.proxyType,
-            remotePort: px.remotePort,
+            remotePort: px.remotePort ? String(px.remotePort) : "",
             status: px.status,
             bootStatus: px.bootStatus,
             },
@@ -430,7 +505,7 @@ export function TopologyChart({ topology }: TopologyChartProps) {
           position: { x: COL.local, y: localY },
           data: {
             localIP: px.localIP,
-            localPort: px.localPort,
+            localPort: String(px.localPort || ""),
             bootStatus: px.bootStatus,
             },
           draggable: false,
@@ -446,7 +521,7 @@ export function TopologyChart({ topology }: TopologyChartProps) {
     }
 
     return { nodes, edges, totalRows };
-  }, [servers, proxies]);
+  }, [servers, proxies, visitors, t]);
 
   if (servers.length === 0) {
     return (

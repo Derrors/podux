@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ClientResponseError } from "pocketbase";
 import type { TFunction } from "i18next";
-import { fieldErrors } from "./fieldErrors";
+import { batchErrorMessage, fieldErrors } from "./fieldErrors";
 
 const t = ((key: string, opts?: { name?: string }) => `${key}:${opts?.name ?? ""}`) as unknown as TFunction;
 
@@ -20,5 +20,18 @@ describe("fieldErrors", () => {
   it("ignores non-validation errors", () => {
     expect(fieldErrors(pbError(500, {}), t)).toEqual({});
     expect(fieldErrors(new Error("x"), t)).toEqual({});
+  });
+});
+
+describe("batchErrorMessage", () => {
+  it("names the proxy and the conflict", () => {
+    const err = Object.assign(new Error("x"), {
+      data: { proxy: "web", code: "validation_port_conflict", params: { name: "ssh" } },
+    });
+    const tt = ((key: string, o?: Record<string, string>) => `${key}(${JSON.stringify(o ?? {})})`) as unknown as TFunction;
+    expect(batchErrorMessage(err, tt)).toBe(
+      'proxy.batchFailedOn({"proxy":"web","detail":"conflict.port({\\"name\\":\\"ssh\\"})"})'
+    );
+    expect(batchErrorMessage(new Error("plain"), tt)).toBeUndefined();
   });
 });

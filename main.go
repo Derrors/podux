@@ -2,7 +2,6 @@ package main
 
 import (
 	"embed"
-	"github.com/spf13/cobra"
 	"io/fs"
 	"log"
 
@@ -204,51 +203,6 @@ func main() {
 
 		return e.Next()
 	})
-
-	// Overwrite the default serve command to suppress the default startup banner
-	// and use our custom logs
-	for _, cmd := range app.RootCmd.Commands() {
-		if cmd.Use == "serve" {
-			cmd.Run = nil
-			cmd.RunE = func(cmd *cobra.Command, args []string) error {
-				domains := args
-
-				httpAddr, _ := cmd.Flags().GetString("http")
-				httpsAddr, _ := cmd.Flags().GetString("https")
-				origins, _ := cmd.Flags().GetStringSlice("origins")
-
-				// replicate default logic from pocketbase
-				if httpAddr == "" {
-					if len(domains) > 0 {
-						httpAddr = "0.0.0.0:80"
-					} else {
-						httpAddr = "127.0.0.1:8090"
-					}
-				}
-
-				if httpsAddr == "" {
-					if len(domains) > 0 {
-						httpsAddr = "0.0.0.0:443"
-					}
-				}
-
-				log.Println("Starting PocketBase server...")
-				log.Println("----------------------------------------------------------------")
-				log.Println("Frontend: http://" + httpAddr + "/")
-				log.Println("Admin UI: http://" + httpAddr + "/_/")
-				log.Println("----------------------------------------------------------------")
-
-				return apis.Serve(app, apis.ServeConfig{
-					HttpAddr:           httpAddr,
-					HttpsAddr:          httpsAddr,
-					ShowStartBanner:    false,
-					AllowedOrigins:     origins,
-					CertificateDomains: domains,
-				})
-			}
-			break
-		}
-	}
 
 	if err := app.Start(); err != nil {
 		log.Fatal(err)

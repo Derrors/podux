@@ -1,9 +1,12 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import pb from "../../lib/pocketbase";
 import { notifyError } from "../../lib/notify";
-import { firstFieldError } from "../../lib/fieldErrors";
+import { batchErrorMessage, firstFieldError } from "../../lib/fieldErrors";
+import { apiGet, apiPost } from "../../lib/api";
+import { useProxyStatus } from "../../hooks/useProxyStatus";
+import type { ServerOption } from "./ProxyFormPage/useProxyForm";
 import { usePaginatedList, type PageQuery, type PageResult } from "../../hooks/usePaginatedList";
 import type { Proxy } from "../../types/proxy";
 
@@ -87,6 +90,55 @@ export function useProxies() {
     });
   };
 
+  // Batch actions apply to the selected proxies of the current page.
+  // The selection belongs to the page it was made on: another page or search clears it.
+  const pageKey = `${list.page}|${list.search}`;
+  const [selection, setSelection] = useState<{ key: string; ids: Set<string> }>({ key: "", ids: new Set() });
+  const selected = selection.key === pageKey ? selection.ids : new Set<string>();
+  const setSelected = (update: Set<string> | ((prev: Set<string>) => Set<string>)) =>
+    setSelection((prev) => {
+      const current = prev.key === pageKey ? prev.ids : new Set<string>();
+      return { key: pageKey, ids: typeof update === "function" ? update(current) : update };
+    });
+  const [servers, setServers] = useState<ServerOption[]>([]);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const { statuses } = useProxyStatus();
+
+  useEffect(() => {
+    apiGet<ServerOption[] | null>("/api/servers/options")
+      .then((s) => setServers(s ?? []))
+      .catch(() => undefined);
+  }, []);
+
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const selectPage = (all: boolean) => setSelected(all ? new Set(list.items.map((p) => p.id)) : new Set());
+
+  const runBatch = async (action: "enable" | "disable" | "delete" | "move", serverId?: string) => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBatchBusy(true);
+    await runMutation(async () => {
+      try {
+        await apiPost("/api/proxies/batch", { ids, action, serverId });
+        toast.success(t(`proxy.batchDone.${action}`, { count: ids.length }));
+        setSelected(new Set());
+      } catch (err) {
+        const message = batchErrorMessage(err, t);
+        if (message) toast.error(t("proxy.batchFailed"), { description: message });
+        else notifyError(t("proxy.batchFailed"), err);
+      }
+    });
+    setBatchBusy(false);
+    await reload();
+  };
+
   const totalCount = list.result?.allCount ?? 0;
   const onlineCount = list.result?.onlineCount ?? 0;
 
@@ -102,6 +154,13 @@ export function useProxies() {
     },
     deleteProxy,
     toggleStatus,
+    statuses,
+    servers,
+    selected,
+    toggleSelected,
+    selectPage,
+    runBatch,
+    batchBusy,
     page: list.page,
     setPage: list.setPage,
     totalPages: list.totalPages,

@@ -15,6 +15,8 @@ import { ExportConfigDialog } from "../../components/ExportConfigDialog";
 import { ConfirmDeleteDialog } from "../../components/ConfirmDeleteDialog";
 import { CopyableText } from "../../components/CopyableText";
 import { ProxyEndpoints } from "../../components/ProxyEndpoints";
+import { ExpiryBadge, ProxyHealth } from "../../components/ProxyHealth";
+import { formatBytes } from "../../lib/format";
 import { ProxyStatusToggle } from "../../components/ProxyStatusToggle";
 import { Reveal } from "../../components/Reveal";
 import { useDelayedMount } from "../../hooks/useDelayedMount";
@@ -32,6 +34,8 @@ export function ServerDetailView({
   handleStop,
   proxies: { proxies, togglingId, toggleStatus, deleteProxy, refreshing, refresh },
   probeHistory,
+  proxyStatuses,
+  frps,
 }: ServerDetailViewProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -220,6 +224,41 @@ export function ServerDetailView({
         </Reveal>
       </Grid>
 
+      {/* frps dashboard */}
+      {frps?.configured && (
+        <Reveal visible={mounted} delay={0.25}>
+          <Card size="3">
+            <Flex direction="column" gap="3">
+              <Heading size="4">{t("server.frpsCard")}</Heading>
+              {frps.info ? (
+                <Grid columns={{ initial: "2", md: "5" }} gap="4">
+                  {[
+                    [t("server.frpsVersion"), frps.info.version],
+                    [t("server.frpsTrafficIn"), formatBytes(frps.info.totalTrafficIn)],
+                    [t("server.frpsTrafficOut"), formatBytes(frps.info.totalTrafficOut)],
+                    [t("server.frpsConns"), String(frps.info.curConns)],
+                    [t("server.frpsClients"), String(frps.info.clientCounts)],
+                  ].map(([label, value]) => (
+                    <Box key={label}>
+                      <Text size="2" color="gray">
+                        {label}
+                      </Text>
+                      <Text as="div" size="4" weight="medium">
+                        {value}
+                      </Text>
+                    </Box>
+                  ))}
+                </Grid>
+              ) : (
+                <Text size="2" color="red">
+                  {t("server.dashboardFailed")}: {frps.error}
+                </Text>
+              )}
+            </Flex>
+          </Card>
+        </Reveal>
+      )}
+
       {/* Probe History */}
       <Reveal visible={mounted} delay={0.3}>
         <Card size="3">
@@ -281,6 +320,7 @@ export function ServerDetailView({
                     <Table.ColumnHeaderCell>{t("proxy.localPort")}</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>{t("proxy.remotePortOrDomain")}</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>{t("proxy.bootStatus")}</Table.ColumnHeaderCell>
+                    <Table.ColumnHeaderCell>{t("proxy.healthColumn")}</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>{t("common.status")}</Table.ColumnHeaderCell>
                     <Table.ColumnHeaderCell>{t("common.actions")}</Table.ColumnHeaderCell>
                   </Table.Row>
@@ -289,7 +329,10 @@ export function ServerDetailView({
                   {proxies.map((proxy) => (
                     <Table.Row key={proxy.id}>
                       <Table.Cell>
-                        <Text weight="medium">{proxy.name || <Text color="gray">-</Text>}</Text>
+                        <Flex direction="column" gap="1" align="start">
+                          <Text weight="medium">{proxy.name || <Text color="gray">-</Text>}</Text>
+                          <ExpiryBadge expiresAt={proxy.expiresAt} />
+                        </Flex>
                       </Table.Cell>
                       <Table.Cell>
                         <Badge variant="surface">{proxy.proxyType.toUpperCase()}</Badge>
@@ -318,6 +361,9 @@ export function ServerDetailView({
                           />
                           {proxy.bootStatus === "online" ? t("proxy.online") : t("proxy.offline")}
                         </Badge>
+                      </Table.Cell>
+                      <Table.Cell>
+                        <ProxyHealth proxyId={proxy.id} proxyName={proxy.name ?? ""} status={proxyStatuses[proxy.id]} />
                       </Table.Cell>
                       <Table.Cell>
                         <ProxyStatusToggle

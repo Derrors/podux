@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import i18n from "../../../i18n";
 import pb from "../../../lib/pocketbase";
-import { apiGet } from "../../../lib/api";
+import { apiGet, apiPost } from "../../../lib/api";
 import { notifyError } from "../../../lib/notify";
 import { toast } from "sonner";
 import { REGEX } from "../../../lib/regex";
@@ -41,6 +41,8 @@ export interface ServerFormData {
     proxyURL: string;
   };
   metadatas: Record<string, string>;
+  /** frps dashboard (webServer) for traffic stats; empty url = not used. */
+  dashboard: { url: string; user: string; password: string };
 }
 
 const defaultData: ServerFormData = {
@@ -76,6 +78,7 @@ const defaultData: ServerFormData = {
     proxyURL: "",
   },
   metadatas: {},
+  dashboard: { url: "", user: "", password: "" },
 };
 
 export function useServerForm() {
@@ -125,6 +128,7 @@ export function useServerForm() {
             },
           },
           metadatas: record.metadatas || {},
+          dashboard: { ...defaultData.dashboard, ...(record.dashboard || {}) },
         });
       })
       .catch((err) => {
@@ -205,6 +209,22 @@ export function useServerForm() {
     return Object.keys(newErrors).length === 0;
   };
 
+  const handleDashboardChange = (field: keyof ServerFormData["dashboard"], value: string) =>
+    setFormData((prev) => ({ ...prev, dashboard: { ...prev.dashboard, [field]: value } }));
+
+  const [testingDashboard, setTestingDashboard] = useState(false);
+  const testDashboard = async () => {
+    setTestingDashboard(true);
+    try {
+      const info = await apiPost<{ version: string; clientCounts: number }>("/api/servers/frps-test", formData.dashboard);
+      toast.success(t("server.dashboardOk", { version: info.version, clients: info.clientCounts }));
+    } catch (err) {
+      notifyError(t("server.dashboardFailed"), err);
+    } finally {
+      setTestingDashboard(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!validate(formData)) return;
 
@@ -241,6 +261,9 @@ export function useServerForm() {
     handleTlsStringChange,
     handleFileUpload,
     handleSubmit,
+    handleDashboardChange,
+    testDashboard,
+    testingDashboard,
     navigate,
     setFormData,
   };

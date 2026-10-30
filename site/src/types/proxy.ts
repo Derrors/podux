@@ -1,7 +1,7 @@
 export interface Proxy {
   id: string;
   serverId: string;
-  proxyType: "tcp" | "udp" | "http" | "https" | "stcp" | "sudp" | "xtcp";
+  proxyType: "tcp" | "udp" | "http" | "https" | "stcp" | "sudp" | "xtcp" | "tcpmux";
   name?: string;
   localIP?: string;
   localPort?: number;
@@ -12,6 +12,10 @@ export interface Proxy {
   secretKey?: string;
   allowUsers?: string[] | null;
   healthCheck?: HealthCheck | null;
+  options?: Record<string, unknown> | null;
+  plugin?: Record<string, unknown> | null;
+  /** PocketBase date; "" when the proxy doesn't expire. */
+  expiresAt?: string;
   description?: string;
   status: "enabled" | "disabled";
   bootStatus: "online" | "offline";

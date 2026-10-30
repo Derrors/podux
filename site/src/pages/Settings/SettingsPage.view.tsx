@@ -7,6 +7,7 @@ import { Icon } from "@iconify/react/offline";
 import { ProfileSettings } from "./ProfileSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { NotificationSettings } from "./NotificationSettings";
+import { BackupSettings } from "./BackupSettings";
 import "./SettingsPage.css";
 
 export function SettingsView() {
@@ -59,6 +60,18 @@ export function SettingsView() {
                 </button>
                 <button
                   className="nav-item"
+                  data-state={activeTab === "backups" ? "active" : "inactive"}
+                  onClick={() => handleTabChange("backups")}
+                >
+                  <Flex align="center" gap="3">
+                    <Icon icon="lucide:archive" width="18" height="18" />
+                    <Text size="2" weight="medium">
+                      {t("backup.tab")}
+                    </Text>
+                  </Flex>
+                </button>
+                <button
+                  className="nav-item"
                   data-state={activeTab === "profile" ? "active" : "inactive"}
                   onClick={() => handleTabChange("profile")}
                 >
@@ -95,6 +108,17 @@ export function SettingsView() {
                     transition={{ duration: 0.4 }}
                   >
                     <NotificationSettings />
+                  </motion.div>
+                )}
+                {activeTab === "backups" && (
+                  <motion.div
+                    key="backups"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <BackupSettings />
                   </motion.div>
                 )}
                 {activeTab === "profile" && (

@@ -16,6 +16,8 @@ interface NotificationSettingsData {
     highLatency: boolean;
     proxyDown: boolean;
     frpcExited: boolean;
+    proxyUnreachable: boolean;
+    proxyExpired: boolean;
     recovered: boolean;
   };
   latencyThresholdMs: number;
@@ -33,7 +35,15 @@ interface TestResult {
 
 type Channel = "webhook" | "telegram" | "bark" | "email";
 
-const EVENTS = ["serverUnreachable", "highLatency", "proxyDown", "frpcExited", "recovered"] as const;
+const EVENTS = [
+  "serverUnreachable",
+  "highLatency",
+  "proxyDown",
+  "proxyUnreachable",
+  "frpcExited",
+  "proxyExpired",
+  "recovered",
+] as const;
 
 function SwitchRow({ label, description, checked, onChange }: {
   label: string;

@@ -19,6 +19,7 @@ import { useRef, useState } from "react";
 import { FormItem } from "../../../components/FormItem";
 import { PageHeader } from "../../../components/PageHeader";
 import { SectionHeading } from "../../../components/SectionHeading";
+import { DashboardSection } from "./DashboardSection";
 import { RadioCardGroup } from "../../../components/RadioCardGroup";
 import { type ServerFormData } from "./useServerForm";
 
@@ -35,6 +36,9 @@ interface ServerFormPageViewProps {
   onLogChange: (field: keyof ServerFormData["log"], value: string | number) => void;
   onTransportChange: (field: keyof ServerFormData["transport"], value: string) => void;
   onTlsChange: (field: keyof ServerFormData["transport"]["tls"], value: boolean) => void;
+  onDashboardChange: (field: keyof ServerFormData["dashboard"], value: string) => void;
+  onTestDashboard: () => void;
+  testingDashboard: boolean;
   onTlsStringChange: (field: string, value: string) => void;
   onFileUpload: (field: string, e: React.ChangeEvent<HTMLInputElement>) => void;
   onSetFormData: (fn: (prev: ServerFormData) => ServerFormData) => void;
@@ -55,6 +59,9 @@ export function ServerFormPageView({
   onLogChange,
   onTransportChange,
   onTlsChange,
+  onDashboardChange,
+  onTestDashboard,
+  testingDashboard,
   onTlsStringChange,
   onFileUpload,
   onSetFormData,
@@ -416,6 +423,13 @@ export function ServerFormPageView({
                   </FormItem>
                 </Flex>
               </section>
+
+              <DashboardSection
+                dashboard={formData.dashboard}
+                testing={testingDashboard}
+                onChange={onDashboardChange}
+                onTest={onTestDashboard}
+              />
 
               <Separator size="4" />
 

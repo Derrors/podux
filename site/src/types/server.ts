@@ -43,6 +43,8 @@ export interface ServerListResponse {
 
 /** Full `fh_servers` record as returned by the PocketBase collection API. */
 export interface ServerRecord extends Omit<ServerListItem, "networkStatus"> {
+  /** frps dashboard login for traffic stats (url empty = not used). */
+  dashboard?: { url?: string; user?: string; password?: string } | null;
   serverVersion?: string;
   log?: {
     level: "trace" | "debug" | "info" | "warn" | "error";

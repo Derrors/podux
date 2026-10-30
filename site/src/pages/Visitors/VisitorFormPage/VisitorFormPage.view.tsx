@@ -8,7 +8,7 @@ import { PageHeader } from "../../../components/PageHeader";
 import { RadioCardGroup } from "../../../components/RadioCardGroup";
 import { SectionHeading } from "../../../components/SectionHeading";
 import type { ServerOption } from "../../Proxies/ProxyFormPage/useProxyForm";
-import type { SecretProxyOption, VisitorFormData } from "./useVisitorForm";
+import type { FallbackOption, SecretProxyOption, VisitorFormData } from "./useVisitorForm";
 
 const visitorTypes = [
   { value: "stcp", label: "STCP", icon: "lucide:shield" },
@@ -21,6 +21,7 @@ interface VisitorFormPageViewProps {
   formData: VisitorFormData;
   servers: ServerOption[];
   secretProxies: SecretProxyOption[];
+  fallbacks: FallbackOption[];
   loadingServers: boolean;
   loading: boolean;
   submitting: boolean;
@@ -37,6 +38,7 @@ export function VisitorFormPageView({
   formData,
   servers,
   secretProxies,
+  fallbacks,
   loadingServers,
   loading,
   submitting,
@@ -183,6 +185,16 @@ export function VisitorFormPageView({
           <section>
             <SectionHeading id="section-local" title={t("visitor.sectionLocal")} icon="lucide:monitor" />
             <Flex direction="column" gap="4">
+              {formData.type === "stcp" && (
+                <Flex justify="between" align="center">
+                  <Box>
+                    <Text size="2" weight="medium">{t("visitor.noBind")}</Text>
+                    <Text as="p" size="1" color="gray">{t("visitor.noBindDesc")}</Text>
+                  </Box>
+                  <Switch checked={formData.noBind} onCheckedChange={(v) => onChange("noBind", v)} />
+                </Flex>
+              )}
+              {!(formData.type === "stcp" && formData.noBind) && (
               <Flex gap="3">
                 <Box className="flex-[2]">
                   <FormItem label={t("visitor.bindAddr")} required error={errors.bindAddr}>
@@ -206,6 +218,7 @@ export function VisitorFormPageView({
                   </FormItem>
                 </Box>
               </Flex>
+              )}
               <Text size="1" color="gray" as="p">
                 {t("visitor.bindDesc")}
               </Text>
@@ -217,6 +230,44 @@ export function VisitorFormPageView({
                     <Text as="p" size="1" color="gray">{t("visitor.keepTunnelOpenDesc")}</Text>
                   </Box>
                   <Switch checked={formData.keepTunnelOpen} onCheckedChange={(v) => onChange("keepTunnelOpen", v)} />
+                </Flex>
+              )}
+
+              {formData.type === "xtcp" && (
+                <Flex gap="3" wrap="wrap">
+                  <Box className="min-w-[200px] flex-[2]">
+                    <FormItem label={t("visitor.fallbackTo")}>
+                      <Select.Root
+                        value={formData.fallbackTo || "none"}
+                        onValueChange={(v) => onChange("fallbackTo", v === "none" ? "" : v)}
+                      >
+                        <Select.Trigger style={{ width: "100%" }} />
+                        <Select.Content>
+                          <Select.Item value="none">{t("visitor.fallbackNone")}</Select.Item>
+                          {fallbacks.map((f) => (
+                            <Select.Item key={f.id} value={f.id}>
+                              {f.name}
+                            </Select.Item>
+                          ))}
+                        </Select.Content>
+                      </Select.Root>
+                    </FormItem>
+                  </Box>
+                  <Box className="min-w-[140px] flex-1">
+                    <FormItem label={t("visitor.fallbackTimeout")} error={errors.fallbackTimeoutMs}>
+                      <TextField.Root
+                        size="2"
+                        type="number"
+                        placeholder="1000"
+                        disabled={!formData.fallbackTo}
+                        value={formData.fallbackTimeoutMs}
+                        onChange={(e) => onChange("fallbackTimeoutMs", e.target.value)}
+                      />
+                    </FormItem>
+                  </Box>
+                  <Text size="1" color="gray" as="p" className="w-full">
+                    {t("visitor.fallbackDesc")}
+                  </Text>
                 </Flex>
               )}
             </Flex>

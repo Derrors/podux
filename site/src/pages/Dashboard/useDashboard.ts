@@ -17,6 +17,12 @@ export interface DashboardStats {
   uptime: string;
   proxyTypeCounts: Record<string, number>;
   uptimeSeconds: number;
+  visitorsTotal: number;
+  visitorsEnabled: number;
+  /** Today's frps traffic over servers with a dashboard; trafficServers = how many. */
+  trafficIn: number;
+  trafficOut: number;
+  trafficServers: number;
 }
 
 export interface TopologyServer {
@@ -31,16 +37,28 @@ export interface TopologyProxy {
   name: string;
   proxyType: string;
   localIP: string;
-  localPort: string;
-  remotePort: string;
+  localPort: number;
+  remotePort: number;
   status: string;
   bootStatus: string;
+  serverId: string;
+}
+
+export interface TopologyVisitor {
+  id: string;
+  name: string;
+  visitorType: string;
+  serverName: string;
+  bindAddr: string;
+  bindPort: number;
+  status: string;
   serverId: string;
 }
 
 export interface TopologyData {
   servers: TopologyServer[];
   proxies: TopologyProxy[];
+  visitors: TopologyVisitor[];
 }
 
 interface DashboardStatsResponse {
@@ -52,6 +70,11 @@ interface DashboardStatsResponse {
   maxLatency?: number;
   proxyTypeCounts?: Record<string, number>;
   uptimeSeconds?: number;
+  visitorsTotal?: number;
+  visitorsEnabled?: number;
+  trafficIn?: number;
+  trafficOut?: number;
+  trafficServers?: number;
 }
 
 const POLL_INTERVAL_MS = 30_000;
@@ -67,6 +90,11 @@ const EMPTY_STATS: DashboardStats = {
   uptime: "0h 0m",
   proxyTypeCounts: {},
   uptimeSeconds: 0,
+  visitorsTotal: 0,
+  visitorsEnabled: 0,
+  trafficIn: 0,
+  trafficOut: 0,
+  trafficServers: 0,
 };
 
 function toStats(data: DashboardStatsResponse): DashboardStats {
@@ -81,12 +109,17 @@ function toStats(data: DashboardStatsResponse): DashboardStats {
     uptime: "N/A",
     proxyTypeCounts: data.proxyTypeCounts || {},
     uptimeSeconds: data.uptimeSeconds || 0,
+    visitorsTotal: data.visitorsTotal ?? 0,
+    visitorsEnabled: data.visitorsEnabled ?? 0,
+    trafficIn: data.trafficIn ?? 0,
+    trafficOut: data.trafficOut ?? 0,
+    trafficServers: data.trafficServers ?? 0,
   };
 }
 
 export function useDashboard() {
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
-  const [topology, setTopology] = useState<TopologyData>({ servers: [], proxies: [] });
+  const [topology, setTopology] = useState<TopologyData>({ servers: [], proxies: [], visitors: [] });
   const request = useLatestRequest();
 
   const load = useCallback(async () => {
@@ -103,6 +136,7 @@ export function useDashboard() {
       setTopology({
         servers: topologyData?.servers ?? [],
         proxies: topologyData?.proxies ?? [],
+        visitors: topologyData?.visitors ?? [],
       });
     } catch (err) {
       notifyError(i18n.t("dashboard.loadFailed"), err, "dashboard-load");

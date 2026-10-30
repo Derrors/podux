@@ -12,6 +12,7 @@ export function VisitorFormPage() {
       formData={form.formData}
       servers={form.servers}
       secretProxies={form.secretProxies}
+      fallbacks={form.fallbacks}
       loadingServers={form.loadingServers}
       loading={form.loading}
       submitting={form.submitting}

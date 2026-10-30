@@ -138,6 +138,10 @@ export function ServersView({
                     refreshing={refreshing}
                     label={t("server.refresh")}
                   />
+                  <Button variant="soft" color="gray" onClick={() => navigate("/logs")}>
+                    <Icon icon="lucide:scroll-text" width="16" height="16" />
+                    {t("server.allLogs")}
+                  </Button>
                   <Button variant="soft" color="gray" onClick={() => navigate("/import")}>
                     <Icon icon="lucide:file-input" width="16" height="16" />
                     {t("import.title")}

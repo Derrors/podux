@@ -121,6 +121,46 @@ jobs:
             main.go
 
   # ──────────────────────────────────────────────
+  # End-to-end: the built binary against a real frps (test/e2e/run.sh)
+  # ──────────────────────────────────────────────
+  e2e:
+    name: End-to-end
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: pb_public/
+
+      - name: Build Podux and the webhook catcher
+        run: |
+          go build -o /tmp/podux .
+          go build -o /tmp/catcher ./test/e2e/catcher
+
+      # The same frp release as the embedded frpc.
+      - name: Download frps
+        run: |
+          FRP_VERSION=$(go list -m -f '{{.Version}}' github.com/fatedier/frp | sed 's/^v//')
+          curl -fsSL "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz" | tar -xz -C /tmp
+          mv "/tmp/frp_${FRP_VERSION}_linux_amd64/frps" /tmp/frps
+
+      - name: Run
+        env:
+          PODUX_BIN: /tmp/podux
+          FRPS_BIN: /tmp/frps
+          CATCHER_BIN: /tmp/catcher
+        run: sh test/e2e/run.sh
+
+  # ──────────────────────────────────────────────
   # Docker: build & push :dev image (dev branch only)
   # ──────────────────────────────────────────────
   docker-dev:

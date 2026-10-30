@@ -23,29 +23,20 @@ import { SectionHeading } from "../../../components/SectionHeading";
 import { RadioCardGroup } from "../../../components/RadioCardGroup";
 import { ServerLatency } from "../../../components/ServerLatency";
 import { type ProxyFormData, type ServerOption } from "./useProxyForm";
+import { ExpirySection, HttpOptionsSection, LoadBalancerSection, PluginSection } from "./ProxyAdvancedSections";
+import type { OptionFields, PluginState } from "./proxyOptions";
 
 const proxyTypes = [
   { value: "tcp",    label: "TCP",    icon: "lucide:arrow-right-left", comingSoon: false },
   { value: "udp",    label: "UDP",    icon: "lucide:radio",            comingSoon: false },
   { value: "http",   label: "HTTP",   icon: "lucide:globe",            comingSoon: false },
   { value: "https",  label: "HTTPS",  icon: "lucide:lock",             comingSoon: false },
-  { value: "tcpmux", label: "TCPMUX", icon: "lucide:split",            comingSoon: true  },
+  { value: "tcpmux", label: "TCPMUX", icon: "lucide:split",            comingSoon: false },
   { value: "stcp",   label: "STCP",   icon: "lucide:shield",           comingSoon: false },
   { value: "sudp",   label: "SUDP",   icon: "lucide:shield-ellipsis",  comingSoon: false },
   { value: "xtcp",   label: "XTCP",   icon: "lucide:share-2",          comingSoon: false },
 ];
 
-const BASE_PLUGIN_TYPES = [
-  { value: "socks5",             label: "SOCKS5",           icon: "lucide:globe",         comingSoon: false, tcpOnly: true  },
-  { value: "http_proxy",         label: "HTTPProxy",         icon: "lucide:waypoints",     comingSoon: true,  tcpOnly: false },
-  { value: "static_file",        label: "StaticFile",        icon: "lucide:folder-open",   comingSoon: true,  tcpOnly: false },
-  { value: "unix_domain_socket", label: "UnixDomainSocket",  icon: "lucide:cable",         comingSoon: true,  tcpOnly: false },
-  { value: "http2https",         label: "HTTP2HTTPS",        icon: "lucide:lock",          comingSoon: true,  tcpOnly: false },
-  { value: "https2http",         label: "HTTPS2HTTP",        icon: "lucide:lock-open",     comingSoon: true,  tcpOnly: false },
-  { value: "https2https",        label: "HTTPS2HTTPS",       icon: "lucide:shield-check",  comingSoon: true,  tcpOnly: false },
-  { value: "tls2raw",            label: "TLS2Raw",           icon: "lucide:zap",           comingSoon: true,  tcpOnly: false },
-  { value: "virtual_net",        label: "VirtualNet",        icon: "lucide:network",       comingSoon: true,  tcpOnly: false },
-];
 
 
 interface ProxyFormPageViewProps {
@@ -58,11 +49,13 @@ interface ProxyFormPageViewProps {
   errors: Partial<Record<keyof ProxyFormData, string>>;
   isHttpType: boolean;
   isSecretType: boolean;
-  isSocks5Plugin: boolean;
+  usesPlugin: boolean;
   /** "<name>-<id>" of a saved stcp/sudp/xtcp proxy, for visitors; empty when new. */
   runtimeName: string;
   mounted: boolean;
   onRegenerateSecretKey: () => void;
+  onOptionsChange: (patch: Partial<OptionFields>) => void;
+  onPluginChange: (patch: Partial<PluginState>) => void;
   onChange: (field: keyof ProxyFormData, value: string | boolean | string[]) => void;
   onSubmit: () => void;
   onCancel: () => void;
@@ -79,10 +72,12 @@ export function ProxyFormPageView({
   errors,
   isHttpType,
   isSecretType,
-  isSocks5Plugin,
+  usesPlugin,
   runtimeName,
   mounted,
   onRegenerateSecretKey,
+  onOptionsChange,
+  onPluginChange,
   onChange,
   onSubmit,
   onCancel,
@@ -207,7 +202,7 @@ export function ProxyFormPageView({
                 <SectionHeading id="section-network" title={t("proxy.sectionNetwork")} icon="lucide:network" />
                 <Flex direction="column" gap="4">
                   <AnimatePresence>
-                    {!isSocks5Plugin && (
+                    {!usesPlugin && (
                       <motion.div
                         key="local-addr"
                         initial={{ opacity: 0, height: 0 }}
@@ -433,7 +428,7 @@ export function ProxyFormPageView({
                 </Flex>
               </section>
 
-              {!isSocks5Plugin && (
+              {!usesPlugin && (
                 <>
                   <Separator size="4" />
 
@@ -501,78 +496,21 @@ export function ProxyFormPageView({
 
               <Separator size="4" />
 
-              {/* 插件 */}
-              <section>
-                <SectionHeading id="section-plugin" title={t("proxy.sectionPlugin")} icon="lucide:puzzle" />
-                <Flex direction="column" gap="4">
-                  <Flex justify="between" align="center">
-                    <Box>
-                      <Text size="2" weight="medium">{t("proxy.pluginEnable")}</Text>
-                      <Text as="p" size="1" color="gray">{t("proxy.pluginEnableDesc")}</Text>
-                    </Box>
-                    <Switch
-                      size="2"
-                      checked={formData.pluginEnabled}
-                      onCheckedChange={(v) => onChange("pluginEnabled", v)}
-                    />
-                  </Flex>
+              <PluginSection type={formData.type} plugin={formData.plugin} error={errors.plugin} onChange={onPluginChange} />
 
-                  <AnimatePresence>
-                  {formData.pluginEnabled && (
-                    <motion.div
-                      key="plugin-fields"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2, ease: "easeInOut" }}
-                      style={{ overflow: "hidden" }}
-                    >
-                    <Flex
-                      direction="column"
-                      gap="4"
-                      className="border-l-2 border-[var(--accent-6)] pl-4"
-                    >
-                      <FormItem label={t("proxy.pluginType")} required>
-                        <RadioCardGroup
-                          options={BASE_PLUGIN_TYPES.map((pt) => ({
-                            ...pt,
-                            incompatible: pt.tcpOnly && formData.type !== "tcp",
-                            incompatibleLabel: t("proxy.pluginTcpOnly"),
-                          }))}
-                          value={formData.pluginType}
-                          onChange={(v) => onChange("pluginType", v as ProxyFormData["pluginType"])}
-                          comingSoonLabel={t("common.comingSoon")}
-                        />
-                      </FormItem>
+              <HttpOptionsSection type={formData.type} options={formData.options} error={errors.options} onChange={onOptionsChange} />
 
-                      <FormItem label={t("proxy.pluginUsername")}>
-                        <TextField.Root
-                          size="2"
-                          placeholder={t("proxy.pluginUsernamePlaceholder")}
-                          value={formData.pluginUsername}
-                          onChange={(e) => onChange("pluginUsername", e.target.value)}
-                          autoComplete="off"
-                        />
-                        <Text size="1" color="gray" mt="1">{t("proxy.pluginUsernameDesc")}</Text>
-                      </FormItem>
+              <LoadBalancerSection type={formData.type} options={formData.options} onChange={onOptionsChange} />
 
-                      <FormItem label={t("proxy.pluginPassword")}>
-                        <TextField.Root
-                          size="2"
-                          type="password"
-                          placeholder={t("proxy.pluginPasswordPlaceholder")}
-                          value={formData.pluginPassword}
-                          onChange={(e) => onChange("pluginPassword", e.target.value)}
-                          autoComplete="new-password"
-                        />
-                        <Text size="1" color="gray" mt="1">{t("proxy.pluginPasswordDesc")}</Text>
-                      </FormItem>
-                    </Flex>
-                    </motion.div>
-                  )}
-                  </AnimatePresence>
-                </Flex>
-              </section>
+              <Separator size="4" />
+
+              <ExpirySection
+                choice={formData.expiryChoice}
+                custom={formData.expiryCustom}
+                expiresAt={formData.expiresAt}
+                error={errors.expiryCustom}
+                onChange={onChange}
+              />
 
               <Separator size="4" />
 

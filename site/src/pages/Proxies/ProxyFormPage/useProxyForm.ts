@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import i18n from "../../../i18n";
 import pb from "../../../lib/pocketbase";
@@ -9,6 +9,19 @@ import { toast } from "sonner";
 import { REGEX } from "../../../lib/regex";
 import { fieldErrors } from "../../../lib/fieldErrors";
 import { isSecretProxyType, type HealthCheck } from "../../../types/proxy";
+import {
+  EMPTY_OPTIONS,
+  PLUGIN_SPECS,
+  expiresAtFor,
+  missingPluginFields,
+  optionsFromRecord,
+  optionsToRecord,
+  pluginFromRecord,
+  pluginToRecord,
+  type ExpiryChoice,
+  type OptionFields,
+  type PluginState,
+} from "./proxyOptions";
 
 export interface ProxyFormData {
   serverId: string;
@@ -22,10 +35,15 @@ export interface ProxyFormData {
   encryption: boolean;
   compression: boolean;
   description: string;
-  pluginEnabled: boolean;
-  pluginType: "socks5";
-  pluginUsername: string;
-  pluginPassword: string;
+  plugin: PluginState;
+  /** HTTP / tcpmux / load balancing settings stored in fh_proxies.options. */
+  options: OptionFields;
+  /** How to set expiresAt on save; "keep" leaves the loaded value. */
+  expiryChoice: ExpiryChoice;
+  /** datetime-local value for a custom expiry. */
+  expiryCustom: string;
+  /** expiresAt as loaded ("" when the proxy doesn't expire). */
+  expiresAt: string;
   /** stcp/sudp/xtcp: key visitors must present, and frp users allowed to visit ("*" = any). */
   secretKey: string;
   allowUsers: string;
@@ -52,10 +70,11 @@ const DEFAULT_FORM: ProxyFormData = {
   encryption: false,
   compression: false,
   description: "",
-  pluginEnabled: false,
-  pluginType: "socks5",
-  pluginUsername: "",
-  pluginPassword: "",
+  plugin: { enabled: false, type: "socks5", fields: {} },
+  options: EMPTY_OPTIONS,
+  expiryChoice: "none",
+  expiryCustom: "",
+  expiresAt: "",
   secretKey: "",
   allowUsers: "",
   bandwidthLimit: "",
@@ -91,7 +110,13 @@ const RECORD_TO_FORM: Record<string, keyof ProxyFormData> = {
   subdomain: "subdomain",
   customDomains: "customDomains",
   secretKey: "secretKey",
+  plugin: "plugin",
+  options: "options",
+  expiresAt: "expiryCustom",
 };
+
+/** Proxy types reached through domains instead of a remote port. */
+const DOMAIN_TYPES = ["http", "https", "tcpmux"];
 
 type Transport = Record<string, unknown>;
 
@@ -113,16 +138,22 @@ export function useProxyForm() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isEditing = !!id;
+  // "Clone" opens a new proxy form prefilled from ?from=<proxy id>.
+  const [searchParams] = useSearchParams();
+  const cloneFrom = isEditing ? null : searchParams.get("from");
+  const sourceId = id ?? cloneFrom;
   const { t } = useTranslation();
 
   const [formData, setFormData] = useState<ProxyFormData>(DEFAULT_FORM);
   const [servers, setServers] = useState<ServerOption[]>([]);
   const [loadingServers, setLoadingServers] = useState(false);
-  const [loadingProxy, setLoadingProxy] = useState(isEditing);
+  const [loadingProxy, setLoadingProxy] = useState(!!sourceId);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof ProxyFormData, string>>>({});
   // Transport keys the form doesn't edit (e.g. bandwidthLimit from a TOML import) are kept on save.
   const loadedTransport = useRef<Transport>({});
+  const loadedOptions = useRef<Record<string, unknown>>({});
+  const loadedPlugin = useRef<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     const fetchServers = async () => {
@@ -131,7 +162,7 @@ export function useProxyForm() {
         const list = (await apiGet<ServerOption[] | null>("/api/servers/options")) ?? [];
         setServers(list);
         if (list.length > 0 && !isEditing) {
-          setFormData((prev) => ({ ...prev, serverId: list[0].id }));
+          setFormData((prev) => ({ ...prev, serverId: prev.serverId || list[0].id }));
         }
       } catch (err) {
         // i18n singleton, not t: t changes per language and would refetch and reset the form.
@@ -144,31 +175,37 @@ export function useProxyForm() {
   }, [isEditing]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!sourceId) return;
     const fetchProxy = async () => {
       try {
         setLoadingProxy(true);
-        const record = await pb.collection("fh_proxies").getOne(id);
-        const plugin = record.plugin as Record<string, string> | null | undefined;
+        const record = await pb.collection("fh_proxies").getOne(sourceId);
+        const plugin = record.plugin as Record<string, unknown> | null | undefined;
         const transport = (record.transport as Transport | null | undefined) ?? {};
         const healthCheck = (record.healthCheck as HealthCheck | null | undefined) ?? {};
+        const options = (record.options as Record<string, unknown> | null | undefined) ?? {};
         loadedTransport.current = transport;
+        loadedOptions.current = options;
+        loadedPlugin.current = plugin ?? null;
+        const expiresAt = cloneFrom ? "" : ((record.expiresAt as string) || "");
         setFormData({
           serverId: record.serverId as string,
-          name: (record.name as string) || "",
+          // A clone gets a new name and no public endpoint, which would conflict with the original.
+          name: cloneFrom ? `${record.name as string}-copy` : (record.name as string) || "",
           type: record.proxyType as ProxyFormData["type"],
           localIp: (record.localIP as string) || "127.0.0.1",
           localPort: String(record.localPort || ""),
-          remotePort: String(record.remotePort || ""),
-          subdomain: (record.subdomain as string) || "",
-          customDomains: (record.customDomains as string[] | undefined) || [],
+          remotePort: cloneFrom ? "" : String(record.remotePort || ""),
+          subdomain: cloneFrom ? "" : (record.subdomain as string) || "",
+          customDomains: cloneFrom ? [] : (record.customDomains as string[] | undefined) || [],
           encryption: transportFlag(transport, "useEncryption", "use_encryption"),
           compression: transportFlag(transport, "useCompression", "use_compression"),
           description: (record.description as string) || "",
-          pluginEnabled: !!plugin?.type,
-          pluginType: (plugin?.type as ProxyFormData["pluginType"]) || "socks5",
-          pluginUsername: plugin?.username || "",
-          pluginPassword: plugin?.password || "",
+          plugin: pluginFromRecord(plugin),
+          options: optionsFromRecord(options),
+          expiryChoice: expiresAt ? "keep" : "none",
+          expiryCustom: "",
+          expiresAt,
           secretKey: (record.secretKey as string) || "",
           allowUsers: ((record.allowUsers as string[] | null) ?? []).join(", "),
           ...parseBandwidth(transport.bandwidthLimit),
@@ -187,7 +224,7 @@ export function useProxyForm() {
       }
     };
     fetchProxy();
-  }, [id, navigate]);
+  }, [sourceId, cloneFrom, navigate]);
 
   const validateField = (field: keyof ProxyFormData, value: string) => {
     let error = "";
@@ -223,8 +260,9 @@ export function useProxyForm() {
   const handleChange = (field: keyof ProxyFormData, value: string | boolean | string[]) => {
     setFormData((prev) => {
       const next = { ...prev, [field]: value };
-      if (field === "type" && value !== "tcp" && prev.pluginEnabled && prev.pluginType === "socks5") {
-        next.pluginEnabled = false;
+      // Turn the plugin off when the new type doesn't support it.
+      if (field === "type" && prev.plugin.enabled && !PLUGIN_SPECS[prev.plugin.type].proxyTypes.includes(value as string)) {
+        next.plugin = { ...prev.plugin, enabled: false };
       }
       // A new stcp/sudp/xtcp proxy starts with a random secret key.
       if (field === "type" && typeof value === "string" && isSecretProxyType(value) && !prev.secretKey) {
@@ -238,17 +276,37 @@ export function useProxyForm() {
     }
   };
 
+  const setOptions = (patch: Partial<OptionFields>) => {
+    setFormData((prev) => ({ ...prev, options: { ...prev.options, ...patch } }));
+    setErrors((prev) => ({ ...prev, options: undefined }));
+  };
+
+  const setPlugin = (patch: Partial<PluginState>) => {
+    setFormData((prev) => {
+      const plugin = { ...prev.plugin, ...patch };
+      // Switching plugins starts from the stored fields of that plugin, if any.
+      if (patch.type && patch.type !== prev.plugin.type) {
+        plugin.fields = pluginFromRecord(
+          loadedPlugin.current?.type === patch.type ? loadedPlugin.current : { type: patch.type }
+        ).fields;
+      }
+      return { ...prev, plugin };
+    });
+    setErrors((prev) => ({ ...prev, plugin: undefined }));
+  };
+
   const validate = (data: ProxyFormData): boolean => {
-    const isHttp = data.type === "http" || data.type === "https";
+    const isHttp = DOMAIN_TYPES.includes(data.type);
     const isSecret = isSecretProxyType(data.type);
-    const isSocks5 = data.pluginEnabled && data.pluginType === "socks5";
+    // With a plugin, frpc serves the connection itself; localIP/localPort are unused.
+    const usesPlugin = data.plugin.enabled;
     const newErrors: Partial<Record<keyof ProxyFormData, string>> = {};
 
     if (!data.serverId) newErrors.serverId = t("proxy.errorRequired");
     if (!data.name) newErrors.name = t("proxy.errorRequired");
     else if (!REGEX.PROXY_NAME.test(data.name)) newErrors.name = t("proxy.errorInvalidName");
 
-    if (!isSocks5) {
+    if (!usesPlugin) {
       if (!data.localIp) newErrors.localIp = t("proxy.errorRequired");
       else if (!REGEX.IP_OR_HOSTNAME.test(data.localIp)) newErrors.localIp = t("proxy.errorInvalidIP");
 
@@ -256,7 +314,7 @@ export function useProxyForm() {
       else if (!REGEX.PORT.test(data.localPort)) newErrors.localPort = t("proxy.errorInvalidPort");
     }
 
-    if (!isHttp && !isSecret && !isSocks5) {
+    if (!isHttp && !isSecret && !usesPlugin) {
       if (!data.remotePort) newErrors.remotePort = t("proxy.errorRequired");
       else if (!REGEX.PORT.test(data.remotePort)) newErrors.remotePort = t("proxy.errorInvalidPort");
     }
@@ -267,13 +325,26 @@ export function useProxyForm() {
       newErrors.bandwidthLimit = t("proxy.errorPositiveInteger");
     }
 
-    if (data.healthCheckType && !isSocks5) {
+    if (data.healthCheckType && !usesPlugin) {
       for (const field of ["healthCheckInterval", "healthCheckTimeout", "healthCheckMaxFailed"] as const) {
         if (!POSITIVE_INT.test(data[field])) newErrors[field] = t("proxy.errorPositiveInteger");
       }
       if (data.healthCheckType === "http" && !data.healthCheckPath.startsWith("/")) {
         newErrors.healthCheckPath = t("proxy.errorHealthCheckPath");
       }
+    }
+
+    const missing = missingPluginFields(data.plugin);
+    if (missing.length > 0) {
+      newErrors.plugin = t("proxy.errorPluginFields", { fields: missing.map((f) => t(`proxy.pluginField.${f}`)).join(", ") });
+    }
+
+    if (data.options.locations.some((l) => l.trim() && !l.trim().startsWith("/"))) {
+      newErrors.options = t("proxy.errorLocation");
+    }
+
+    if (data.expiryChoice === "custom" && expiresAtFor("custom", "", data.expiryCustom) === null) {
+      newErrors.expiryCustom = t("proxy.errorExpiry");
     }
 
     if (isHttp) {
@@ -301,16 +372,11 @@ export function useProxyForm() {
     };
     if (!validate(data)) return;
 
-    const plugin = data.pluginEnabled
-      ? {
-        type: data.pluginType,
-        ...(data.pluginUsername ? { username: data.pluginUsername } : {}),
-        ...(data.pluginPassword ? { password: data.pluginPassword } : {}),
-      }
-      : null;
+    const plugin = pluginToRecord(data.plugin, loadedPlugin.current);
 
     const isSecret = isSecretProxyType(data.type);
-    const isSocks5 = data.pluginEnabled && data.pluginType === "socks5";
+    const isHttp = DOMAIN_TYPES.includes(data.type);
+    const usesPlugin = data.plugin.enabled;
     const keptTransport = { ...loadedTransport.current };
     delete keptTransport.use_encryption;
     delete keptTransport.use_compression;
@@ -321,7 +387,7 @@ export function useProxyForm() {
       if (data.bandwidthMode === "server") keptTransport.bandwidthLimitMode = "server";
     }
     const healthCheck =
-      data.healthCheckType && !isSocks5
+      data.healthCheckType && !usesPlugin
         ? {
           type: data.healthCheckType,
           ...(data.healthCheckType === "http" ? { path: data.healthCheckPath } : {}),
@@ -339,7 +405,7 @@ export function useProxyForm() {
       localIP: data.localIp,
       localPort: data.localPort,
       // stcp/sudp/xtcp have no public endpoint; clear what a previous type left behind.
-      remotePort: isSecret ? "" : data.remotePort,
+      remotePort: isSecret || isHttp ? "" : data.remotePort,
       subdomain: isSecret ? "" : data.subdomain,
       customDomains: isSecret ? [] : data.customDomains,
       secretKey: isSecret ? data.secretKey.trim() : "",
@@ -351,6 +417,8 @@ export function useProxyForm() {
         useCompression: data.compression,
       },
       plugin,
+      options: optionsToRecord(data.type, data.options, loadedOptions.current),
+      expiresAt: expiresAtFor(data.expiryChoice, data.expiresAt, data.expiryCustom) ?? "",
       description: data.description,
     };
 
@@ -383,9 +451,9 @@ export function useProxyForm() {
     }
   };
 
-  const isHttpType = formData.type === "http" || formData.type === "https";
+  const isHttpType = DOMAIN_TYPES.includes(formData.type);
   const isSecretType = isSecretProxyType(formData.type);
-  const isSocks5Plugin = formData.pluginEnabled && formData.pluginType === "socks5";
+  const usesPlugin = formData.plugin.enabled;
   // Visitors reach an stcp/sudp/xtcp proxy by the name frpc registers: "<name>-<id>".
   const runtimeName = isEditing && formData.name ? `${formData.name}-${id}` : "";
 
@@ -403,7 +471,10 @@ export function useProxyForm() {
     submitting,
     errors,
     isHttpType,
-    isSocks5Plugin,
+    usesPlugin,
+    isClone: !!cloneFrom,
+    setOptions,
+    setPlugin,
     handleChange,
     handleSubmit,
     navigate,

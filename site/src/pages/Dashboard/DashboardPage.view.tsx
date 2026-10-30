@@ -10,6 +10,7 @@ import { motion } from "framer-motion";
 import { AnimateNumber } from "../../components/AnimateNumber";
 import { useTranslation } from "react-i18next";
 import { StatCard } from "../../components/StatCard";
+import { formatBytes } from "../../lib/format";
 
 interface DashboardViewProps {
   stats: DashboardStats;
@@ -50,7 +51,7 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
       />
 
       {/* Stats Cards Row 1 */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
@@ -108,30 +109,47 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
             icon={<Icon icon="lucide:activity" color="var(--orange-11)" width="32" height="32" />}
           />
         </motion.div>
-        {/* <motion.div
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
           transition={{ duration: 0.5, delay: 0.4, ease: "easeOut" }}
         >
           <StatCard
-            title="Traffic Out"
+            title={t("dashboard.visitors")}
             value={
-              <AnimateNumber
-                value={stats.totalTrafficOut}
-                unit={stats.totalTrafficOutUnit}
-              />
+              <>
+                <AnimateNumber value={stats.visitorsEnabled} decimalPlaces={0} />
+                <Text size="2" color="gray" weight="regular" ml="2">
+                  / {stats.visitorsTotal}
+                </Text>
+              </>
             }
-            color="orange"
-            icon={
-              <Icon
-                icon="lucide:upload"
-                color="var(--orange-11)"
-                width="32"
-                height="32"
-              />
-            }
+            color="gray"
+            icon={<Icon icon="lucide:door-open" color="var(--gray-11)" width="32" height="32" />}
           />
-        </motion.div> */}
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+          transition={{ duration: 0.5, delay: 0.5, ease: "easeOut" }}
+        >
+          <StatCard
+            title={t("dashboard.trafficToday")}
+            value={
+              stats.trafficServers > 0 ? (
+                <Text size="4" weight="bold" className="whitespace-nowrap font-mono">
+                  ↓{formatBytes(stats.trafficIn)} ↑{formatBytes(stats.trafficOut)}
+                </Text>
+              ) : (
+                <Text size="2" color="gray" weight="regular">
+                  {t("dashboard.trafficNoDashboard")}
+                </Text>
+              )
+            }
+            color="blue"
+            icon={<Icon icon="lucide:arrow-down-up" color="var(--blue-11)" width="32" height="32" />}
+          />
+        </motion.div>
       </div>
 
       {/* Quick Actions */}

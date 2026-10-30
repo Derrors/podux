@@ -27,3 +27,21 @@ export const formatTimeAgo = (
   if (diffDays < 365) return rtf.format(-Math.floor(diffDays / 30), "month");
   return rtf.format(-Math.floor(diffDays / 365), "year");
 };
+
+/** Human readable byte count ("1.5 MB"), base 1024. */
+export const formatBytes = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const v = bytes / 1024 ** i;
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+};
+
+/** Compact remaining time ("45m", "5h", "3d") for a positive duration in ms. */
+export const formatDuration = (ms: number): string => {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+};

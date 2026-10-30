@@ -25,6 +25,9 @@ export function ServerFormPage() {
       onLogChange={form.handleLogChange}
       onTransportChange={form.handleTransportChange}
       onTlsChange={form.handleTlsChange}
+      onDashboardChange={form.handleDashboardChange}
+      onTestDashboard={form.testDashboard}
+      testingDashboard={form.testingDashboard}
       onTlsStringChange={form.handleTlsStringChange}
       onFileUpload={form.handleFileUpload}
       onSetFormData={form.setFormData}

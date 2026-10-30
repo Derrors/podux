@@ -147,7 +147,7 @@ export function VisitorsView({
                                 <CopyableText text={`${visitor.bindAddr || "127.0.0.1"}:${visitor.bindPort}`} />
                               ) : (
                                 <Text size="2" color="gray">
-                                  -
+                                  {visitor.bindPort && visitor.bindPort < 0 ? t("dashboard.topologyFallbackOnly") : "-"}
                                 </Text>
                               )}
                             </Table.Cell>

@@ -47,7 +47,7 @@ type ProxyTraffic struct {
 	Status          string `json:"status"`
 }
 
-// TrafficHistory is a proxy's daily traffic for the last 7 days, oldest first.
+// TrafficHistory is a proxy's daily traffic for the last 7 days, newest first (index 0 = today).
 type TrafficHistory struct {
 	TrafficIn  []int64 `json:"trafficIn"`
 	TrafficOut []int64 `json:"trafficOut"`

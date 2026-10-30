@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react/offline";
-import { Badge, Button, Card, Flex, Table, Text } from "@radix-ui/themes";
+import { Badge, Button, Card, Checkbox, Flex, Select, Table, Text } from "@radix-ui/themes";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -14,6 +14,9 @@ import { ConfirmDeleteDialog } from "../../components/ConfirmDeleteDialog";
 import { CopyableText } from "../../components/CopyableText";
 import { ProxyEndpoints } from "../../components/ProxyEndpoints";
 import { ProxyStatusToggle } from "../../components/ProxyStatusToggle";
+import { ExpiryBadge, ProxyHealth } from "../../components/ProxyHealth";
+import type { ProxyStatus } from "../../hooks/useProxyStatus";
+import type { ServerOption } from "./ProxyFormPage/useProxyForm";
 import { Reveal } from "../../components/Reveal";
 import { useDelayedMount } from "../../hooks/useDelayedMount";
 import type { Proxy } from "../../types/proxy";
@@ -30,6 +33,13 @@ interface ProxiesViewProps {
   };
   deleteProxy: (id: string) => Promise<void>;
   toggleStatus: (proxy: Proxy) => Promise<void>;
+  statuses: Record<string, ProxyStatus>;
+  servers: ServerOption[];
+  selected: Set<string>;
+  toggleSelected: (id: string) => void;
+  selectPage: (all: boolean) => void;
+  runBatch: (action: "enable" | "disable" | "delete" | "move", serverId?: string) => Promise<void>;
+  batchBusy: boolean;
   refreshProxies: () => void;
   page: number;
   setPage: (page: number) => void;
@@ -45,6 +55,13 @@ export function ProxiesView({
   stats,
   deleteProxy,
   toggleStatus,
+  statuses,
+  servers,
+  selected,
+  toggleSelected,
+  selectPage,
+  runBatch,
+  batchBusy,
   refreshProxies,
   page,
   setPage,
@@ -57,6 +74,8 @@ export function ProxiesView({
   const mounted = useDelayedMount();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
+  const allSelected = proxies.length > 0 && proxies.every((p) => selected.has(p.id));
 
   const handleToggle = async (proxy: Proxy) => {
     if (togglingId === proxy.id) return;
@@ -136,6 +155,49 @@ export function ProxiesView({
               </Flex>
             </Flex>
 
+            {selected.size > 0 && (
+              <Flex
+                gap="2"
+                align="center"
+                wrap="wrap"
+                mx="2"
+                mb="3"
+                p="2"
+                className="rounded-lg bg-[var(--accent-a3)]"
+                role="toolbar"
+                aria-label={t("proxy.batchToolbar")}
+              >
+                <Text size="2" weight="medium" mr="2">
+                  {t("proxy.selectedCount", { count: selected.size })}
+                </Text>
+                <Button size="1" variant="soft" color="green" disabled={batchBusy} onClick={() => runBatch("enable")}>
+                  <Icon icon="lucide:power" width="14" height="14" />
+                  {t("proxy.batchEnable")}
+                </Button>
+                <Button size="1" variant="soft" color="gray" disabled={batchBusy} onClick={() => runBatch("disable")}>
+                  <Icon icon="lucide:power-off" width="14" height="14" />
+                  {t("proxy.batchDisable")}
+                </Button>
+                <Select.Root value="" onValueChange={(serverId) => runBatch("move", serverId)} disabled={batchBusy}>
+                  <Select.Trigger variant="soft" placeholder={t("proxy.batchMove")} />
+                  <Select.Content>
+                    {servers.map((s) => (
+                      <Select.Item key={s.id} value={s.id}>
+                        {s.serverName}
+                      </Select.Item>
+                    ))}
+                  </Select.Content>
+                </Select.Root>
+                <Button size="1" variant="soft" color="red" disabled={batchBusy} onClick={() => setConfirmBatchDelete(true)}>
+                  <Icon icon="lucide:trash-2" width="14" height="14" />
+                  {t("common.delete")}
+                </Button>
+                <Button size="1" variant="ghost" color="gray" onClick={() => selectPage(false)}>
+                  {t("proxy.clearSelection")}
+                </Button>
+              </Flex>
+            )}
+
             {loading ? (
               <Flex align="center" justify="center" className="py-12">
                 <Loading size="small" />
@@ -153,6 +215,13 @@ export function ProxiesView({
                   <Table.Root>
                     <Table.Header>
                       <Table.Row>
+                        <Table.ColumnHeaderCell width="36px">
+                          <Checkbox
+                            aria-label={t("proxy.selectPage")}
+                            checked={allSelected ? true : selected.size > 0 ? "indeterminate" : false}
+                            onCheckedChange={(v) => selectPage(v === true)}
+                          />
+                        </Table.ColumnHeaderCell>
                         <Table.ColumnHeaderCell>{t("common.name")}</Table.ColumnHeaderCell>
                         <Table.ColumnHeaderCell>{t("common.type")}</Table.ColumnHeaderCell>
                         <Table.ColumnHeaderCell>{t("proxy.server")}</Table.ColumnHeaderCell>
@@ -160,6 +229,7 @@ export function ProxiesView({
                         <Table.ColumnHeaderCell>{t("proxy.localPort")}</Table.ColumnHeaderCell>
                         <Table.ColumnHeaderCell>{t("proxy.remotePortOrDomain")}</Table.ColumnHeaderCell>
                         <Table.ColumnHeaderCell>{t("proxy.bootStatus")}</Table.ColumnHeaderCell>
+                        <Table.ColumnHeaderCell>{t("proxy.healthColumn")}</Table.ColumnHeaderCell>
                         <Table.ColumnHeaderCell>{t("common.status")}</Table.ColumnHeaderCell>
                         <Table.ColumnHeaderCell>{t("common.actions")}</Table.ColumnHeaderCell>
                       </Table.Row>
@@ -170,7 +240,17 @@ export function ProxiesView({
                         return (
                           <Table.Row key={proxy.id}>
                             <Table.Cell>
-                              <Text weight="medium">{proxy.name || <Text color="gray">-</Text>}</Text>
+                              <Checkbox
+                                aria-label={proxy.name}
+                                checked={selected.has(proxy.id)}
+                                onCheckedChange={() => toggleSelected(proxy.id)}
+                              />
+                            </Table.Cell>
+                            <Table.Cell>
+                              <Flex direction="column" gap="1" align="start">
+                                <Text weight="medium">{proxy.name || <Text color="gray">-</Text>}</Text>
+                                <ExpiryBadge expiresAt={proxy.expiresAt} />
+                              </Flex>
                             </Table.Cell>
                             <Table.Cell>
                               <Badge variant="surface">{proxy.proxyType.toUpperCase()}</Badge>
@@ -229,6 +309,9 @@ export function ProxiesView({
                               </Badge>
                             </Table.Cell>
                             <Table.Cell>
+                              <ProxyHealth proxyId={proxy.id} proxyName={proxy.name ?? ""} status={statuses[proxy.id]} />
+                            </Table.Cell>
+                            <Table.Cell>
                               <ProxyStatusToggle
                                 enabled={proxy.status === "enabled"}
                                 toggling={togglingId === proxy.id}
@@ -244,6 +327,15 @@ export function ProxiesView({
                                 >
                                   <Icon icon="lucide:pencil" width="14" height="14" />
                                   {t("common.edit")}
+                                </Button>
+                                <Button
+                                  size="1"
+                                  variant="soft"
+                                  color="gray"
+                                  onClick={() => navigate(`/proxies/new?from=${proxy.id}`)}
+                                >
+                                  <Icon icon="lucide:copy" width="14" height="14" />
+                                  {t("proxy.clone")}
                                 </Button>
                                 <Button
                                   size="1"
@@ -268,6 +360,17 @@ export function ProxiesView({
           </Card>
         </Reveal>
       </Flex>
+
+      <ConfirmDeleteDialog
+        open={confirmBatchDelete}
+        title={t("proxy.confirmDeletion")}
+        description={t("proxy.batchDeleteConfirm", { count: selected.size })}
+        onClose={() => setConfirmBatchDelete(false)}
+        onConfirm={() => {
+          void runBatch("delete");
+          setConfirmBatchDelete(false);
+        }}
+      />
 
       <ConfirmDeleteDialog
         open={deleteId !== null}

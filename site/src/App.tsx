@@ -26,6 +26,9 @@ const VisitorsPage = lazy(() => import("./pages/Visitors").then((m) => ({ defaul
 const VisitorFormPage = lazy(() =>
   import("./pages/Visitors/VisitorFormPage").then((m) => ({ default: m.VisitorFormPage }))
 );
+const AllLogsPage = lazy(() =>
+  import("./pages/ServerLog/AllLogsPage").then((m) => ({ default: m.AllLogsPage }))
+);
 const ImportPage = lazy(() => import("./pages/Import").then((m) => ({ default: m.ImportPage })));
 const ProxyFormPage = lazy(() =>
   import("./pages/Proxies/ProxyFormPage").then((m) => ({ default: m.ProxyFormPage }))
@@ -83,6 +86,7 @@ function App() {
             <Route path="/servers/:id/logs" element={<ServerLogPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/import" element={<ImportPage />} />
+            <Route path="/logs" element={<AllLogsPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />

@@ -33,3 +33,15 @@ export function fieldErrors(err: unknown, t: TFunction): Record<string, string> 
 export function firstFieldError(err: unknown, t: TFunction): string | undefined {
   return Object.values(fieldErrors(err, t)).find(Boolean);
 }
+
+/**
+ * Message for a failed POST /api/proxies/batch: names the proxy and, for a conflict,
+ * the proxy it collides with. Undefined for errors without a proxy name.
+ */
+export function batchErrorMessage(err: unknown, t: TFunction): string | undefined {
+  const data = (err as { data?: { proxy?: string; code?: string; params?: Record<string, unknown>; error?: string } })?.data;
+  if (!data?.proxy) return undefined;
+  const key = data.code ? CODE_KEYS[data.code] : undefined;
+  const detail = key ? t(key, { name: String(data.params?.name ?? "") }) : (data.error ?? "");
+  return t("proxy.batchFailedOn", { proxy: data.proxy, detail });
+}
