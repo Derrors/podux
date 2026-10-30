@@ -30,6 +30,10 @@ func (n *NullableInt) Scan(value interface{}) error {
 		n.Int = v
 		n.Valid = true
 		return nil
+	case float64: // number fields stored as REAL
+		n.Int = int(v)
+		n.Valid = true
+		return nil
 	case string:
 		if v == "" {
 			n.Valid = false

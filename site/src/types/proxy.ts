@@ -4,8 +4,8 @@ export interface Proxy {
   proxyType: "tcp" | "udp" | "http" | "https" | "stcp" | "sudp" | "xtcp";
   name?: string;
   localIP?: string;
-  localPort?: string;
-  remotePort?: string;
+  localPort?: number;
+  remotePort?: number;
   subdomain?: string;
   customDomains?: string[];
   transport?: Record<string, unknown>;

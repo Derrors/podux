@@ -278,7 +278,6 @@ func (s *MetricsService) upsertHourly(targetID, metricKey, t string, avg, max, m
 }
 
 // AggregateDaily aggregates yesterday's hourly data into fh_metrics_daily.
-// Only valAvg is stored since valMax/valMin in fh_metrics_daily are date-type fields.
 func (s *MetricsService) AggregateDaily() error {
 	now := time.Now().UTC()
 	to := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
@@ -289,12 +288,14 @@ func (s *MetricsService) AggregateDaily() error {
 		TargetID  string  `db:"targetId"`
 		MetricKey string  `db:"metricKey"`
 		ValAvg    float64 `db:"valAvg"`
+		ValMax    float64 `db:"valMax"`
+		ValMin    float64 `db:"valMin"`
 	}
 
 	var rows []row
 	err := s.app.DB().
 		NewQuery(`
-			SELECT targetId, metricKey, AVG(valAvg) AS valAvg
+			SELECT targetId, metricKey, AVG(valAvg) AS valAvg, MAX(valMax) AS valMax, MIN(valMin) AS valMin
 			FROM fh_metrics_hourly
 			WHERE t >= {:from} AND t < {:to}
 			GROUP BY targetId, metricKey
@@ -310,14 +311,14 @@ func (s *MetricsService) AggregateDaily() error {
 
 	tStr := from.Format("2006-01-02 15:04:05.000Z")
 	for _, r := range rows {
-		if err := s.upsertDaily(r.TargetID, r.MetricKey, tStr, r.ValAvg); err != nil {
+		if err := s.upsertDaily(r.TargetID, r.MetricKey, tStr, r.ValAvg, r.ValMax, r.ValMin); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *MetricsService) upsertDaily(targetID, metricKey, t string, avg float64) error {
+func (s *MetricsService) upsertDaily(targetID, metricKey, t string, avg, max, min float64) error {
 	existing, err := s.app.FindRecordsByFilter(
 		"fh_metrics_daily",
 		"targetId = {:targetId} && metricKey = {:metricKey} && t = {:t}",
@@ -342,6 +343,8 @@ func (s *MetricsService) upsertDaily(targetID, metricKey, t string, avg float64)
 		record.Set("t", t)
 	}
 	record.Set("valAvg", avg)
+	record.Set("valMax", max)
+	record.Set("valMin", min)
 	if err := s.app.Save(record); err != nil {
 		return fmt.Errorf("save daily record: %w", err)
 	}
