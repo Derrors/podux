@@ -33,7 +33,7 @@ func (r *syncRecorder) body() string {
 }
 
 func TestStreamLogMissingFile(t *testing.T) {
-	fs := NewService(testutil.NewApp(t), &fakeServerRepo{}, fakeProxyRepo{})
+	fs := NewService(testutil.NewApp(t), &fakeServerRepo{}, fakeProxyRepo{}, nil)
 	rec := httptest.NewRecorder()
 
 	err := fs.StreamLog(serverA, context.Background(), rec, rec)
@@ -56,7 +56,7 @@ func TestStreamLogReplayThenLive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fs := NewService(app, &fakeServerRepo{}, fakeProxyRepo{})
+	fs := NewService(app, &fakeServerRepo{}, fakeProxyRepo{}, nil)
 	out := &syncRecorder{ResponseRecorder: httptest.NewRecorder()}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

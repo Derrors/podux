@@ -10,6 +10,7 @@ import (
 	"podux/internal/application/frpc"
 	"podux/internal/application/importer"
 	"podux/internal/application/monitoring"
+	"podux/internal/application/notify"
 	"podux/internal/application/proxy"
 	"podux/internal/application/server"
 	"podux/internal/application/system"
@@ -38,11 +39,12 @@ func main() {
 	// Infrastructure (Repository implementations)
 	serverRepo := persistence.NewServerRepository(app)
 	proxyRepo := persistence.NewProxyRepository(app)
+	visitorRepo := persistence.NewVisitorRepository(app)
 
 	// Application Services
 	serverService := server.NewService(app, serverRepo)
 	proxyService := proxy.NewService(app, proxyRepo)
-	frpcService := frpc.NewService(app, serverRepo, proxyRepo)
+	frpcService := frpc.NewService(app, serverRepo, proxyRepo, visitorRepo)
 	settingsService := system.NewService(app)
 	geoService := monitoring.NewGeoService(app)
 	metricsService := monitoring.NewMetricsService(app)
@@ -50,6 +52,9 @@ func main() {
 	metricsScheduler := monitoring.NewMetricsScheduler(app, metricsService)
 	networkMonitorService := monitoring.NewMonitorService(app, geoService, metricsService)
 	importService := importer.NewService(app)
+	notifyService := notify.NewService(app)
+	frpcService.SetObserver(notifyService)
+	networkMonitorService.SetLatencyObserver(notifyService.ObserveLatency)
 	versionService := version.NewService(app)
 
 	// HTTP Handlers
@@ -59,8 +64,9 @@ func main() {
 	systemHandler := httphandler.NewSystemHandler(app, settingsService)
 	importHandler := httphandler.NewImportHandler(app, importService)
 	serverHandler := httphandler.NewServerHandler(app, metricsService)
+	notifyHandler := httphandler.NewNotifyHandler(notifyService)
 
-	// Hooks: reload the running frpc whenever one of its proxies changes.
+	// Hooks: reload the running frpc whenever one of its proxies or visitors changes.
 	reloadServers := func(e *core.RecordEvent, serverIds ...string) {
 		seen := map[string]bool{}
 		for _, serverId := range serverIds {
@@ -68,7 +74,7 @@ func main() {
 				continue
 			}
 			seen[serverId] = true
-			app.Logger().Info("Proxy changed, reloading frpc configuration", "proxyId", e.Record.Id, "serverId", serverId)
+			app.Logger().Info("Config changed, reloading frpc", "collection", e.Record.Collection().Name, "recordId", e.Record.Id, "serverId", serverId)
 			if err := frpcService.ReloadFrpc(&serverId); err != nil {
 				app.Logger().Error("Failed to reload frpc after proxy change", "error", err, "serverId", serverId)
 			}
@@ -84,6 +90,18 @@ func main() {
 		return e.Next()
 	})
 	app.OnRecordAfterDeleteSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
+		reloadServers(e, e.Record.GetString("serverId"))
+		return e.Next()
+	})
+	app.OnRecordAfterCreateSuccess("fh_visitors").BindFunc(func(e *core.RecordEvent) error {
+		reloadServers(e, e.Record.GetString("serverId"))
+		return e.Next()
+	})
+	app.OnRecordAfterUpdateSuccess("fh_visitors").BindFunc(func(e *core.RecordEvent) error {
+		reloadServers(e, e.Record.GetString("serverId"), e.Record.Original().GetString("serverId"))
+		return e.Next()
+	})
+	app.OnRecordAfterDeleteSuccess("fh_visitors").BindFunc(func(e *core.RecordEvent) error {
 		reloadServers(e, e.Record.GetString("serverId"))
 		return e.Next()
 	})
@@ -106,12 +124,16 @@ func main() {
 		return e.Next()
 	})
 
-	// Deleting a server also deletes its proxies and metrics, then stops its frpc.
+	// Reject enabled proxies/visitors whose port or domain collides with another one.
+	proxy.RegisterConflictChecks(app)
+
+	// Deleting a server also deletes its proxies, visitors and metrics, then stops its frpc.
 	server.RegisterDeleteHooks(app, func(serverId string) {
 		if err := frpcService.TerminateFrpc(&serverId); err != nil {
 			app.Logger().Error("Failed to stop frpc of deleted server", "error", err, "serverId", serverId)
 		}
 		metricsService.ForgetServer(serverId)
+		notifyService.ForgetServer(serverId)
 	})
 
 	// Stop background work before the app shuts down (kcp/quic sessions close gracefully).
@@ -146,6 +168,7 @@ func main() {
 		systemHandler.RegisterHandlers(e)
 		importHandler.RegisterHandlers(e)
 		serverHandler.RegisterHandlers(e)
+		notifyHandler.RegisterHandlers(e)
 
 		// Serve static files from embedded FS
 		content, err := fs.Sub(pbPublicDir, "pb_public")

@@ -21,6 +21,9 @@ func seedServer(t *testing.T, app core.App, name string) (server *core.Record, p
 		})
 		proxyIDs = append(proxyIDs, proxy.Id)
 	}
+	testutil.SaveRecord(t, app, "fh_visitors", map[string]any{
+		"name": "nas", "visitorType": "stcp", "serverId": server.Id, "serverName": "nas", "status": "enabled",
+	})
 	target := testutil.SaveRecord(t, app, "fh_metrics_targets", map[string]any{"serverId": server.Id})
 	at := time.Now().UTC().Format("2006-01-02 15:04:05.000Z")
 	for _, c := range []string{"fh_metrics_raw", "fh_metrics_hourly", "fh_metrics_daily"} {
@@ -56,6 +59,12 @@ func TestDeleteServerCascades(t *testing.T) {
 
 	if n := count(t, app, "fh_proxies", "serverId = {:id}", map[string]any{"id": victim.Id}); n != 0 {
 		t.Fatalf("%d proxies left for deleted server", n)
+	}
+	if n := count(t, app, "fh_visitors", "serverId = {:id}", map[string]any{"id": victim.Id}); n != 0 {
+		t.Fatalf("%d visitors left for deleted server", n)
+	}
+	if n := count(t, app, "fh_visitors", "serverId = {:id}", map[string]any{"id": keep.Id}); n != 1 {
+		t.Fatalf("other server lost visitors: %d left", n)
 	}
 	if n := count(t, app, "fh_metrics_targets", "serverId = {:id} OR serverId = ''", map[string]any{"id": victim.Id}); n != 0 {
 		t.Fatalf("%d metrics targets left (incl. orphaned)", n)

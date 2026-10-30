@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	"podux/internal/testutil"
-
-	"github.com/pocketbase/pocketbase/core"
 )
 
 func TestProxyDescriptionPersists(t *testing.T) {
@@ -31,13 +29,7 @@ func TestProxyDescriptionPersists(t *testing.T) {
 func TestProxyDescriptionRollback(t *testing.T) {
 	app := testutil.NewApp(t)
 
-	reverted, err := core.NewMigrationsRunner(app, core.AppMigrations).Down(1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reverted) != 1 || reverted[0] != "1793360460_proxy_description.go" {
-		t.Fatalf("reverted %v, want only the description migration", reverted)
-	}
+	revertThrough(t, app, "1793360460_proxy_description.go")
 	collection, err := app.FindCollectionByNameOrId("fh_proxies")
 	if err != nil {
 		t.Fatal(err)

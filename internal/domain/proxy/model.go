@@ -15,6 +15,9 @@ type Proxy struct {
 	CustomDomains types.JSONStringArray `db:"customDomains" json:"customDomains"`
 	Transport     types.JSONMap         `db:"transport" json:"transport"`
 	Plugin        types.JSONMap         `db:"plugin" json:"plugin,omitempty"`
+	SecretKey     string                `db:"secretKey" json:"secretKey,omitempty"`
+	AllowUsers    types.JSONStringArray `db:"allowUsers" json:"allowUsers,omitempty"`
+	HealthCheck   types.JSONMap         `db:"healthCheck" json:"healthCheck,omitempty"`
 	Description   string                `db:"description" json:"description"`
 	Status        string                `db:"status" json:"status"`
 }

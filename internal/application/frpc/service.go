@@ -13,8 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"podux/internal/application/notify"
 	proxydomain "podux/internal/domain/proxy"
 	serverdomain "podux/internal/domain/server"
+	visitordomain "podux/internal/domain/visitor"
 
 	"github.com/fatedier/frp/client"
 	frpcsource "github.com/fatedier/frp/pkg/config/source"
@@ -57,20 +59,45 @@ type instance struct {
 }
 
 type Service struct {
-	mu         sync.Mutex
-	app        core.App
-	instances  map[string]*instance
-	serverRepo serverdomain.Repository
-	proxyRepo  proxydomain.Repository
-	logger     sharedLogger
+	mu          sync.Mutex
+	app         core.App
+	instances   map[string]*instance
+	serverRepo  serverdomain.Repository
+	proxyRepo   proxydomain.Repository
+	visitorRepo visitordomain.Repository
+	logger      sharedLogger
+	observer    StatusObserver
 }
 
-func NewService(app core.App, serverRepo serverdomain.Repository, proxyRepo proxydomain.Repository) *Service {
+// StatusObserver is told about proxy status checks and frpc stopping, e.g. to send alerts.
+type StatusObserver interface {
+	// ObserveProxies receives each status check of a running server's enabled proxies.
+	ObserveProxies(serverID, serverName string, states []notify.ProxyState)
+	// FrpcExited is called when frpc stops without the user asking.
+	FrpcExited(serverID, serverName string, err error)
+	// ServerStopped is called when the user stops a server.
+	ServerStopped(serverID string)
+}
+
+// SetObserver registers o; call it before any server starts.
+func (fs *Service) SetObserver(o StatusObserver) {
+	fs.observer = o
+}
+
+func (fs *Service) serverName(id string) string {
+	if r, err := fs.app.FindRecordById("fh_servers", id); err == nil {
+		return r.GetString("serverName")
+	}
+	return id
+}
+
+func NewService(app core.App, serverRepo serverdomain.Repository, proxyRepo proxydomain.Repository, visitorRepo visitordomain.Repository) *Service {
 	return &Service{
-		app:        app,
-		instances:  make(map[string]*instance),
-		serverRepo: serverRepo,
-		proxyRepo:  proxyRepo,
+		visitorRepo: visitorRepo,
+		app:         app,
+		instances:   make(map[string]*instance),
+		serverRepo:  serverRepo,
+		proxyRepo:   proxyRepo,
 	}
 }
 
@@ -105,55 +132,20 @@ func unmarshalField(raw string, v any) error {
 	return json.Unmarshal([]byte(raw), v)
 }
 
+// genCommonCfgs builds a server's common config for running it: logs go to the shared
+// log file and TLS certificate contents are written to the server's certs directory.
 func (fs *Service) genCommonCfgs(id *string) (*v1.ClientCommonConfig, error) {
-	if !validServerID.MatchString(*id) {
-		return nil, errors.New("invalid server id")
-	}
-	cfg := &v1.ClientCommonConfig{}
-
-	record, err := fs.app.FindRecordById("fh_servers", *id)
+	cfg, err := fs.buildCommonCfg(id)
 	if err != nil {
 		return nil, err
 	}
-	// basic config
-	cfg.ServerAddr = record.GetString("serverAddr")
-	cfg.ServerPort = record.GetInt("serverPort")
-	cfg.User = record.GetString("user")
 
-	mainPath := fs.getFrpMainPath(id)
+	// all servers share one log file (see logs.go)
+	cfg.Log.To = sharedLogPath(fs.app.DataDir())
 
-	// log config: all servers share one log file (see logs.go)
-	var logConfig v1.LogConfig
-	if err := unmarshalField(record.GetString("log"), &logConfig); err != nil {
-		return nil, fmt.Errorf("parse log config: %w", err)
-	}
-	logConfig.To = sharedLogPath(fs.app.DataDir())
-	cfg.Log = logConfig
-
-	// auth config
-	var authConfig v1.AuthClientConfig
-	if err := unmarshalField(record.GetString("auth"), &authConfig); err != nil {
-		return nil, fmt.Errorf("parse auth config: %w", err)
-	}
-	// The server form stores OIDC settings as flat keys; frp expects them under "oidc".
-	var oidc storedOIDC
-	if err := unmarshalField(record.GetString("auth"), &oidc); err != nil {
-		return nil, fmt.Errorf("parse auth config: %w", err)
-	}
-	oidc.applyTo(&authConfig.OIDC)
-	if authConfig.Method != "none" && authConfig.Method != "" {
-		cfg.Auth = authConfig
-	}
-
-	// transport config
-	var transportConfig v1.ClientTransportConfig
-	if err := unmarshalField(record.GetString("transport"), &transportConfig); err != nil {
-		return nil, fmt.Errorf("parse transport config: %w", err)
-	}
-	cfg.Transport = transportConfig
 	// frp enables TLS when the field is omitted
 	if cfg.Transport.TLS.Enable == nil || *cfg.Transport.TLS.Enable {
-		certsDir := filepath.Join(mainPath, "certs")
+		certsDir := filepath.Join(fs.getFrpMainPath(id), "certs")
 		hasCert := cfg.Transport.TLS.CertFile != "" && cfg.Transport.TLS.KeyFile != ""
 		hasCa := cfg.Transport.TLS.TrustedCaFile != ""
 
@@ -187,6 +179,53 @@ func (fs *Service) genCommonCfgs(id *string) (*v1.ClientCommonConfig, error) {
 			cfg.Transport.TLS.TrustedCaFile = ""
 		}
 	}
+	return cfg, nil
+}
+
+// buildCommonCfg maps a server record to frp's common config without touching the
+// disk: log.to is left unset and TLS cert/key/CA fields hold the stored PEM contents.
+func (fs *Service) buildCommonCfg(id *string) (*v1.ClientCommonConfig, error) {
+	if !validServerID.MatchString(*id) {
+		return nil, errors.New("invalid server id")
+	}
+	cfg := &v1.ClientCommonConfig{}
+
+	record, err := fs.app.FindRecordById("fh_servers", *id)
+	if err != nil {
+		return nil, err
+	}
+	// basic config
+	cfg.ServerAddr = record.GetString("serverAddr")
+	cfg.ServerPort = record.GetInt("serverPort")
+	cfg.User = record.GetString("user")
+
+	var logConfig v1.LogConfig
+	if err := unmarshalField(record.GetString("log"), &logConfig); err != nil {
+		return nil, fmt.Errorf("parse log config: %w", err)
+	}
+	cfg.Log = logConfig
+
+	// auth config
+	var authConfig v1.AuthClientConfig
+	if err := unmarshalField(record.GetString("auth"), &authConfig); err != nil {
+		return nil, fmt.Errorf("parse auth config: %w", err)
+	}
+	// The server form stores OIDC settings as flat keys; frp expects them under "oidc".
+	var oidc storedOIDC
+	if err := unmarshalField(record.GetString("auth"), &oidc); err != nil {
+		return nil, fmt.Errorf("parse auth config: %w", err)
+	}
+	oidc.applyTo(&authConfig.OIDC)
+	if authConfig.Method != "none" && authConfig.Method != "" {
+		cfg.Auth = authConfig
+	}
+
+	// transport config
+	var transportConfig v1.ClientTransportConfig
+	if err := unmarshalField(record.GetString("transport"), &transportConfig); err != nil {
+		return nil, fmt.Errorf("parse transport config: %w", err)
+	}
+	cfg.Transport = transportConfig
 
 	// metadata config
 	var metadataConfig map[string]string
@@ -222,8 +261,17 @@ func (fs *Service) genProxyCfgs(serverId *string) ([]v1.ProxyConfigurer, error) 
 			return nil, err
 		}
 
-		if proxyMap.ProxyType == "http" || proxyMap.ProxyType == "https" {
+		switch proxyMap.ProxyType {
+		case "http", "https":
 			delete(proxyData, "remotePort")
+		case "stcp", "sudp", "xtcp":
+			// Reached through visitors, not a public port or domain.
+			delete(proxyData, "remotePort")
+			delete(proxyData, "subdomain")
+			delete(proxyData, "customDomains")
+		default:
+			delete(proxyData, "secretKey")
+			delete(proxyData, "allowUsers")
 		}
 		proxyData["type"] = proxyMap.ProxyType
 		delete(proxyData, "proxyType")
@@ -247,41 +295,78 @@ func (fs *Service) genProxyCfgs(serverId *string) ([]v1.ProxyConfigurer, error) 
 				delete(proxyData, "plugin")
 			}
 		}
+		// A health check without a type is off; drop it rather than send its leftover fields.
+		if hc, ok := proxyData["healthCheck"].(map[string]interface{}); ok {
+			if t, _ := hc["type"].(string); t == "" {
+				delete(proxyData, "healthCheck")
+			}
+		}
 
 		jsonData, err = json.Marshal(proxyData)
 		if err != nil {
 			return nil, err
 		}
 
-		switch proxyMap.ProxyType {
-		case "tcp":
-			var tcpProxy v1.TCPProxyConfig
-			if err := json.Unmarshal(jsonData, &tcpProxy); err != nil {
-				return nil, err
-			}
-			proxyCfgs = append(proxyCfgs, &tcpProxy)
-		case "udp":
-			var udpProxy v1.UDPProxyConfig
-			if err := json.Unmarshal(jsonData, &udpProxy); err != nil {
-				return nil, err
-			}
-			proxyCfgs = append(proxyCfgs, &udpProxy)
-		case "http":
-			var httpProxy v1.HTTPProxyConfig
-			if err := json.Unmarshal(jsonData, &httpProxy); err != nil {
-				return nil, err
-			}
-			proxyCfgs = append(proxyCfgs, &httpProxy)
-		case "https":
-			var httpsProxy v1.HTTPSProxyConfig
-			if err := json.Unmarshal(jsonData, &httpsProxy); err != nil {
-				return nil, err
-			}
-			proxyCfgs = append(proxyCfgs, &httpsProxy)
+		cfg := v1.NewProxyConfigurerByType(v1.ProxyType(proxyMap.ProxyType))
+		if cfg == nil {
+			fs.app.Logger().Warn("Skipping proxy of unsupported type", "proxyId", proxyMap.Id, "type", proxyMap.ProxyType)
+			continue
 		}
+		if err := json.Unmarshal(jsonData, cfg); err != nil {
+			return nil, fmt.Errorf("proxy %s: %w", proxyMap.Name, err)
+		}
+		proxyCfgs = append(proxyCfgs, cfg)
 	}
 
 	return proxyCfgs, nil
+}
+
+// genVisitorCfgs builds the enabled visitors of a server. Like proxies, a visitor's
+// runtime name is "<name>-<id>" so names stay unique per server.
+func (fs *Service) genVisitorCfgs(serverId *string) ([]v1.VisitorConfigurer, error) {
+	visitors, err := fs.visitorRepo.FindEnabledByServerID(*serverId)
+	if err != nil {
+		return nil, err
+	}
+
+	var cfgs []v1.VisitorConfigurer
+	for _, v := range visitors {
+		data := map[string]any{
+			"name":       v.Name + "-" + v.Id,
+			"type":       v.VisitorType,
+			"serverName": v.ServerName,
+			"secretKey":  v.SecretKey,
+			"bindAddr":   v.BindAddr,
+			"bindPort":   v.BindPort,
+		}
+		if v.ServerUser != "" {
+			data["serverUser"] = v.ServerUser
+		}
+		if data["bindAddr"] == "" {
+			data["bindAddr"] = "127.0.0.1"
+		}
+		if len(v.Transport) > 0 {
+			data["transport"] = map[string]any(v.Transport)
+		}
+		if v.VisitorType == "xtcp" {
+			data["keepTunnelOpen"] = v.KeepTunnelOpen
+		}
+		jsonData, err := json.Marshal(data)
+		if err != nil {
+			return nil, err
+		}
+
+		cfg := v1.NewVisitorConfigurerByType(v1.VisitorType(v.VisitorType))
+		if cfg == nil {
+			fs.app.Logger().Warn("Skipping visitor of unsupported type", "visitorId", v.Id, "type", v.VisitorType)
+			continue
+		}
+		if err := json.Unmarshal(jsonData, cfg); err != nil {
+			return nil, fmt.Errorf("visitor %s: %w", v.Name, err)
+		}
+		cfgs = append(cfgs, cfg)
+	}
+	return cfgs, nil
 }
 
 // LaunchFrpc starts frpc for a server. It returns ErrAlreadyRunning if the
@@ -354,17 +439,23 @@ func (fs *Service) newClient(serverId *string) (*client.Service, *v1.ClientCommo
 	if err != nil {
 		return nil, nil, err
 	}
+	visitorCfgs, err := fs.genVisitorCfgs(serverId)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	fs.app.Logger().Debug("Config", "serverAddr", cfg.ServerAddr, "serverPort", cfg.ServerPort, "proxyCount", len(proxyCfgs))
+	fs.app.Logger().Debug("Config", "serverAddr", cfg.ServerAddr, "serverPort", cfg.ServerPort, "proxyCount", len(proxyCfgs), "visitorCount", len(visitorCfgs))
 
 	// Print frp configurations in logs with sensitive data masked
 	commonCfgBytes, _ := json.Marshal(cfg)
 	proxyCfgsBytes, _ := json.Marshal(proxyCfgs)
+	visitorCfgsBytes, _ := json.Marshal(visitorCfgs)
 
 	safeCommon := sensitiveRegex.ReplaceAll(commonCfgBytes, []byte(`"${1}":"***"`))
 	safeProxies := sensitiveRegex.ReplaceAll(proxyCfgsBytes, []byte(`"${1}":"***"`))
+	safeVisitors := sensitiveRegex.ReplaceAll(visitorCfgsBytes, []byte(`"${1}":"***"`))
 
-	fs.app.Logger().Info("FRP Configuration", "common", string(safeCommon), "proxies", string(safeProxies))
+	fs.app.Logger().Info("FRP Configuration", "common", string(safeCommon), "proxies", string(safeProxies), "visitors", string(safeVisitors))
 
 	if err := cfg.Complete(); err != nil {
 		return nil, nil, err
@@ -372,7 +463,7 @@ func (fs *Service) newClient(serverId *string) (*client.Service, *v1.ClientCommo
 	fs.logger.ensure(cfg.Log.To, cfg.Log.Level, int(cfg.Log.MaxDays))
 
 	configSrc := frpcsource.NewConfigSource()
-	if err := configSrc.ReplaceAll(proxyCfgs, nil); err != nil {
+	if err := configSrc.ReplaceAll(proxyCfgs, visitorCfgs); err != nil {
 		return nil, nil, err
 	}
 	svr, err := client.NewService(client.ServiceOptions{
@@ -393,10 +484,16 @@ func (fs *Service) monitorServiceStatus(id string, inst *instance, ctx context.C
 	select {
 	case err := <-done:
 		fs.app.Logger().Error("Service exited during startup", "id", id, "error", err)
+		if fs.observer != nil {
+			fs.observer.FrpcExited(id, fs.serverName(id), err)
+		}
 		return
 	case <-ctx.Done():
 		fs.app.Logger().Info("Service context cancelled during startup", "id", id)
 		<-done
+		if fs.observer != nil {
+			fs.observer.ServerStopped(id)
+		}
 		return
 	case <-time.After(2 * time.Second):
 		fs.app.Logger().Info("Service is running", "id", id)
@@ -411,9 +508,15 @@ func (fs *Service) monitorServiceStatus(id string, inst *instance, ctx context.C
 		} else {
 			fs.app.Logger().Info("Service exited normally", "id", id)
 		}
+		if fs.observer != nil {
+			fs.observer.FrpcExited(id, fs.serverName(id), err)
+		}
 	case <-ctx.Done():
 		fs.app.Logger().Info("Service stopped by user", "id", id)
 		<-done
+		if fs.observer != nil {
+			fs.observer.ServerStopped(id)
+		}
 	}
 }
 
@@ -437,7 +540,7 @@ func (fs *Service) monitorProxyStatus(serverId string, svr *client.Service, ctx 
 
 	statusExporter := svr.StatusExporter()
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(notify.ProxyCheckInterval)
 	defer ticker.Stop()
 
 	for {
@@ -452,6 +555,7 @@ func (fs *Service) monitorProxyStatus(serverId string, svr *client.Service, ctx 
 				continue
 			}
 
+			states := make([]notify.ProxyState, 0, len(proxies))
 			for _, proxy := range proxies {
 				baseName := proxy.Name + "-" + proxy.Id
 				bootStatus := proxydomain.ProxyBootStatusOffline
@@ -460,6 +564,14 @@ func (fs *Service) monitorProxyStatus(serverId string, svr *client.Service, ctx 
 					bootStatus = proxydomain.ProxyBootStatusOnline
 				}
 				fs.proxyRepo.UpdateBootStatus(proxy.Id, bootStatus)
+				if proxy.Status == string(proxydomain.ProxyStatusEnabled) {
+					states = append(states, notify.ProxyState{
+						ID: proxy.Id, Name: proxy.Name, Online: bootStatus == proxydomain.ProxyBootStatusOnline,
+					})
+				}
+			}
+			if fs.observer != nil && ctx.Err() == nil {
+				fs.observer.ObserveProxies(serverId, fs.serverName(serverId), states)
 			}
 		}
 	}
@@ -645,14 +757,20 @@ func (fs *Service) ReloadFrpc(serverId *string) error {
 		return err
 	}
 
+	visitorCfgs, err := fs.genVisitorCfgs(serverId)
+	if err != nil {
+		return err
+	}
+
 	proxyCfgsBytes, _ := json.Marshal(proxyCfgs)
+	visitorCfgsBytes, _ := json.Marshal(visitorCfgs)
 	safeProxies := sensitiveRegex.ReplaceAll(proxyCfgsBytes, []byte(`"${1}":"***"`))
-	fs.app.Logger().Info("FRP Reload Configurations", "proxies", string(safeProxies))
+	safeVisitors := sensitiveRegex.ReplaceAll(visitorCfgsBytes, []byte(`"${1}":"***"`))
+	fs.app.Logger().Info("FRP Reload Configurations", "proxies", string(safeProxies), "visitors", string(safeVisitors))
 
 	// UpdateConfigSource completes and filters the configs like startup does; pushing raw
 	// configs would make every proxy differ from the running one and restart them all.
-	// TODO 2026-02-08 reload visitorCfgs
-	return svr.UpdateConfigSource(common, proxyCfgs, nil)
+	return svr.UpdateConfigSource(common, proxyCfgs, visitorCfgs)
 }
 
 // IsServerRunning checks if a server is currently running or starting.

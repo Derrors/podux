@@ -22,6 +22,7 @@ type tomlFrpClientConfig struct {
 	Transport  tomlTransportConfig `toml:"transport"`
 	Metadatas  map[string]string   `toml:"metadatas"`
 	Proxies    []tomlProxyConfig   `toml:"proxies"`
+	Visitors   []tomlVisitorConfig `toml:"visitors"`
 }
 
 type tomlAuthConfig struct {
@@ -58,6 +59,21 @@ type tomlProxyConfig struct {
 	Subdomain     string                 `toml:"subdomain"`
 	CustomDomains []string               `toml:"customDomains"`
 	Transport     map[string]interface{} `toml:"transport"`
+	SecretKey     string                 `toml:"secretKey"`
+	AllowUsers    []string               `toml:"allowUsers"`
+	HealthCheck   map[string]interface{} `toml:"healthCheck"`
+}
+
+type tomlVisitorConfig struct {
+	Name           string                 `toml:"name"`
+	Type           string                 `toml:"type"`
+	ServerName     string                 `toml:"serverName"`
+	ServerUser     string                 `toml:"serverUser"`
+	SecretKey      string                 `toml:"secretKey"`
+	BindAddr       string                 `toml:"bindAddr"`
+	BindPort       int                    `toml:"bindPort"`
+	KeepTunnelOpen bool                   `toml:"keepTunnelOpen"`
+	Transport      map[string]interface{} `toml:"transport"`
 }
 
 // ==================== API Data Types ====================
@@ -92,9 +108,19 @@ type ImportProxyInfo struct {
 	ExistingId    string                 `json:"existingId"`
 }
 
+type ImportVisitorInfo struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	ServerName  string `json:"serverName"`
+	BindAddr    string `json:"bindAddr"`
+	BindPort    int    `json:"bindPort"`
+	IsDuplicate bool   `json:"isDuplicate"`
+}
+
 type ImportPreviewResponse struct {
-	Server  ImportServerInfo  `json:"server"`
-	Proxies []ImportProxyInfo `json:"proxies"`
+	Server   ImportServerInfo    `json:"server"`
+	Proxies  []ImportProxyInfo   `json:"proxies"`
+	Visitors []ImportVisitorInfo `json:"visitors"`
 	// Warnings are codes the frontend translates, e.g. WarningTLSFilePathIgnored.
 	Warnings []string `json:"warnings,omitempty"`
 }
@@ -104,18 +130,27 @@ type ImportPreviewResponse struct {
 const WarningTLSFilePathIgnored = "tls_file_path_ignored"
 
 // WarningUnsupportedProxySkipped means the TOML has proxy types Podux can't manage
-// (anything but tcp/udp/http/https); they are left out of the preview and the import.
+// (such as tcpmux); they are left out of the preview and the import.
 const WarningUnsupportedProxySkipped = "unsupported_proxy_skipped"
+
+// WarningUnsupportedVisitorSkipped means the TOML has visitors whose type is missing
+// or not stcp/sudp/xtcp; they are left out of the preview and the import.
+const WarningUnsupportedVisitorSkipped = "unsupported_visitor_skipped"
 
 // proxyTypeOf returns the proxy's type (frp defaults to tcp) and whether fh_proxies accepts it.
 func proxyTypeOf(p tomlProxyConfig) (string, bool) {
 	switch p.Type {
 	case "":
 		return "tcp", true
-	case "tcp", "udp", "http", "https":
+	case "tcp", "udp", "http", "https", "stcp", "sudp", "xtcp":
 		return p.Type, true
 	}
 	return p.Type, false
+}
+
+// visitorTypeOk reports whether fh_visitors accepts the visitor's type (frp has no default).
+func visitorTypeOk(v tomlVisitorConfig) bool {
+	return v.Type == "stcp" || v.Type == "sudp" || v.Type == "xtcp"
 }
 
 type ProxyImportOption struct {
@@ -130,12 +165,18 @@ type ExecuteImportRequest struct {
 	ImportServer    bool                `json:"importServer"`
 	OverwriteServer bool                `json:"overwriteServer"`
 	Proxies         []ProxyImportOption `json:"proxies"`
+	// ImportVisitors imports every visitor in the TOML; OverwriteVisitors replaces
+	// visitors of the same name on the server instead of skipping them.
+	ImportVisitors    bool `json:"importVisitors"`
+	OverwriteVisitors bool `json:"overwriteVisitors"`
 }
 
 type ImportResult struct {
-	ServerImported  bool `json:"serverImported"`
-	ProxiesImported int  `json:"proxiesImported"`
-	ProxiesSkipped  int  `json:"proxiesSkipped"`
+	ServerImported   bool `json:"serverImported"`
+	ProxiesImported  int  `json:"proxiesImported"`
+	ProxiesSkipped   int  `json:"proxiesSkipped"`
+	VisitorsImported int  `json:"visitorsImported"`
+	VisitorsSkipped  int  `json:"visitorsSkipped"`
 }
 
 // ==================== Service ====================
@@ -270,9 +311,27 @@ func (s *Service) ParseToml(req *ParseTomlRequest) (*ImportPreviewResponse, erro
 		proxies = append(proxies, proxyInfo)
 	}
 
+	visitors := make([]ImportVisitorInfo, 0, len(cfg.Visitors))
+	for _, v := range cfg.Visitors {
+		if !visitorTypeOk(v) {
+			if !slices.Contains(warnings, WarningUnsupportedVisitorSkipped) {
+				warnings = append(warnings, WarningUnsupportedVisitorSkipped)
+			}
+			continue
+		}
+		info := ImportVisitorInfo{
+			Name: v.Name, Type: v.Type, ServerName: v.ServerName, BindAddr: v.BindAddr, BindPort: v.BindPort,
+		}
+		if serverDuplicate && existingServerId != "" {
+			info.IsDuplicate = s.findVisitorID(s.app, existingServerId, v.Name) != ""
+		}
+		visitors = append(visitors, info)
+	}
+
 	return &ImportPreviewResponse{
 		Server:   serverInfo,
 		Proxies:  proxies,
+		Visitors: visitors,
 		Warnings: warnings,
 	}, nil
 }
@@ -298,7 +357,10 @@ func (s *Service) ExecuteImport(req *ExecuteImportRequest) (*ImportResult, error
 		if serverId == "" {
 			return nil
 		}
-		return s.handleProxyImport(txApp, &cfg, serverId, req.Proxies, result)
+		if err := s.handleProxyImport(txApp, &cfg, serverId, req.Proxies, result); err != nil {
+			return err
+		}
+		return s.handleVisitorImport(txApp, &cfg, serverId, req, result)
 	})
 
 	if err != nil {
@@ -483,6 +545,9 @@ func (s *Service) handleProxyImport(
 		proxyRecord.Set("subdomain", p.Subdomain)
 		proxyRecord.Set("customDomains", string(customDomainsJSON))
 		proxyRecord.Set("transport", string(proxyTransportJSON))
+		proxyRecord.Set("secretKey", p.SecretKey)
+		proxyRecord.Set("allowUsers", p.AllowUsers)
+		proxyRecord.Set("healthCheck", p.HealthCheck)
 		proxyRecord.Set("status", "enabled")
 		proxyRecord.Set("bootStatus", "offline")
 		proxyRecord.Set("description", "")
@@ -494,6 +559,80 @@ func (s *Service) handleProxyImport(
 	}
 
 	return nil
+}
+
+// handleVisitorImport creates or updates the TOML's visitors under the given server.
+func (s *Service) handleVisitorImport(
+	txApp core.App,
+	cfg *tomlFrpClientConfig,
+	serverId string,
+	req *ExecuteImportRequest,
+	result *ImportResult,
+) error {
+	if !req.ImportVisitors {
+		result.VisitorsSkipped += len(cfg.Visitors)
+		return nil
+	}
+	collection, err := txApp.FindCollectionByNameOrId("fh_visitors")
+	if err != nil {
+		return fmt.Errorf("找不到访问端集合: %w", err)
+	}
+
+	for _, v := range cfg.Visitors {
+		if !visitorTypeOk(v) {
+			result.VisitorsSkipped++
+			continue
+		}
+		var record *core.Record
+		if existingID := s.findVisitorID(txApp, serverId, v.Name); existingID != "" {
+			if !req.OverwriteVisitors {
+				result.VisitorsSkipped++
+				continue
+			}
+			if record, err = txApp.FindRecordById(collection, existingID); err != nil {
+				return fmt.Errorf("查找已有访问端 %s 失败: %w", v.Name, err)
+			}
+		} else {
+			record = core.NewRecord(collection)
+			record.Set("status", "enabled")
+			record.Set("description", "")
+		}
+
+		transport := v.Transport
+		if transport == nil {
+			transport = map[string]interface{}{}
+		}
+		record.Set("name", v.Name)
+		record.Set("visitorType", v.Type)
+		record.Set("serverId", serverId)
+		record.Set("serverName", v.ServerName)
+		record.Set("serverUser", v.ServerUser)
+		record.Set("secretKey", v.SecretKey)
+		record.Set("bindAddr", v.BindAddr)
+		record.Set("bindPort", v.BindPort)
+		record.Set("keepTunnelOpen", v.KeepTunnelOpen)
+		record.Set("transport", transport)
+
+		if err := txApp.Save(record); err != nil {
+			return fmt.Errorf("保存访问端 %s 失败: %w", v.Name, err)
+		}
+		result.VisitorsImported++
+	}
+	return nil
+}
+
+// findVisitorID returns the ID of the server's visitor with this name, or "".
+func (s *Service) findVisitorID(app core.App, serverId, name string) string {
+	var row struct {
+		Id string `db:"id"`
+	}
+	err := app.DB().Select("id").From("fh_visitors").
+		Where(dbx.HashExp{"name": name, "serverId": serverId}).
+		One(&row)
+	if err != nil {
+		return ""
+	}
+	return row.Id
 }
 
 // buildTransportMap converts the TOML transport section into the stored JSON shape.

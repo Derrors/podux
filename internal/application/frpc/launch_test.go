@@ -23,7 +23,7 @@ func TestStopDuringLaunchCancelsIt(t *testing.T) {
 		"serverName": "s", "serverAddr": "127.0.0.1", "serverPort": 7000, "bootStatus": "stopped",
 		"transport": map[string]any{"tls": map[string]any{"enable": false}},
 	})
-	fs := NewService(app, persistence.NewServerRepository(app), persistence.NewProxyRepository(app))
+	fs := NewService(app, persistence.NewServerRepository(app), persistence.NewProxyRepository(app), persistence.NewVisitorRepository(app))
 	id := server.Id
 
 	paused, release := make(chan struct{}), make(chan struct{})

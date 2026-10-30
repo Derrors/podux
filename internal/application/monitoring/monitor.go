@@ -21,6 +21,17 @@ type MonitorService struct {
 	stopOnce       sync.Once
 	latencyTicker  *time.Ticker
 	geoTicker      *time.Ticker
+	// onLatency, if set, receives every latency probe (see SetLatencyObserver).
+	onLatency LatencyObserver
+}
+
+// LatencyObserver receives a latency probe of a server; running is whether its frpc
+// was running when the probe started, and latencyMs is -1 when unreachable.
+type LatencyObserver func(serverID, serverName, addr string, running, reachable bool, latencyMs int64)
+
+// SetLatencyObserver registers fn; call it before Start.
+func (s *MonitorService) SetLatencyObserver(fn LatencyObserver) {
+	s.onLatency = fn
 }
 
 // NewMonitorService creates a new network monitoring service.
@@ -110,7 +121,7 @@ func (s *MonitorService) updateAllServersLatency() {
 	s.app.Logger().Debug("Found servers to check latency", "count", len(records))
 
 	for _, record := range records {
-		go s.updateServerLatency(record.Id, record.GetString("serverAddr"), record.GetInt("serverPort"))
+		go s.updateServerLatency(record)
 	}
 }
 
@@ -143,8 +154,9 @@ func (s *MonitorService) updateAllServersGeoLocation() {
 }
 
 // updateServerLatency pings a single server and records the result to metrics.
-func (s *MonitorService) updateServerLatency(serverID string, serverAddr string, serverPort int) {
-	addr := net.JoinHostPort(serverAddr, strconv.Itoa(serverPort))
+func (s *MonitorService) updateServerLatency(record *core.Record) {
+	serverID, serverAddr := record.Id, record.GetString("serverAddr")
+	addr := net.JoinHostPort(serverAddr, strconv.Itoa(record.GetInt("serverPort")))
 	pingResult := utils.PingHost(addr, 5*time.Second)
 
 	if err := s.metricsService.RecordServerLatency(serverID, pingResult.Latency, pingResult.Error); err != nil {
@@ -157,6 +169,11 @@ func (s *MonitorService) updateServerLatency(serverID string, serverAddr string,
 		"latency", pingResult.Latency,
 		"reachable", pingResult.Reachable,
 	)
+
+	if s.onLatency != nil {
+		running := record.GetString("bootStatus") == "running"
+		s.onLatency(serverID, record.GetString("serverName"), addr, running, pingResult.Reachable, pingResult.Latency)
+	}
 }
 
 // RefreshGeoLocation looks up a server's location in the background, e.g. after it was

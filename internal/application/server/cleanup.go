@@ -7,8 +7,8 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// RegisterDeleteHooks makes deleting an fh_servers record also delete its proxies
-// and metrics in the same transaction (the relations don't cascade, and the
+// RegisterDeleteHooks makes deleting an fh_servers record also delete its proxies,
+// visitors and metrics in the same transaction (the relations don't cascade, and the
 // required fh_proxies.serverId would otherwise block the delete).
 // onDeleted runs after the delete is committed, e.g. to stop the server's frpc.
 func RegisterDeleteHooks(app core.App, onDeleted func(serverID string)) {
@@ -31,14 +31,16 @@ func RegisterDeleteHooks(app core.App, onDeleted func(serverID string)) {
 }
 
 func deleteDependents(txApp core.App, serverID string) error {
-	proxies, err := txApp.FindAllRecords("fh_proxies", dbx.HashExp{"serverId": serverID})
-	if err != nil {
-		return fmt.Errorf("find proxies: %w", err)
-	}
-	// Delete proxies as records so their hooks and realtime events still fire.
-	for _, p := range proxies {
-		if err := txApp.Delete(p); err != nil {
-			return fmt.Errorf("delete proxy %s: %w", p.Id, err)
+	// Delete proxies and visitors as records so their hooks and realtime events still fire.
+	for _, collection := range []string{"fh_proxies", "fh_visitors"} {
+		records, err := txApp.FindAllRecords(collection, dbx.HashExp{"serverId": serverID})
+		if err != nil {
+			return fmt.Errorf("find %s: %w", collection, err)
+		}
+		for _, r := range records {
+			if err := txApp.Delete(r); err != nil {
+				return fmt.Errorf("delete %s %s: %w", collection, r.Id, err)
+			}
 		}
 	}
 

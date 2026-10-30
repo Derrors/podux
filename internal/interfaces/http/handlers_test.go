@@ -11,6 +11,7 @@ import (
 	"podux/internal/application/frpc"
 	"podux/internal/application/importer"
 	"podux/internal/application/monitoring"
+	"podux/internal/application/notify"
 	"podux/internal/application/proxy"
 	"podux/internal/application/server"
 	"podux/internal/application/system"
@@ -38,12 +39,13 @@ func newTestRouter(t *testing.T) (core.App, http.Handler) {
 		t.Fatal(err)
 	}
 	e := &core.ServeEvent{App: app, Router: r}
-	NewFrpcHandler(app, frpc.NewService(app, serverRepo, proxyRepo)).RegisterHandlers(e)
+	NewFrpcHandler(app, frpc.NewService(app, serverRepo, proxyRepo, persistence.NewVisitorRepository(app))).RegisterHandlers(e)
 	NewVersionHandler(app, version.NewService(app)).RegisterHandlers(e)
 	NewDashboardHandler(dashboardService).RegisterHandlers(e)
 	NewSystemHandler(app, system.NewService(app)).RegisterHandlers(e)
 	NewImportHandler(app, importer.NewService(app)).RegisterHandlers(e)
 	NewServerHandler(app, metricsService).RegisterHandlers(e)
+	NewNotifyHandler(notify.NewService(app)).RegisterHandlers(e)
 
 	mux, err := r.BuildMux()
 	if err != nil {
@@ -101,6 +103,10 @@ var protectedRoutes = []struct{ method, url string }{
 	{http.MethodGet, "/api/frpc/logs/stream?id=aaaaaaaaaaaaaaa"},
 	{http.MethodPost, "/api/frpc/terminate"},
 	{http.MethodPost, "/api/frpc/reload"},
+	{http.MethodGet, "/api/frpc/export?id=aaaaaaaaaaaaaaa"},
+	{http.MethodGet, "/api/notifications"},
+	{http.MethodPut, "/api/notifications"},
+	{http.MethodPost, "/api/notifications/test"},
 }
 
 func TestProtectedRoutesRequireAuth(t *testing.T) {
@@ -226,5 +232,72 @@ func TestFrpcRoutesValidateID(t *testing.T) {
 		if rec := do(t, h, http.MethodPost, url, token, `{"id":"aaaaaaaaaaaaaaa"}`); rec.Code != http.StatusOK {
 			t.Errorf("POST %s for a stopped server: status %d, want 200", url, rec.Code)
 		}
+	}
+}
+
+func TestExportToml(t *testing.T) {
+	app, h := newTestRouter(t)
+	token := userToken(t, app)
+
+	server := testutil.SaveRecord(t, app, "fh_servers", map[string]any{
+		"serverName": "home", "serverAddr": "frps.example.com", "serverPort": 7000,
+		"auth": map[string]any{"method": "token", "token": "s3cret-token"},
+	})
+
+	rec := do(t, h, http.MethodGet, "/api/frpc/export?id="+server.Id, token, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, "frpc-"+server.Id+".toml") {
+		t.Errorf("Content-Disposition = %q", cd)
+	}
+	if body := rec.Body.String(); strings.Contains(body, "s3cret-token") || !strings.Contains(body, "frps.example.com") {
+		t.Errorf("default export must redact the token:\n%s", body)
+	}
+
+	rec = do(t, h, http.MethodGet, "/api/frpc/export?secrets=1&id="+server.Id, token, "")
+	if !strings.Contains(rec.Body.String(), "s3cret-token") {
+		t.Errorf("secrets=1 export lacks the token:\n%s", rec.Body)
+	}
+
+	if rec := do(t, h, http.MethodGet, "/api/frpc/export?id=zzzzzzzzzzzzzzz", token, ""); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown server: status %d, want 404", rec.Code)
+	}
+	if rec := do(t, h, http.MethodGet, "/api/frpc/export?id=../x", token, ""); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad id: status %d, want 400", rec.Code)
+	}
+}
+
+func TestNotificationSettings(t *testing.T) {
+	app, h := newTestRouter(t)
+	token := userToken(t, app)
+	if rec := do(t, h, http.MethodPost, "/api/system/initialize", "", `{"email":"x@example.com","password":"12345678"}`); rec.Code != http.StatusOK {
+		t.Fatalf("initialize: %d %s", rec.Code, rec.Body)
+	}
+
+	rec := do(t, h, http.MethodGet, "/api/notifications", token, "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"enabled":false`) {
+		t.Fatalf("defaults: %d %s", rec.Code, rec.Body)
+	}
+
+	bad := `{"enabled":true,"webhook":{"enabled":true,"url":"not a url"}}`
+	if rec := do(t, h, http.MethodPut, "/api/notifications", token, bad); rec.Code != http.StatusBadRequest {
+		t.Errorf("invalid settings: status %d, want 400", rec.Code)
+	}
+
+	good := `{"enabled":true,"latencyThresholdMs":300,"events":{"proxyDown":true},"bark":{"enabled":true,"deviceKey":"k"}}`
+	if rec := do(t, h, http.MethodPut, "/api/notifications", token, good); rec.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", rec.Code, rec.Body)
+	}
+	rec = do(t, h, http.MethodGet, "/api/notifications", token, "")
+	for _, want := range []string{`"enabled":true`, `"latencyThresholdMs":300`, `"deviceKey":"k"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("saved settings lack %s: %s", want, rec.Body)
+		}
+	}
+
+	// Nothing enabled to test: an empty result, not an error.
+	if rec := do(t, h, http.MethodPost, "/api/notifications/test", token, `{}`); rec.Code != http.StatusOK || rec.Body.String() != "[]" {
+		t.Errorf("empty test: %d %s", rec.Code, rec.Body)
 	}
 }

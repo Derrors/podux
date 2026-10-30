@@ -35,7 +35,7 @@ func (fakeProxyRepo) UpdateBootStatusByServerID(string, proxydomain.ProxyBootSta
 }
 
 func newTestService(serverRepo *fakeServerRepo) *Service {
-	return NewService(core.NewBaseApp(core.BaseAppConfig{}), serverRepo, fakeProxyRepo{})
+	return NewService(core.NewBaseApp(core.BaseAppConfig{}), serverRepo, fakeProxyRepo{}, nil)
 }
 
 func newTestInstance() *instance {

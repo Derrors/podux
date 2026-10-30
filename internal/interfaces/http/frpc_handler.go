@@ -82,6 +82,25 @@ func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
 		return nil
 	}))
 
+	// Export a server's config as frpc.toml; secrets=1 keeps tokens and secret keys.
+	e.Router.GET("/api/frpc/export", requireAuth(func(e *core.RequestEvent) error {
+		id := e.Request.URL.Query().Get("id")
+		if !validID.MatchString(id) {
+			return e.JSON(400, map[string]string{"error": "invalid id format"})
+		}
+		if _, err := h.app.FindRecordById("fh_servers", id); err != nil {
+			return e.JSON(http.StatusNotFound, map[string]string{"error": "server not found"})
+		}
+		includeSecrets := e.Request.URL.Query().Get("secrets") == "1"
+		out, err := h.service.ExportToml(id, includeSecrets)
+		if err != nil {
+			return e.JSON(500, map[string]string{"error": err.Error()})
+		}
+		e.Response.Header().Set("Content-Disposition", `attachment; filename="frpc-`+id+`.toml"`)
+		e.Response.Header().Set("Cache-Control", "no-store")
+		return e.Blob(http.StatusOK, "application/toml; charset=utf-8", out)
+	}))
+
 	e.Router.POST("/api/frpc/terminate", requireAuth(func(e *core.RequestEvent) error {
 		data := struct {
 			ID string `json:"id"`

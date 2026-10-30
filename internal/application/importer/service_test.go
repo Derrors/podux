@@ -1,7 +1,11 @@
 package importer
 
 import (
+	"slices"
+	"strings"
 	"testing"
+
+	"podux/internal/testutil"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -53,5 +57,114 @@ abc
 	}
 	if len(warnings) != 1 || warnings[0] != WarningTLSFilePathIgnored {
 		t.Fatalf("warnings = %v, want [%s]", warnings, WarningTLSFilePathIgnored)
+	}
+}
+
+const secretTypesToml = `
+serverAddr = "frps.example.com"
+serverPort = 7000
+
+[[proxies]]
+name = "ssh"
+localPort = 22
+remotePort = 6022
+transport.bandwidthLimit = "1MB"
+healthCheck.type = "tcp"
+healthCheck.intervalSeconds = 10
+
+[[proxies]]
+name = "nas"
+type = "stcp"
+localPort = 5000
+secretKey = "k"
+allowUsers = ["*"]
+
+[[proxies]]
+name = "mux"
+type = "tcpmux"
+localPort = 80
+
+[[visitors]]
+name = "office"
+type = "xtcp"
+serverName = "office-desktop"
+secretKey = "k2"
+bindPort = 6000
+keepTunnelOpen = true
+
+[[visitors]]
+name = "untyped"
+serverName = "x"
+bindPort = 6001
+`
+
+func TestImportSecretTypesAndVisitors(t *testing.T) {
+	app := testutil.NewApp(t)
+	s := NewService(app)
+
+	preview, err := s.ParseToml(&ParseTomlRequest{TomlContent: secretTypesToml})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Proxies) != 2 || len(preview.Visitors) != 1 {
+		t.Fatalf("preview has %d proxies and %d visitors, want 2 and 1", len(preview.Proxies), len(preview.Visitors))
+	}
+	for _, w := range []string{WarningUnsupportedProxySkipped, WarningUnsupportedVisitorSkipped} {
+		if !slices.Contains(preview.Warnings, w) {
+			t.Errorf("warnings %v missing %s", preview.Warnings, w)
+		}
+	}
+
+	req := &ExecuteImportRequest{
+		TomlContent: secretTypesToml, ImportServer: true, ImportVisitors: true,
+		Proxies: []ProxyImportOption{{Name: "ssh", Import: true}, {Name: "nas", Import: true}},
+	}
+	result, err := s.ExecuteImport(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ProxiesImported != 2 || result.VisitorsImported != 1 || result.VisitorsSkipped != 1 {
+		t.Fatalf("result = %+v", result)
+	}
+
+	nas, err := app.FindFirstRecordByData("fh_proxies", "name", "nas")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nas.GetString("proxyType") != "stcp" || nas.GetString("secretKey") != "k" {
+		t.Errorf("stcp proxy = %v", nas.PublicExport())
+	}
+	ssh, err := app.FindFirstRecordByData("fh_proxies", "name", "ssh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ssh.GetString("healthCheck"), `"tcp"`) || !strings.Contains(ssh.GetString("transport"), "1MB") {
+		t.Errorf("ssh healthCheck/transport = %s / %s", ssh.GetString("healthCheck"), ssh.GetString("transport"))
+	}
+	office, err := app.FindFirstRecordByData("fh_visitors", "name", "office")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if office.GetString("visitorType") != "xtcp" || office.GetInt("bindPort") != 6000 ||
+		!office.GetBool("keepTunnelOpen") || office.GetString("status") != "enabled" {
+		t.Errorf("visitor = %v", office.PublicExport())
+	}
+
+	// A second import sees the visitor as a duplicate and skips it unless overwriting.
+	preview, err = s.ParseToml(&ParseTomlRequest{TomlContent: secretTypesToml})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preview.Visitors[0].IsDuplicate {
+		t.Error("existing visitor not flagged as duplicate")
+	}
+	req.ImportServer = false
+	req.Proxies = nil
+	result, err = s.ExecuteImport(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.VisitorsImported != 0 || result.VisitorsSkipped != 2 {
+		t.Errorf("re-import result = %+v", result)
 	}
 }
