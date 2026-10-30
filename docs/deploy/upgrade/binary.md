@@ -1,72 +1,49 @@
 # 二进制升级
 
-::: warning 文档待完善
-本页内容正在持续完善中，部分细节可能不够准确，请以实际情况为准。
-:::
+升级二进制部署的 Podux：备份数据，替换可执行文件，再重新启动。数据库结构会在启动时自动迁移。各版本的变化见 [Releases](https://github.com/Derrors/podux/releases)。
 
-升级 Podux 二进制版本前，建议先备份数据，再替换可执行文件。
+以下命令以[二进制安装](/deploy/install/binary)中的 systemd 部署为例（数据目录 `/var/lib/podux`）。
 
 ## 升级步骤
 
-### 1. 备份数据
-
-数据默认存储在工作目录下的 `pb_data/`，升级前先备份：
-
-```bash
-cp -r /var/lib/podux/pb_data /var/lib/podux/pb_data.bak
-```
-
-### 2. 停止服务
+### 1. 停止服务并备份数据
 
 ```bash
 sudo systemctl stop podux
+sudo cp -a /var/lib/podux /var/lib/podux.bak-$(date +%F)
 ```
 
-若未使用 systemd，手动终止进程：
+未使用 systemd 时，先结束 Podux 进程，再备份启动时 `--dir` 指定的目录。
+
+### 2. 下载新版本
 
 ```bash
-pkill podux
-```
-
-### 3. 下载新版本
-
-前往 [GitHub Releases](https://github.com/Derrors/podux/releases/latest) 查看最新版本，或通过命令行下载（以 Linux amd64 为例）：
-
-```bash
-VERSION=v0.2.0
+VERSION=v0.2.2
 curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${VERSION}-linux-amd64.tar.gz
 tar -xzf podux-${VERSION}-linux-amd64.tar.gz
 ```
 
-### 4. 替换二进制文件
+### 3. 替换可执行文件并启动
 
 ```bash
-sudo mv podux /usr/local/bin/podux
-sudo chmod +x /usr/local/bin/podux
-```
-
-### 5. 重启服务
-
-```bash
+sudo install -m 755 podux /usr/local/bin/podux
 sudo systemctl start podux
 
 # 确认服务正常运行
 sudo systemctl status podux
 ```
 
-
 ## 回滚
 
-如果升级后出现问题，恢复备份数据并重新安装旧版本：
+新版本启动后可能已经迁移了数据库结构，回滚时要连同数据一起恢复：
 
 ```bash
-# 停止服务
 sudo systemctl stop podux
 
-# 恢复数据备份
-rm -rf /var/lib/podux/pb_data
-cp -r /var/lib/podux/pb_data.bak /var/lib/podux/pb_data
+# 恢复升级前的数据备份
+sudo rm -rf /var/lib/podux
+sudo cp -a /var/lib/podux.bak-<日期> /var/lib/podux
 
-# 从 GitHub Releases 下载对应旧版本并替换二进制文件，然后启动
+# 从 GitHub Releases 下载旧版本，替换 /usr/local/bin/podux 后启动
 sudo systemctl start podux
 ```

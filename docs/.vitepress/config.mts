@@ -8,7 +8,6 @@ export default defineConfig({
   head: [
     ['link', { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' }],
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],
-    ['script', { defer: '', src: 'https://umami.jwinks.com/script.js', 'data-website-id': '8af0f36e-650c-45b5-a17e-e104b918f63f' }]
   ],
   metaChunk: true,
 
@@ -26,9 +25,9 @@ export default defineConfig({
             text: '指南',
             items: [
               { text: '什么是 Podux?', link: '/guide/what-is-podux' },
-                        { text: '界面预览', link: '/guide/screenshots' },
-
+              { text: '界面预览', link: '/guide/screenshots' },
               { text: '快速开始', link: '/guide/getting-started' },
+              { text: '兼容性', link: '/guide/compatibility' },
             ]
           },
           {
@@ -47,7 +46,8 @@ export default defineConfig({
                   { text: '二进制', link: '/deploy/upgrade/binary' },
                   { text: 'Docker', link: '/deploy/upgrade/docker' },
                 ]
-              }
+              },
+              { text: '数据与备份', link: '/deploy/backup' },
             ]
           },
           {
@@ -57,17 +57,15 @@ export default defineConfig({
             ]
           },
           {
-            text: '开发设计',
+            text: '参与开发',
             items: [
-              { text: '文档索引', link: '/development/' },
-              { text: '系统架构', link: '/development/architecture' },
-              { text: '数据库设计', link: '/development/database-design' },
-              { text: 'UI 规范', link: '/development/ui-spec' },
+              { text: '贡献指南', link: 'https://github.com/Derrors/podux/blob/main/CONTRIBUTING.md' },
+              { text: '设计文档', link: 'https://github.com/Derrors/podux/tree/main/development' },
             ]
           }
         ],
         footer: {
-          message: '基于 MIT 协议开源',
+          message: '基于 Apache 2.0 协议开源',
           copyright: 'Copyright © 2026-present Podux'
         },
       }
@@ -87,7 +85,8 @@ export default defineConfig({
             items: [
               { text: 'What is Podux?', link: '/en/guide/what-is-podux' },
               { text: 'Screenshots', link: '/en/guide/screenshots' },
-              { text: 'Getting Started', link: '/en/guide/getting-started' }
+              { text: 'Getting Started', link: '/en/guide/getting-started' },
+              { text: 'Compatibility', link: '/en/guide/compatibility' }
             ]
           },
           {
@@ -106,7 +105,8 @@ export default defineConfig({
                   { text: 'Binary', link: '/en/deploy/upgrade/binary' },
                   { text: 'Docker', link: '/en/deploy/upgrade/docker' }
                 ]
-              }
+              },
+              { text: 'Data and Backups', link: '/en/deploy/backup' }
             ]
           },
           {
@@ -114,10 +114,17 @@ export default defineConfig({
             items: [
               { text: 'FAQ', link: '/en/troubleshoot/faq' }
             ]
+          },
+          {
+            text: 'Development',
+            items: [
+              { text: 'Contributing', link: 'https://github.com/Derrors/podux/blob/main/CONTRIBUTING_en.md' },
+              { text: 'Design Docs', link: 'https://github.com/Derrors/podux/tree/main/development' }
+            ]
           }
         ],
         footer: {
-          message: 'Released under the MIT License.',
+          message: 'Released under the Apache 2.0 License.',
           copyright: 'Copyright © 2026-present Podux'
         },
       }

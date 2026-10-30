@@ -39,10 +39,11 @@ Podux was built to solve exactly these problems.
 
 Centrally manage multiple frps servers with support for:
 
-- Add, edit, and delete server configurations
-- Auto-connect and automatic reconnection on failure
-- Real-time latency monitoring with geolocation display
-- One-click enable/disable toggle
+- One independent frpc instance per server, started and stopped individually
+- Token and OIDC authentication; tcp, kcp, quic, websocket and wss transports, with configurable TLS certificates
+- Servers with "auto connect" come online when Podux starts
+- Periodic latency probes with history charts, plus server geolocation
+- Deleting a server also removes its proxies and monitoring data
 
 ### Proxy Management
 
@@ -68,26 +69,14 @@ Built with Radix UI and Tailwind CSS, delivering a clean and elegant UI with Chi
 ## Architecture
 
 ```text
-┌─────────────────────────────────┐
-│         Browser (React)         │
-│   Radix UI + Tailwind CSS       │
-└────────────────┬────────────────┘
-                 │ HTTP API
-┌────────────────▼────────────────┐
-│        Backend (PocketBase)     │
-│   Embedded SQLite Database      │
-└────────────────┬────────────────┘
-                 │ Process Management
-┌────────────────▼────────────────┐
-│              frpc               │
-│   Local intranet tunnel client  │
-└────────────────┬────────────────┘
-                 │ Encrypted Tunnel
-┌────────────────▼────────────────┐
-│              frps               │
-│   Public server (user-deployed) │
-└─────────────────────────────────┘
+Browser (React)  ──HTTP──▶  Podux (PocketBase + embedded frpc)  ──tunnel──▶  frps (self-hosted)
+                                     │
+                                     └── pb_data/: SQLite database, frpc logs and certificates
 ```
+
+- **Frontend**: React + Radix UI + Tailwind CSS, bundled into the executable
+- **Backend**: [PocketBase](https://pocketbase.io/) with built-in SQLite, handling accounts, storage and the API
+- **frpc**: embedded as a Go library inside the Podux process, one instance per server; no separate frpc install is needed
 
 Podux ships as a **single executable** that embeds both the PocketBase backend and frontend assets — ready to run with zero extra dependencies.
 
@@ -107,8 +96,14 @@ Podux ships as a **single executable** that embeds both the PocketBase backend a
 - **DevOps engineers**: Manage intranet penetration configs across multiple machines from one place
 - **Home users**: Set up home servers, NAS, or remote desktop without memorizing complex config syntax
 
+## Relationship to Upstream
+
+- Podux was created by [luckjiawei](https://github.com/luckjiawei) and was previously named frpc-hub. [Derrors/podux](https://github.com/Derrors/podux) branched off after upstream v0.1.6 and has been maintained independently since v0.2.0.
+- Features, fixes and release cadence are decided in this repository. Behavior and version numbers are **not guaranteed to match upstream**, and upstream changes are not merged on a schedule.
+- This repository's Docker image is `ghcr.io/derrors/podux`, which differs from the upstream image. When migrating from an upstream release, keep using your existing data directory.
+- Thanks to the original author. The project keeps the Apache 2.0 license and the existing copyright notices.
+
 ## Next Steps
 
-- [Getting Started](/en/guide/getting-started) — Up and running in 5 minutes
-- [Binary Installation](/en/deploy/install/binary) — Deploy to your server
-- [Docker Installation](/en/deploy/install/docker) — Container-based deployment
+- [Getting Started](/en/guide/getting-started) — Up and running in minutes
+- [Compatibility](/en/guide/compatibility) — Supported frps versions and feature scope

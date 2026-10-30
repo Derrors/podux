@@ -1,16 +1,12 @@
 # Binary Installation
 
-::: warning Work in Progress
-This page is still being improved. Some details may not be fully accurate — please refer to the actual behavior when in doubt.
-:::
-
-Install Podux using pre-compiled binaries — ideal for running directly on a server or local machine.
+Install Podux from a prebuilt binary to run it directly on a server or your own machine. The frontend is bundled into the executable; nothing else is required.
 
 ## Download
 
-Go to the [GitHub Releases](https://github.com/Derrors/podux/releases/latest) page and download the package for your platform:
+Go to [GitHub Releases](https://github.com/Derrors/podux/releases/latest) and pick the package for your system:
 
-| OS | Architecture | Filename |
+| OS | Architecture | File |
 | --- | --- | --- |
 | Linux | x86_64 (amd64) | `podux-<version>-linux-amd64.tar.gz` |
 | Linux | ARM64 | `podux-<version>-linux-arm64.tar.gz` |
@@ -19,11 +15,13 @@ Go to the [GitHub Releases](https://github.com/Derrors/podux/releases/latest) pa
 | macOS | Apple Silicon | `podux-<version>-darwin-arm64.tar.gz` |
 | Windows | x86_64 | `podux-<version>-windows-amd64.zip` |
 
-Or download directly from the command line (Linux amd64 example):
+Or download from the command line (Linux amd64 shown; use the latest version):
 
 ```bash
-VERSION=v0.2.0
+VERSION=v0.2.2
 curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${VERSION}-linux-amd64.tar.gz
+curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/checksums.txt
+sha256sum --ignore-missing -c checksums.txt
 ```
 
 ## Install
@@ -31,65 +29,51 @@ curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${V
 ### Linux / macOS
 
 ```bash
-# Extract
 tar -xzf podux-${VERSION}-linux-amd64.tar.gz
-
-# Move to system path (optional)
-sudo mv podux /usr/local/bin/
-
-# Make executable
-sudo chmod +x /usr/local/bin/podux
-
-# Verify installation
-podux --version
+sudo install -m 755 podux /usr/local/bin/podux
 ```
 
 ### Windows
 
-Extract the `.zip` file to any directory, then open PowerShell or Command Prompt inside that directory to use it.
+Extract the `.zip` to any folder, open PowerShell there, and run `.\podux.exe serve`.
 
 ## Start
 
 ```bash
-podux serve --http 0.0.0.0:8090
+podux serve --http 0.0.0.0:8090 --dir /var/lib/podux
 ```
 
-After starting, visit `http://localhost:8090` for the main interface and `http://localhost:8090/_/` for the admin panel.
+- `--http`: listen address, default `127.0.0.1:8090` (local access only)
+- `--dir`: data directory. **Always set it explicitly**: without it, data goes to `pb_data/` next to the executable (or possibly the current directory when invoked through `PATH`), which makes it easy to scatter data
 
-::: tip
-On first launch, the database is initialized automatically. Data is stored in a `pb_data/` folder in the current working directory. Fix the working directory to avoid data scatter.
-:::
+Then open `http://<host>:8090`. On first visit you are guided to create an admin account; next steps are in [Getting Started](/en/guide/getting-started).
 
-## Auto-start on Boot (Linux)
+## Start on Boot (Linux)
 
-Use systemd to manage the Podux process.
+Using systemd to manage Podux is recommended.
 
-**1. Create a dedicated user (optional but recommended)**
-
-```bash
-sudo useradd -r -s /bin/false podux
-```
-
-**2. Create the data directory**
+**1. Create a dedicated user and data directory**
 
 ```bash
+sudo useradd -r -s /usr/sbin/nologin podux
 sudo mkdir -p /var/lib/podux
 sudo chown podux:podux /var/lib/podux
+sudo chmod 700 /var/lib/podux
 ```
 
-**3. Create the systemd service file**
+**2. Create the systemd unit**
 
 ```bash
-sudo tee /etc/systemd/system/podux.service > /dev/null <<EOF
+sudo tee /etc/systemd/system/podux.service > /dev/null <<'EOF'
 [Unit]
-Description=Podux Service
-After=network.target
+Description=Podux
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=podux
-WorkingDirectory=/var/lib/podux
-ExecStart=/usr/local/bin/podux serve --http 0.0.0.0:8090
+ExecStart=/usr/local/bin/podux serve --http 0.0.0.0:8090 --dir /var/lib/podux
 Restart=on-failure
 RestartSec=5s
 
@@ -98,12 +82,11 @@ WantedBy=multi-user.target
 EOF
 ```
 
-**4. Enable and start the service**
+**3. Enable and start the service**
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable podux
-sudo systemctl start podux
+sudo systemctl enable --now podux
 
 # Check status
 sudo systemctl status podux
@@ -115,7 +98,9 @@ sudo systemctl status podux
 sudo journalctl -u podux -f
 ```
 
+frpc's own log is written to `frpc/frpc.log` in the data directory, and can also be followed live on a server's log page in the web UI.
+
 ## Next Steps
 
-- [Binary Upgrade](/en/deploy/upgrade/binary) — Upgrade to a new version
-- [Getting Started](/en/guide/getting-started) — Add servers and proxies
+- [Data and Backups](/en/deploy/backup)
+- [Binary Upgrade](/en/deploy/upgrade/binary)

@@ -5,150 +5,128 @@ Deploy Podux with Docker — ideal for containerized environments or quick isola
 ## Prerequisites
 
 - Docker 20.10+
-- Docker Compose v2 (optional)
+- Docker Compose v2 (recommended)
 
 ## Image
 
-The official image is hosted on GitHub Container Registry:
+Images are hosted on GitHub Container Registry:
 
 ```text
 ghcr.io/derrors/podux:latest
 ```
 
-Supported architectures: `linux/amd64`, `linux/arm64`, `linux/arm/v7`
+- Architectures: `linux/amd64`, `linux/arm64`, `linux/arm/v7`
+- Tags: besides `latest`, every release has its own tag (such as `0.2.2`); pin a version in production
+- The container runs as UID/GID 1000, keeps data in `/app/pb_data`, listens on port `8090`, and has a built-in health check (`/api/health`)
 
-## Quick Start
+## Network Mode
 
-```bash
-docker run -d \
-  --name podux \
-  --restart unless-stopped \
-  -p 8090:8090 \
-  -v ./podux-data:/app/pb_data \
-  ghcr.io/derrors/podux:latest
-```
+A proxy's local address is reached **from inside the container**:
 
-| Flag | Description |
-| --- | --- |
-| `-p 8090:8090` | Map container port to host |
-| `-v ./podux-data:/app/pb_data` | Persist data directory |
-| `--restart unless-stopped` | Auto-recover after host reboot |
-
-After starting, visit `http://localhost:8090`.
+- **Host network (recommended)**: `127.0.0.1` points at the host itself, the most direct way to forward services on the host. Podux listens on the host's port `8090` directly.
+- **Bridge network** (`-p 8090:8090`): `127.0.0.1` points at the container. To forward services on the host or LAN, enter the host's LAN IP or the target machine's IP in the proxy.
 
 ## Docker Compose (Recommended)
 
-Create a `docker-compose.yml` file:
+Create `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
-
 services:
   podux:
     image: ghcr.io/derrors/podux:${VERSION:-latest}
     container_name: podux
     restart: unless-stopped
-
-    ports:
-      - "8090:8090"
-
+    network_mode: host
     volumes:
-      - podux-data:/app/pb_data
-
+      - ./data:/app/pb_data
     environment:
       - TZ=Asia/Shanghai
-
-    # Resource limits (optional)
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 256M
-
-    # Network mode (optional)
-    # Uncomment if you need host network for better frpc performance
-    # network_mode: host
-
-    # Logging
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
-
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/api/health"]
-      interval: 30s
-      timeout: 3s
-      start_period: 10s
-      retries: 3
-
-volumes:
-  podux-data:
-    driver: local
-
-networks:
-  default:
-    name: podux-network
 ```
 
-Start:
+Create the data directory and start:
 
 ```bash
+mkdir -p data && sudo chown 1000:1000 data
 docker compose up -d
 ```
 
-View logs:
+Then open `http://<host>:8090`; next steps are in [Getting Started](/en/guide/getting-started).
+
+::: tip Using the bridge network
+Remove `network_mode: host` and add:
+
+```yaml
+    ports:
+      - "8090:8090"
+```
+:::
+
+## docker run
 
 ```bash
-docker compose logs -f podux
+mkdir -p podux-data && sudo chown 1000:1000 podux-data
+
+docker run -d \
+  --name podux \
+  --restart unless-stopped \
+  --network host \
+  -v ./podux-data:/app/pb_data \
+  -e TZ=Asia/Shanghai \
+  ghcr.io/derrors/podux:latest
 ```
+
+| Flag | Description |
+| --- | --- |
+| `--network host` | Use the host network (for bridge, use `-p 8090:8090` instead) |
+| `-v ./podux-data:/app/pb_data` | Persist the data directory |
+| `-e TZ=Asia/Shanghai` | Time zone for logs and monitoring timestamps |
+| `--restart unless-stopped` | Restart automatically after the host reboots |
 
 ## Data Persistence
 
-Container data is stored in `/app/pb_data`, which includes the database and configuration. **This directory must be mounted**, otherwise data will be lost when the container is recreated.
+**You must mount `/app/pb_data`**, or data is lost when the container is recreated.
 
-Docker Compose uses a named volume `podux-data` managed by Docker:
+- When mounting a host directory (as above), it must be owned by UID 1000 or Podux cannot write its database. Directories Docker creates on its own are owned by root, so create it yourself and `chown` it first.
+- You can also use a named volume (such as `-v podux-data:/app/pb_data`), whose permissions Docker manages; `docker volume inspect podux-data` shows where it lives.
 
-```bash
-# Inspect volume location
-docker volume inspect podux-data
-```
+For the directory's contents and how to back it up, see [Data and Backups](/en/deploy/backup).
 
 ## Custom Port
 
-To change the listening port, update both the host mapping and the container port:
+Append `serve` arguments to override the default listen address:
 
 ```bash
 docker run -d \
   --name podux \
   --restart unless-stopped \
-  -p 18090:18090 \
+  --network host \
   -v ./podux-data:/app/pb_data \
   ghcr.io/derrors/podux:latest \
   serve --http 0.0.0.0:18090
 ```
 
+In Compose this is `command: ["serve", "--http", "0.0.0.0:18090"]`. With the bridge network, change the port mapping as well (such as `-p 18090:18090`).
+
 ## Common Commands
 
 ```bash
-# Stop
-docker compose stop podux
-
-# Restart
-docker compose restart podux
-
 # View logs
 docker compose logs -f podux
 
-# Enter container shell
+# Stop / restart
+docker compose stop podux
+docker compose restart podux
+
+# Open a shell in the container
 docker compose exec podux sh
 ```
 
 ## Next Steps
 
-- [Docker Upgrade](/en/deploy/upgrade/docker) — Upgrade to a new version
 - [Getting Started](/en/guide/getting-started) — Add servers and proxies
+- [Docker Upgrade](/en/deploy/upgrade/docker) — Upgrade to a new version
