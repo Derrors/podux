@@ -34,8 +34,6 @@ type serverVO struct {
 	Description    string                    `json:"description"`
 	BootStatus     string                    `json:"bootStatus"`
 	AutoConnection bool                      `json:"autoConnection"`
-	SendRate       float64                   `json:"sendRate"`
-	RecvRate       float64                   `json:"recvRate"`
 	GeoLocation    any                       `json:"geoLocation,omitempty"`
 	Created        string                    `json:"created"`
 	Updated        string                    `json:"updated"`
@@ -77,36 +75,28 @@ func (h *ServerHandler) RegisterHandlers(e *core.ServeEvent) {
 		}
 		search := e.Request.URL.Query().Get("search")
 
-		// Count total matching records
-		var total int64
-		countQ := h.app.DB().Select("COUNT(*)").From("fh_servers")
+		// One escaped LIKE expression for both the count and the page. PocketBase's "~"
+		// filter can't be used here: it treats a search containing "%" as a raw pattern.
+		var where dbx.Expression
 		if search != "" {
-			// Escape LIKE wildcards like PocketBase's "~" does, so the count matches the page query.
-			escaped := likeEscaper.Replace(search)
-			countQ = countQ.Where(dbx.NewExp(
+			where = dbx.NewExp(
 				`(serverName LIKE {:s} ESCAPE '\' OR serverAddr LIKE {:s} ESCAPE '\' OR description LIKE {:s} ESCAPE '\')`,
-				dbx.Params{"s": "%" + escaped + "%"},
-			))
+				dbx.Params{"s": "%" + likeEscaper.Replace(search) + "%"},
+			)
 		}
-		if err := countQ.Row(&total); err != nil {
+
+		var total int64
+		if err := h.app.DB().Select("COUNT(*)").From("fh_servers").Where(where).Row(&total); err != nil {
 			return e.JSON(500, response.Error(err))
 		}
 
-		// Fetch the page of records
 		var records []*core.Record
-		var err error
-		if search != "" {
-			records, err = h.app.FindRecordsByFilter(
-				"fh_servers",
-				"serverName ~ {:s} || serverAddr ~ {:s} || description ~ {:s}",
-				"-created",
-				perPage,
-				(page-1)*perPage,
-				map[string]any{"s": search},
-			)
-		} else {
-			records, err = h.app.FindRecordsByFilter("fh_servers", "", "-created", perPage, (page-1)*perPage)
-		}
+		err := h.app.RecordQuery("fh_servers").
+			Where(where).
+			OrderBy("created DESC").
+			Limit(int64(perPage)).
+			Offset(int64((page - 1) * perPage)).
+			All(&records)
 		if err != nil {
 			return e.JSON(500, response.Error(err))
 		}
@@ -129,8 +119,6 @@ func (h *ServerHandler) RegisterHandlers(e *core.ServeEvent) {
 				Description:    r.GetString("description"),
 				BootStatus:     r.GetString("bootStatus"),
 				AutoConnection: r.GetBool("autoConnection"),
-				SendRate:       r.GetFloat("sendRate"),
-				RecvRate:       r.GetFloat("recvRate"),
 				GeoLocation:    r.Get("geoLocation"),
 				Created:        r.GetString("created"),
 				Updated:        r.GetString("updated"),

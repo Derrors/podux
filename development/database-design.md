@@ -2,7 +2,7 @@
 
 ## Sources of Truth and Migration Constraints
 
-PocketBase uses SQLite and registers Go migrations through the blank import of `migrations` in `main.go`; `migratecmd` enables `Automigrate: true`. `migrations/1774402980_collections_snapshot.go` imports the collection snapshot with `ImportCollectionsByMarshaledJSON(..., false)`; its rollback function is currently empty. `migrations/1793274060_enable_rate_limits.go` turns on PocketBase's built-in rate limiting (off by default) and ensures a `*:auth` rule (2 password logins per 3 seconds per client IP); existing rules are kept, and its rollback disables rate limiting. The migration, not any running `pb_data/data.db`, is therefore the primary schema source of truth.
+PocketBase uses SQLite and registers Go migrations through the blank import of `migrations` in `main.go`; `migratecmd` enables `Automigrate: true`. `migrations/1774402980_collections_snapshot.go` imports the collection snapshot with `ImportCollectionsByMarshaledJSON(..., false)`; its rollback function is currently empty. `migrations/1793274060_enable_rate_limits.go` turns on PocketBase's built-in rate limiting (off by default) and ensures a `*:auth` rule (2 password logins per 3 seconds per client IP); existing rules are kept, and its rollback disables rate limiting. `migrations/1793360460_proxy_description.go` adds the optional `fh_proxies.description` text field; its rollback removes the field. The migration, not any running `pb_data/data.db`, is therefore the primary schema source of truth.
 
 Every structure/rule/index change must add a reviewable migration with an appropriate rollback. Never modify production SQLite directly or make changes only through the PocketBase Admin UI. "Default" below records only snapshot autogeneration behavior; fields without an explicit statement have no verified schema default.
 
@@ -67,6 +67,7 @@ Purpose: frpc proxy configuration under a server.
 | `proxyType` | select | Required | One of tcp, udp, http, or https |
 | `serverId` | relation -> `fh_servers` | Required, N:1 | No cascading delete |
 | `localIP`,`localPort`,`remotePort`,`subdomain` | text | Optional | Endpoint configuration; Go maps ports with NullableInt |
+| `description` | text | Optional, max 1000 | Free-form note edited in the proxy form; not passed to frp |
 | `customDomains` | json | Optional | Domain array |
 | `transport`,`plugin` | json | Optional | Extended proxy configuration; `transport` uses frp's camelCase keys (`useEncryption`, `useCompression`, …). Records saved by older forms may hold `use_encryption`/`use_compression`, which frpc config generation and the edit form still read |
 | `status` | select | Required | enabled/disabled |
@@ -111,9 +112,6 @@ Purpose: daily aggregates. Fields match hourly, and all three value fields are o
 
 ## Current Discrepancies / To Be Confirmed
 
-- `domain/proxy.Proxy` declares and serializes `description`, but the `fh_proxies` migration has no such field; form payloads also include description. Do not assume here that the field exists.
-- The `/api/servers` handler reads and returns `sendRate` and `recvRate`, but the migration defines neither field.
-- ProfileSettings submits both `name` and `nickname`, while the migration defines only `nickname`.
 - The migration defines `serverPort/localPort/remotePort` as text; some Go/frontend paths treat them as numbers. Preserve conversion compatibility and confirm the long-term type strategy.
 - `fh_metrics_targets` has no uniqueness constraint. An in-process application lock only prevents concurrent duplicates within one process; multi-instance and pre-existing duplicate risks remain to be confirmed.
 - Metric aggregation performs application-level "lookup then write" operations. Composite indexes are non-unique, so the database does not guarantee idempotent uniqueness.

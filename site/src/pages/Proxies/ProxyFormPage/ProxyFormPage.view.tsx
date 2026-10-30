@@ -424,6 +424,7 @@ export function ProxyFormPageView({
                 <TextArea
                   size="2"
                   placeholder={t("proxy.descriptionPlaceholder")}
+                  maxLength={1000}
                   value={formData.description}
                   onChange={(e) => onChange("description", e.target.value)}
                   className="min-h-[100px]"

@@ -23,7 +23,7 @@ import { toast } from "sonner";
 export function ProfileSettings() {
   const { t, i18n } = useTranslation();
   const [nickname, setNickname] = useState(
-    pb.authStore.record?.name || pb.authStore.record?.nickname || ""
+    pb.authStore.record?.nickname || ""
   );
   const [email, setEmail] = useState(pb.authStore.record?.email || "");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -68,8 +68,7 @@ export function ProfileSettings() {
     setSaving(true);
     try {
       const formData = new FormData();
-      formData.append("name", nickname); // Common field for name/nickname
-      formData.append("nickname", nickname); // Just in case schema uses nickname
+      formData.append("nickname", nickname);
       // Email updates often require verification in PB, but we'll try updating it.
       // If email changes, PB might require token re-auth or email confirm.
       if (email !== pb.authStore.model.email) {

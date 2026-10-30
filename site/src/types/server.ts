@@ -29,8 +29,6 @@ export interface ServerListItem {
   autoConnection: boolean;
   created: string;
   updated: string;
-  sendRate: number;
-  recvRate: number;
   networkStatus?: NetworkStatus;
   geoLocation?: GeoLocation;
 }
@@ -44,7 +42,7 @@ export interface ServerListResponse {
 }
 
 /** Full `fh_servers` record as returned by the PocketBase collection API. */
-export interface ServerRecord extends Omit<ServerListItem, "networkStatus" | "sendRate" | "recvRate"> {
+export interface ServerRecord extends Omit<ServerListItem, "networkStatus"> {
   serverVersion?: string;
   log?: {
     level: "trace" | "debug" | "info" | "warn" | "error";
