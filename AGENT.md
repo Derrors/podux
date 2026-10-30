@@ -2,7 +2,7 @@
 
 ## Project Scope and Technology Stack
 
-Podux is a web management platform for centrally managing frpc server configurations, proxies, connection status, network latency, and runtime logs. The current codebase uses Go 1.26, PocketBase 0.35.0, and embedded frp 0.71.1. The application frontend is under `site/` and uses React 19, TypeScript 5.9, Vite 7, Radix Themes 3, and Tailwind CSS 4. `docs/` is a VitePress 1 documentation site; its Vue dependency does not mean that the application frontend uses Vue.
+Podux is a web management platform for centrally managing frpc server configurations, proxies, connection status, network latency, and runtime logs. The current codebase uses Go 1.27, PocketBase 0.40.6, and embedded frp 0.71.1. The application frontend is under `site/` and uses React 19, TypeScript 5.9, Vite 7, Radix Themes 3, and Tailwind CSS 4. `docs/` is a VitePress 1 documentation site; its Vue dependency does not mean that the application frontend uses Vue.
 
 Treat `go.mod`, `site/package.json`, and `docs/package.json` as the sources of truth for versions and dependencies. Do not infer versions from documentation examples.
 
@@ -28,7 +28,7 @@ See the [development design documentation](development/README.md) for the full d
 
 ## Local Development and Verification
 
-Prerequisites: Go 1.26 as required by `go.mod`, Node.js 22 (CI baseline), and pnpm 10 (CI baseline).
+Prerequisites: Go 1.27 as required by `go.mod`, Node.js 22 (CI baseline), and pnpm 10 (CI baseline).
 
 ```bash
 # Backend (ensure pb_public/index.html exists first; see the full frontend build below)

@@ -12,7 +12,7 @@
 
 ## 从源码构建
 
-环境要求：Go 1.26、Node.js 22、pnpm 10。
+环境要求：Go 1.27、Node.js 22、pnpm 10。
 
 ```bash
 git clone https://github.com/Derrors/podux.git && cd podux

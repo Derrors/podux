@@ -12,7 +12,7 @@ Include your Podux version, deployment method (Docker / binary), frps version, r
 
 ## Building from Source
 
-Requirements: Go 1.26, Node.js 22, pnpm 10.
+Requirements: Go 1.27, Node.js 22, pnpm 10.
 
 ```bash
 git clone https://github.com/Derrors/podux.git && cd podux

@@ -11,7 +11,7 @@ COPY site/ ./
 RUN pnpm run build
 
 # Stage 2: Build backend
-FROM --platform=linux/amd64 golang:1.26-alpine AS backend-builder
+FROM --platform=linux/amd64 golang:1.27-alpine AS backend-builder
 
 WORKDIR /app
 
