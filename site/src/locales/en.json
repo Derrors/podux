@@ -105,7 +105,8 @@
     "trafficNoDashboard": "Shown once a server has its frps dashboard set",
     "topologyLocalListener": "Local listener",
     "topologyFallbackOnly": "Fallback only",
-    "topologyHandledByPlugin": "Handled by a plugin"
+    "topologyHandledByPlugin": "Handled by a plugin",
+    "trafficSplit": "In {{in}} · Out {{out}}"
   },
   "server": {
     "title": "Servers",

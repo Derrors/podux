@@ -105,7 +105,8 @@
     "trafficNoDashboard": "在服务器设置中填写 frps 管理面板后显示",
     "topologyLocalListener": "本机监听",
     "topologyFallbackOnly": "仅作回退",
-    "topologyHandledByPlugin": "由插件处理"
+    "topologyHandledByPlugin": "由插件处理",
+    "trafficSplit": "入站 {{in}} · 出站 {{out}}"
   },
   "server": {
     "title": "服务器",

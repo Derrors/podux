@@ -23,10 +23,10 @@ export function StatCard({
   };
 
   return (
-    <Card className="flex-1">
-      <Flex gap="4" align="center">
+    <Card className="h-full flex-1">
+      <Flex gap="4" align="center" className="h-full">
         <Flex
-          className="h-12 w-12 rounded-xl select-none"
+          className="h-12 w-12 shrink-0 rounded-xl select-none"
           align="center"
           justify="center"
           style={{
@@ -36,11 +36,11 @@ export function StatCard({
         >
           {icon}
         </Flex>
-        <Flex direction="column" gap="1">
+        <Flex direction="column" gap="1" className="min-w-0">
           <Text size="2" color="gray">
             {title}
           </Text>
-          <Box>
+          <Box className="min-w-0 truncate">
             <Text size="6" weight="bold">
               {value}
             </Text>

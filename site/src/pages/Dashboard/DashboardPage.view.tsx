@@ -1,4 +1,4 @@
-import { Box, Card, Flex, Text } from "@radix-ui/themes";
+import { Box, Card, Flex, Text, Tooltip as HintTooltip } from "@radix-ui/themes";
 import type { DashboardStats, TopologyData } from "./useDashboard";
 import { TopologyChart } from "./TopologyChart";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -34,6 +34,8 @@ function formatUptime(seconds: number): string {
 
 export function DashboardView({ stats, topology }: DashboardViewProps) {
   const { t } = useTranslation();
+  // "4.6 GB" -> number and unit, styled like the other cards' "195 ms".
+  const [trafficValue, trafficUnit] = formatBytes(stats.trafficIn + stats.trafficOut).split(" ");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -137,13 +139,27 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
             title={t("dashboard.trafficToday")}
             value={
               stats.trafficServers > 0 ? (
-                <Text size="4" weight="bold" className="whitespace-nowrap font-mono">
-                  ↓{formatBytes(stats.trafficIn)} ↑{formatBytes(stats.trafficOut)}
-                </Text>
+                // Total like the other values; the in/out split doesn't fit a card, so it's on hover.
+                <HintTooltip
+                  content={t("dashboard.trafficSplit", {
+                    in: formatBytes(stats.trafficIn),
+                    out: formatBytes(stats.trafficOut),
+                  })}
+                >
+                  <span>
+                    {trafficValue}
+                    <Text size="2" color="gray" weight="regular" ml="2">
+                      {trafficUnit}
+                    </Text>
+                  </span>
+                </HintTooltip>
               ) : (
-                <Text size="2" color="gray" weight="regular">
-                  {t("dashboard.trafficNoDashboard")}
-                </Text>
+                // Not configured: a dash at the height of the other values, the hint on hover.
+                <HintTooltip content={t("dashboard.trafficNoDashboard")}>
+                  <Text color="gray" aria-label={t("dashboard.trafficNoDashboard")}>
+                    —
+                  </Text>
+                </HintTooltip>
               )
             }
             color="blue"
