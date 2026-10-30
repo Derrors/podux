@@ -104,7 +104,8 @@
     "trafficToday": "Traffic today",
     "trafficNoDashboard": "Shown once a server has its frps dashboard set",
     "topologyLocalListener": "Local listener",
-    "topologyFallbackOnly": "Fallback only"
+    "topologyFallbackOnly": "Fallback only",
+    "topologyHandledByPlugin": "Handled by a plugin"
   },
   "server": {
     "title": "Servers",
@@ -466,7 +467,7 @@
     "addLocation": "Add location",
     "requestHeaders": "Request headers",
     "responseHeaders": "Response headers",
-    "addHeader": "Add header",
+    "addHeader": "Add",
     "headerName": "Name",
     "headerValue": "Value",
     "errorLocation": "Locations must start with /",

@@ -68,4 +68,13 @@ go test ./...
 go build ./...
 ```
 
+### End-to-End Test
+
+`test/e2e/run.sh` drives a built Podux against a real frps: tunnels of every type, plugins, conflict checks, batch changes, traffic stats, probes, export, logs, expiry, backup/restore and alerts. CI runs it; locally you need frps from [frp Releases](https://github.com/fatedier/frp/releases), the version in `go.mod`:
+
+```bash
+go build -o /tmp/podux . && go build -o /tmp/catcher ./test/e2e/catcher
+PODUX_BIN=/tmp/podux FRPS_BIN=/path/to/frps CATCHER_BIN=/tmp/catcher sh test/e2e/run.sh
+```
+
 Never commit `pb_data/`, `pb_public/`, `site/dist/`, build artifacts, or any tokens, certificates or user data.

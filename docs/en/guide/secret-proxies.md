@@ -45,6 +45,16 @@ On the machine reaching it:
 
 If the server is running, the visitor takes effect as soon as it is saved. Connecting to `127.0.0.1:6000` then reaches `127.0.0.1:5000` on the other machine.
 
+## XTCP Fallback
+
+XTCP relies on peer-to-peer hole punching, which fails on some networks. An STCP visitor can serve as a fallback:
+
+1. On the machine being reached, publish an **STCP** proxy for the same local service, next to the XTCP proxy
+2. On the machine reaching it, add an **STCP visitor** for that proxy and turn on **Don't listen** (it is only a fallback path)
+3. Edit the XTCP visitor, choose that STCP visitor under **Fall back to**, and optionally set the timeout (ms)
+
+When hole punching fails or times out, connections switch to STCP, relayed by frps.
+
 ## Native frpc on the Other End
 
 A visitor in frpc.toml:

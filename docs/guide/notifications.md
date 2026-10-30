@@ -11,7 +11,9 @@ Podux 可以在服务器或代理出现异常时发送通知，恢复正常后�
 | 服务器不可达 | 连续 3 次延迟探测都连不上 frps |
 | 延迟过高 | 连续 3 次探测延迟超过设定的阈值（阈值为 0 时不检查） |
 | 代理掉线 | 已启用的代理离线超过 15 秒；同一服务器上同时掉线的多个代理合并成一条消息 |
+| 代理外网不可达 | 代理在 frpc 中在线，但从外部连续 3 次探测（约 3 分钟）都连不上，见[流量与可达性](/guide/traffic#外网可达性探测) |
 | frpc 意外退出 | frpc 不是由你停止而退出，例如启动时第一次登录 frps 失败 |
+| 临时代理到期 | 设置了[有效期](/guide/proxy-options#有效期)的代理到期并被自动停用 |
 | 恢复通知 | 上述问题恢复正常时再发送一条 |
 
 延迟探测的间隔在 **设置** → **常规** 中修改（10–300 秒），"服务器不可达"和"延迟过高"的反应时间约为 3 个探测间隔。
@@ -35,7 +37,7 @@ Podux 可以在服务器或代理出现异常时发送通知，恢复正常后�
 | 钉钉机器人 | 填写自定义机器人的 Webhook 地址；安全设置请选择"自定义关键词"，关键词填 `Podux` |
 | 飞书机器人 | 填写自定义机器人的 Webhook 地址 |
 
-通用 JSON 的 `event` 取值：`server_unreachable`、`server_recovered`、`high_latency`、`latency_recovered`、`proxy_down`、`proxy_recovered`、`frpc_exited`、`test`。
+通用 JSON 的 `event` 取值：`server_unreachable`、`server_recovered`、`high_latency`、`latency_recovered`、`proxy_down`、`proxy_recovered`、`proxy_unreachable`、`proxy_reachable`、`proxy_expired`、`frpc_exited`、`test`。
 
 ### Telegram
 

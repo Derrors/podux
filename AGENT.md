@@ -87,6 +87,7 @@ go build ./...
 
 - [ ] `git diff` contains only the intended scope, with no runtime data, build artifacts, or unrelated formatting.
 - [ ] Go vet/test/build, frontend lint/build, and documentation build were run and their results reported accurately.
+- [ ] For changes to frpc config generation, monitoring, backups or migrations: `test/e2e/run.sh` passed (CI runs it), and a migration was also checked against a copy of real data where possible.
 - [ ] New or changed APIs, collections, relations, and rules are reflected in the database/architecture documentation.
 - [ ] The UI reuses shared components; both themes, the 760px mobile layout, Chinese/English text, and basic keyboard operation were checked.
 - [ ] Relative Markdown links work, and Mermaid names match the code and render correctly.

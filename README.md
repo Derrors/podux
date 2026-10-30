@@ -46,13 +46,13 @@ Podux 把 frpc 作为库内嵌在程序里，后端基于 [PocketBase](https://p
 ## 功能特性
 
 - **多服务器**：同时连接多台 frps，每台对应一个独立的 frpc 实例；支持 token / OIDC 认证，tcp、kcp、quic、websocket、wss 传输与 TLS；可开机自动连接
-- **代理管理**：可视化配置 TCP、UDP、HTTP、HTTPS、STCP、SUDP、XTCP 代理，支持子域名与自定义域名、加密压缩、限速、健康检查、SOCKS5 插件；保存时检查端口和域名冲突；修改后自动热重载，**只重启配置有变化的代理**
+- **代理管理**：可视化配置 TCP、UDP、HTTP、HTTPS、TCPMUX、STCP、SUDP、XTCP 代理，支持子域名与自定义域名、HTTP 访问认证与路径分流、负载均衡、加密压缩、限速、健康检查、9 种插件和有效期；保存时检查端口和域名冲突；支持批量操作和复制；修改后自动热重载，**只重启配置有变化的代理**
 - **访问端**：在本机监听端口，访问其他机器发布的 STCP/SUDP/XTCP 代理，不用在 frps 上开放公网端口
-- **监控与告警**：仪表盘与拓扑图；定时探测延迟并保留历史曲线，显示服务器地理位置；frpc 日志实时推送；服务器不可达、代理掉线等异常通过 Webhook（含企业微信、钉钉、飞书）、Telegram、Bark 或邮件通知
-- **导入与导出**：导入现有 frpc 的 TOML 配置，导入前可预览并识别重复项；把服务器配置导出为原生 frpc 可用的 `frpc.toml`
+- **监控与告警**：仪表盘与拓扑图；延迟历史曲线和地理位置；读取 frps 管理面板显示每个代理的流量；从外部探测代理是否真的可访问；frpc 日志实时推送、筛选和下载；服务器不可达、代理掉线或外网不可达等异常通过 Webhook（含企业微信、钉钉、飞书）、Telegram、Bark 或邮件通知
+- **导入、导出与备份**：导入现有 frpc 的 TOML 配置，导入前可预览并识别重复项；把服务器配置导出为原生 frpc 可用的 `frpc.toml`；在界面中备份、定时备份和恢复
 - **其他**：首次访问引导创建管理员，登录限流；中英文界面、深浅色主题、适配手机
 
-目前不支持 TCPMUX 代理和大部分代理插件，完整的支持范围见[兼容性](https://derrors.github.io/podux/guide/compatibility.html)。
+目前不支持 VirtualNet 插件和访问端插件，完整的支持范围见[兼容性](https://derrors.github.io/podux/guide/compatibility.html)。
 
 ## 界面截图
 
@@ -107,7 +107,7 @@ docker compose up -d
 | | |
 | --- | --- |
 | 入门 | [什么是 Podux](https://derrors.github.io/podux/guide/what-is-podux.html) · [快速开始](https://derrors.github.io/podux/guide/getting-started.html) · [兼容性](https://derrors.github.io/podux/guide/compatibility.html) |
-| 功能 | [STCP/XTCP 与访问端](https://derrors.github.io/podux/guide/secret-proxies.html) · [告警通知](https://derrors.github.io/podux/guide/notifications.html) · [导出配置](https://derrors.github.io/podux/guide/export.html) |
+| 功能 | [代理进阶设置](https://derrors.github.io/podux/guide/proxy-options.html) · [STCP/XTCP 与访问端](https://derrors.github.io/podux/guide/secret-proxies.html) · [流量与可达性](https://derrors.github.io/podux/guide/traffic.html) · [告警通知](https://derrors.github.io/podux/guide/notifications.html) · [导出配置](https://derrors.github.io/podux/guide/export.html) |
 | 安装 | [Docker](https://derrors.github.io/podux/deploy/install/docker.html) · [二进制](https://derrors.github.io/podux/deploy/install/binary.html) |
 | 运维 | [数据与备份](https://derrors.github.io/podux/deploy/backup.html) · 升级：[Docker](https://derrors.github.io/podux/deploy/upgrade/docker.html) / [二进制](https://derrors.github.io/podux/deploy/upgrade/binary.html) |
 | 问题 | [常见问题](https://derrors.github.io/podux/troubleshoot/faq.html) · [Issues](https://github.com/Derrors/podux/issues) |

@@ -20,7 +20,7 @@ See [Data and Backups](/en/deploy/backup).
 
 Yes. Upload the TOML file on the **Import** page, preview it, and choose which proxies to import. A server with the same address and port, and proxies with the same name under it, are recognized as existing. Note:
 
-- STCP, SUDP and XTCP proxies and `[[visitors]]` are imported too; unsupported proxy types such as TCPMUX are skipped with a warning
+- Proxies of every type (with plugins, HTTP settings and load balancing) and `[[visitors]]` are imported; unknown proxy types are skipped with a warning
 - TLS certificates are imported by content only; certificate file paths in the config are ignored, so paste the certificate contents into the server settings after importing
 
 ### How do configuration changes take effect?
@@ -29,7 +29,7 @@ After you save a proxy or visitor, Podux hot-reloads that server's frpc. Only pr
 
 ### Which proxy types are supported?
 
-**TCP**, **UDP**, **HTTP**, **HTTPS**, **STCP**, **SUDP** and **XTCP**, plus visitors for STCP/SUDP/XTCP. TCPMUX is not supported yet. See [Compatibility](/en/guide/compatibility).
+**TCP**, **UDP**, **HTTP**, **HTTPS**, **STCP**, **SUDP**, **XTCP** and **TCPMUX**, plus visitors for STCP/SUDP/XTCP. See [Compatibility](/en/guide/compatibility).
 
 ### Saving a proxy says a port or domain is already used
 
@@ -52,6 +52,22 @@ The mounted host directory is not owned by the container user (UID 1000). Run `s
 ### A server cannot connect
 
 Open the server's log from its detail page to see frpc's error. Common causes: wrong address or port, a token that does not match frps, an frps version that is too old (see [Compatibility](/en/guide/compatibility)), or a firewall blocking the frps port.
+
+### A proxy is online but "Unreachable"
+
+The tunnel between frpc and frps works, but its public port or domain can't be reached from outside. Common causes: a firewall or security group on the frps host blocks the port; the domain doesn't resolve to frps; an HTTP proxy's domain doesn't match frps's `subdomainHost`. Probes go out from the Podux host; see [Traffic and Reachability](/en/guide/traffic#external-reachability-probes).
+
+### Traffic always shows "-"
+
+Traffic comes from the frps dashboard: enable webServer on frps and enter the dashboard address and login in the server settings; see [Traffic and Reachability](/en/guide/traffic).
+
+### I have to sign in again after restoring a backup
+
+Restoring replaces all data, users included, so existing sessions end. Sign in with an account from the backup.
+
+### How do I see the logs of all servers?
+
+On the **Servers** page, click **All logs** for the frpc logs of every server (plus lines that belong to no server), with level filters, search and download.
 
 ### How do I report a problem?
 

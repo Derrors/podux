@@ -299,7 +299,7 @@ function LocalServiceNode({ data }: { data: Record<string, string> }) {
         </span>
       </div>
       <span style={{ fontSize: 11, color: P.sub, fontFamily: "monospace" }}>
-        {data.localIP}:{data.localPort}
+        {data.localPort ? `${data.localIP}:${data.localPort}` : t("dashboard.topologyHandledByPlugin")}
       </span>
     </NodeCard>
   );

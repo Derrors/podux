@@ -57,8 +57,9 @@ Create and manage proxy tunnels via visual forms. Supported proxy types:
 | HTTPS | HTTPS reverse proxy |
 | STCP / SUDP | No public port; only visitors with the secret key can connect |
 | XTCP | Same, over a direct peer-to-peer connection that skips frps |
+| TCPMUX | Several TCP services share one frps port, told apart by domain |
 
-Each proxy can also use encryption, compression, a bandwidth limit and a health check. Saving checks for port and domain conflicts on the same server and names the conflicting proxy in the form.
+Each proxy can also use encryption, compression, a bandwidth limit, a health check, HTTP sign-in and path routing, a load balancing group, plugins (SOCKS5, static files, HTTPS2HTTP and more) and an expiry; see [Proxy Options](/en/guide/proxy-options). Saving checks for port and domain conflicts and names the conflicting proxy; the proxy list enables, disables, moves and deletes proxies in batches.
 
 ### Visitors
 
@@ -66,8 +67,10 @@ Listen on a local port to reach STCP/SUDP/XTCP proxies published by other machin
 
 ### Alerts and Export
 
-- Get notified through webhooks (including WeCom, DingTalk and Feishu), Telegram, Bark or email when frps is unreachable or slow, proxies go offline or frpc exits; see [Alerts](/en/guide/notifications)
+- Read each proxy's traffic from the frps dashboard and probe from outside whether proxies are really reachable; see [Traffic and Reachability](/en/guide/traffic)
+- Get notified through webhooks (including WeCom, DingTalk and Feishu), Telegram, Bark or email when frps is unreachable or slow, proxies go offline or become unreachable, or frpc exits; see [Alerts](/en/guide/notifications)
 - Export a server's configuration as an `frpc.toml` native frpc can run; see [Export Config](/en/guide/export)
+- Back up, schedule backups and restore all data in the UI; see [Data and Backups](/en/deploy/backup)
 
 ### Hot Reload
 

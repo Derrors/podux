@@ -104,7 +104,8 @@
     "trafficToday": "今日流量",
     "trafficNoDashboard": "在服务器设置中填写 frps 管理面板后显示",
     "topologyLocalListener": "本机监听",
-    "topologyFallbackOnly": "仅作回退"
+    "topologyFallbackOnly": "仅作回退",
+    "topologyHandledByPlugin": "由插件处理"
   },
   "server": {
     "title": "服务器",
@@ -466,7 +467,7 @@
     "addLocation": "添加路径",
     "requestHeaders": "请求头",
     "responseHeaders": "响应头",
-    "addHeader": "添加请求头",
+    "addHeader": "添加",
     "headerName": "名称",
     "headerValue": "值",
     "errorLocation": "路径需以 / 开头",

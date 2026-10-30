@@ -17,12 +17,27 @@ Contents:
 | `auxiliary.db` | PocketBase system logs |
 | `frpc/frpc.log` | frpc log shared by all servers, rotated daily |
 | `frpc/<server ID>/certs` | TLS certificates and private keys configured on servers |
+| `frpc/<server ID>/plugin-certs` | Certificates and keys pasted into proxy plugins (HTTPS2HTTP and others) |
+| `backups/` | Backups made in the UI |
 
 ::: warning Sensitive data
 The data directory holds frps auth tokens and TLS private keys. Restrict its permissions, and never commit it to a repository or share it publicly.
 :::
 
-## Backing Up
+## Backing Up in the UI (Recommended)
+
+Under **Settings** → **Backups**:
+
+- **Back up now**: zips the whole data directory into `backups/` inside it
+- **Automatic backups**: daily or weekly at 03:00, or a custom cron expression, keeping only the latest few; manual backups are never removed automatically
+- **Download / upload**: keep a copy elsewhere, or upload one on a new machine to restore it
+- **Restore**: replaces all current data with the backup. Podux stops all tunnels, restarts, and you sign in again
+
+::: warning
+Backup files contain everything, including tokens and private keys; protect them like the data directory. They are stored inside the data directory, so **a disk failure loses them too**: download important backups elsewhere.
+:::
+
+## Manual Backups
 
 **Offline backup (simplest)**: stop Podux and copy the whole data directory.
 
@@ -46,7 +61,7 @@ sqlite3 data.db ".backup backup.db"
 
 ## Restoring
 
-Stop Podux, replace the whole data directory with the backup (keep the original owner; UID 1000 for Docker), then start it. The database schema is migrated to the current version on startup.
+Restore UI backups from **Settings** → **Backups**. For a manual backup: stop Podux, replace the whole data directory with the backup (keep the original owner; UID 1000 for Docker), then start it. The database schema is migrated to the current version on startup.
 
 ::: tip Rolling back a version
 A newer version may already have migrated the database schema when it started. When rolling back to an older version, restore the backup taken before the upgrade as well, instead of letting the older version read the migrated data.

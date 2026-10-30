@@ -68,4 +68,13 @@ go test ./...
 go build ./...
 ```
 
+### 端到端测试
+
+`test/e2e/run.sh` 用编译好的 Podux 连接真实的 frps，检查各类隧道、插件、冲突检查、批量操作、流量统计、探测、导出、日志、有效期、备份恢复和告警。CI 会自动运行；本地运行需要 frps（[frp Releases](https://github.com/fatedier/frp/releases)，版本与 `go.mod` 中的 frp 一致）：
+
+```bash
+go build -o /tmp/podux . && go build -o /tmp/catcher ./test/e2e/catcher
+PODUX_BIN=/tmp/podux FRPS_BIN=/path/to/frps CATCHER_BIN=/tmp/catcher sh test/e2e/run.sh
+```
+
 不要提交 `pb_data/`、`pb_public/`、`site/dist/`、构建产物，以及任何 token、证书或用户数据。
