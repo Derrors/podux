@@ -54,12 +54,12 @@ Create and manage proxy tunnels via visual forms. Supported proxy types:
 | UDP | UDP traffic forwarding |
 | HTTP | HTTP reverse proxy |
 | HTTPS | HTTPS reverse proxy |
-| STCP | Secure TCP, peer-to-peer encrypted |
-| SUDP | Secure UDP |
+
+STCP, SUDP, XTCP and other types are not supported yet; when an imported TOML config contains them, those proxies are skipped with a warning.
 
 ### Hot Reload
 
-After modifying proxy configurations, Podux automatically triggers an frpc reload — **no manual restart required**, zero service interruption.
+After modifying proxy configurations, Podux automatically triggers an frpc reload — **no manual restart required**. Only proxies whose config changed are restarted; the server's other proxies keep running.
 
 ### Modern Interface
 
