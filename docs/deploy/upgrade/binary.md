@@ -18,7 +18,7 @@ sudo cp -a /var/lib/podux /var/lib/podux.bak-$(date +%F)
 ### 2. 下载新版本
 
 ```bash
-VERSION=v0.2.4
+VERSION=v0.2.5
 curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${VERSION}-linux-amd64.tar.gz
 tar -xzf podux-${VERSION}-linux-amd64.tar.gz
 ```
