@@ -47,12 +47,30 @@ func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
 		return e.JSON(200, map[string]string{"message": "frpc started"})
 	}))
 
+	// Download today's log of a server, or of all servers with id=all.
+	e.Router.GET("/api/frpc/logs/download", requireAuth(func(e *core.RequestEvent) error {
+		id := e.Request.URL.Query().Get("id")
+		if id != frpc.AllServers && !validID.MatchString(id) {
+			return e.JSON(400, map[string]string{"error": "invalid id format"})
+		}
+		if err := http.NewResponseController(e.Response).SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return e.JSON(500, map[string]string{"error": "failed to start the download"})
+		}
+		e.Response.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		e.Response.Header().Set("Content-Disposition", `attachment; filename="frpc-`+id+`-`+time.Now().Format("20060102")+`.log"`)
+		err := h.service.WriteLog(id, e.Response)
+		if errors.Is(err, frpc.ErrLogNotFound) {
+			return e.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+		}
+		return err
+	}))
+
 	e.Router.GET("/api/frpc/logs/stream", requireAuth(func(e *core.RequestEvent) error {
 		id := e.Request.URL.Query().Get("id")
 		if id == "" {
 			return e.JSON(400, map[string]string{"error": "id is required"})
 		}
-		if !validID.MatchString(id) {
+		if id != frpc.AllServers && !validID.MatchString(id) {
 			return e.JSON(400, map[string]string{"error": "invalid id format"})
 		}
 

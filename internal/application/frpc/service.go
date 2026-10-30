@@ -712,18 +712,10 @@ func (fs *Service) getFrpMainPath(id *string) string {
 // new lines every 500ms until ctx is done. It returns ErrLogNotFound, without
 // writing anything, when there is no log file yet.
 func (fs *Service) StreamLog(serverId string, ctx context.Context, w http.ResponseWriter, flusher http.Flusher) error {
-	if !validServerID.MatchString(serverId) {
-		return errors.New("invalid server id")
+	filter, err := fs.logFilter(serverId)
+	if err != nil {
+		return err
 	}
-
-	levelStr := "info"
-	if record, err := fs.app.FindRecordById("fh_servers", serverId); err == nil {
-		var logConfig v1.LogConfig
-		if err := unmarshalField(record.GetString("log"), &logConfig); err == nil && logConfig.Level != "" {
-			levelStr = logConfig.Level
-		}
-	}
-	filter := newLineFilter(serverId, levelStr)
 
 	logPath := sharedLogPath(fs.app.DataDir())
 	file, err := os.Open(logPath)
@@ -896,4 +888,66 @@ func isEmptyOption(v interface{}) bool {
 		return true
 	}
 	return false
+}
+
+// logFilter picks the log lines of a server (at its configured level), or every
+// line for AllServers.
+func (fs *Service) logFilter(serverID string) (lineFilter, error) {
+	if serverID == AllServers {
+		names := map[string]string{}
+		records, err := fs.app.FindAllRecords("fh_servers")
+		if err != nil {
+			return lineFilter{}, err
+		}
+		for _, r := range records {
+			names[r.Id] = r.GetString("serverName")
+		}
+		return newAllFilter(names), nil
+	}
+	if !validServerID.MatchString(serverID) {
+		return lineFilter{}, errors.New("invalid server id")
+	}
+	levelStr := "info"
+	if record, err := fs.app.FindRecordById("fh_servers", serverID); err == nil {
+		var logConfig v1.LogConfig
+		if err := unmarshalField(record.GetString("log"), &logConfig); err == nil && logConfig.Level != "" {
+			levelStr = logConfig.Level
+		}
+	}
+	return newLineFilter(serverID, levelStr), nil
+}
+
+// WriteLog writes today's log lines of a server (or AllServers) to w, for download.
+func (fs *Service) WriteLog(serverID string, w io.Writer) error {
+	filter, err := fs.logFilter(serverID)
+	if err != nil {
+		return err
+	}
+	file, err := os.Open(sharedLogPath(fs.app.DataDir()))
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrLogNotFound
+	}
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var reader lineReader
+	buf := make([]byte, 64*1024)
+	for {
+		n, err := file.Read(buf)
+		for _, line := range reader.feed(buf[:n]) {
+			if s, ok := filter.apply(line); ok {
+				if _, werr := io.WriteString(w, s+"\n"); werr != nil {
+					return werr
+				}
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+	}
 }

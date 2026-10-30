@@ -225,3 +225,27 @@ func TestSettingsValidation(t *testing.T) {
 		t.Errorf("disabled channel validated: %v", err)
 	}
 }
+
+func TestProbeAlerts(t *testing.T) {
+	s, _, sent := newTestService(t, "en", nil)
+	round := func(ok bool) {
+		s.ObserveProbes("srv", "home", []ProbeState{{ID: "1", Name: "web", Endpoint: "a.example.com:80", Reachable: ok}})
+	}
+	round(true)
+	for range failThreshold + 1 {
+		round(false)
+	}
+	round(true)
+	if got := strings.Join(events(*sent), ","); got != "proxy_unreachable,proxy_reachable" {
+		t.Fatalf("events = %s", got)
+	}
+	if !strings.Contains((*sent)[0].Body, "web (a.example.com:80)") {
+		t.Errorf("message = %q", (*sent)[0].Body)
+	}
+
+	*sent = nil
+	s.ProxiesExpired("srv", "home", []string{"ssh", "db"})
+	if len(*sent) != 1 || !strings.Contains((*sent)[0].Body, "db, ssh") {
+		t.Errorf("expired message = %v", *sent)
+	}
+}

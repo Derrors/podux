@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"podux/internal/application/backup"
 	"podux/internal/application/dashboard"
 	"podux/internal/application/frpc"
 	"podux/internal/application/importer"
@@ -32,7 +33,7 @@ func newTestRouter(t *testing.T) (core.App, http.Handler) {
 	serverRepo := persistence.NewServerRepository(app)
 	proxyRepo := persistence.NewProxyRepository(app)
 	metricsService := monitoring.NewMetricsService(app)
-	dashboardService := dashboard.NewService(app, server.NewService(app, serverRepo), proxy.NewService(app, proxyRepo), metricsService)
+	dashboardService := dashboard.NewService(app, server.NewService(app, serverRepo), proxy.NewService(app, proxyRepo), metricsService, monitoring.NewFrpsService(app))
 
 	r, err := apis.NewRouter(app)
 	if err != nil {
@@ -46,6 +47,11 @@ func newTestRouter(t *testing.T) (core.App, http.Handler) {
 	NewImportHandler(app, importer.NewService(app)).RegisterHandlers(e)
 	NewServerHandler(app, metricsService).RegisterHandlers(e)
 	NewNotifyHandler(notify.NewService(app)).RegisterHandlers(e)
+	NewProxyHandler(app).RegisterHandlers(e)
+	NewBackupHandler(app, backup.NewService(app)).RegisterHandlers(e)
+	frps := monitoring.NewFrpsService(app)
+	NewMonitorHandler(app, frps, monitoring.NewProbeService(app, frps)).RegisterHandlers(e)
+	proxy.RegisterConflictChecks(app)
 
 	mux, err := r.BuildMux()
 	if err != nil {
@@ -107,6 +113,19 @@ var protectedRoutes = []struct{ method, url string }{
 	{http.MethodGet, "/api/notifications"},
 	{http.MethodPut, "/api/notifications"},
 	{http.MethodPost, "/api/notifications/test"},
+	{http.MethodPost, "/api/proxies/batch"},
+	{http.MethodGet, "/api/proxies/status"},
+	{http.MethodGet, "/api/proxies/aaaaaaaaaaaaaaa/traffic"},
+	{http.MethodGet, "/api/servers/aaaaaaaaaaaaaaa/frps"},
+	{http.MethodPost, "/api/servers/frps-test"},
+	{http.MethodGet, "/api/system/backups"},
+	{http.MethodPost, "/api/system/backups"},
+	{http.MethodPut, "/api/system/backups/schedule"},
+	{http.MethodPost, "/api/system/backups/upload"},
+	{http.MethodGet, "/api/system/backups/x.zip"},
+	{http.MethodDelete, "/api/system/backups/x.zip"},
+	{http.MethodPost, "/api/system/backups/x.zip/restore"},
+	{http.MethodGet, "/api/frpc/logs/download?id=all"},
 }
 
 func TestProtectedRoutesRequireAuth(t *testing.T) {
@@ -299,5 +318,82 @@ func TestNotificationSettings(t *testing.T) {
 	// Nothing enabled to test: an empty result, not an error.
 	if rec := do(t, h, http.MethodPost, "/api/notifications/test", token, `{}`); rec.Code != http.StatusOK || rec.Body.String() != "[]" {
 		t.Errorf("empty test: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestBatchConflictResponse(t *testing.T) {
+	app, h := newTestRouter(t)
+	token := userToken(t, app)
+	s := testutil.SaveRecord(t, app, "fh_servers", map[string]any{"serverName": "s", "serverAddr": "1.1.1.1", "serverPort": 7000})
+	mk := func(name, status string) string {
+		return testutil.SaveRecord(t, app, "fh_proxies", map[string]any{
+			"name": name, "proxyType": "tcp", "serverId": s.Id, "localPort": 22, "remotePort": 6000,
+			"status": status, "bootStatus": "offline",
+		}).Id
+	}
+	mk("on", "enabled")
+	off := mk("off", "disabled")
+
+	rec := do(t, h, http.MethodPost, "/api/proxies/batch", token, `{"ids":["`+off+`"],"action":"enable"}`)
+	body := rec.Body.String()
+	if rec.Code != http.StatusBadRequest || !strings.Contains(body, `"code":"validation_port_conflict"`) ||
+		!strings.Contains(body, `"field":"remotePort"`) || !strings.Contains(body, `"proxy":"off"`) || !strings.Contains(body, `"name":"on"`) {
+		t.Fatalf("conflict: %d %s", rec.Code, body)
+	}
+	if rec := do(t, h, http.MethodPost, "/api/proxies/batch", token, `{"ids":["`+off+`"],"action":"delete"}`); rec.Code != http.StatusOK {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, http.MethodPost, "/api/proxies/batch", token, `{"ids":["x"],"action":"delete"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad id: %d", rec.Code)
+	}
+}
+
+func TestBackupEndpoints(t *testing.T) {
+	app, h := newTestRouter(t)
+	token := userToken(t, app)
+
+	rec := do(t, h, http.MethodPost, "/api/system/backups", token, "")
+	var created struct{ Name string }
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &created) != nil || created.Name == "" {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	rec = do(t, h, http.MethodGet, "/api/system/backups", token, "")
+	if !strings.Contains(rec.Body.String(), created.Name) || !strings.Contains(rec.Body.String(), `"schedule"`) {
+		t.Errorf("list: %s", rec.Body)
+	}
+	rec = do(t, h, http.MethodGet, "/api/system/backups/"+created.Name, token, "")
+	if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Body.String(), "PK") || rec.Header().Get("Content-Type") != "application/zip" {
+		t.Errorf("download: %d %q", rec.Code, rec.Header())
+	}
+	if rec := do(t, h, http.MethodPut, "/api/system/backups/schedule", token, `{"cron":"nonsense"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad cron: %d", rec.Code)
+	}
+	if rec := do(t, h, http.MethodPost, "/api/system/backups/missing.zip/restore", token, ""); rec.Code != http.StatusNotFound {
+		t.Errorf("restore missing: %d", rec.Code)
+	}
+	if rec := do(t, h, http.MethodDelete, "/api/system/backups/"+created.Name, token, ""); rec.Code != http.StatusNoContent {
+		t.Errorf("delete: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestMonitoringEndpointsWithoutDashboard(t *testing.T) {
+	app, h := newTestRouter(t)
+	token := userToken(t, app)
+	s := testutil.SaveRecord(t, app, "fh_servers", map[string]any{"serverName": "s", "serverAddr": "1.1.1.1", "serverPort": 7000})
+	p := testutil.SaveRecord(t, app, "fh_proxies", map[string]any{
+		"name": "ssh", "proxyType": "tcp", "serverId": s.Id, "localPort": 22, "status": "enabled", "bootStatus": "offline",
+	})
+
+	if rec := do(t, h, http.MethodGet, "/api/servers/"+s.Id+"/frps", token, ""); !strings.Contains(rec.Body.String(), `"configured":false`) {
+		t.Errorf("frps info: %s", rec.Body)
+	}
+	if rec := do(t, h, http.MethodGet, "/api/proxies/status", token, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"proxies":{}`) {
+		t.Errorf("status: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, http.MethodGet, "/api/proxies/"+p.Id+"/traffic", token, ""); rec.Code != http.StatusNotFound {
+		t.Errorf("traffic without dashboard: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, http.MethodPost, "/api/servers/frps-test", token, `{"url":"ftp://x"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("frps-test bad url: %d", rec.Code)
 	}
 }

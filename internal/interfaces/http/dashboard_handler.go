@@ -20,6 +20,11 @@ type DashboardStatsVo struct {
 	MaxLatency           int64            `json:"maxLatency"`
 	ProxyTypeCounts      map[string]int64 `json:"proxyTypeCounts"`
 	UptimeSeconds        int64            `json:"uptimeSeconds"`
+	VisitorsTotal        int64            `json:"visitorsTotal"`
+	VisitorsEnabled      int64            `json:"visitorsEnabled"`
+	TrafficIn            int64            `json:"trafficIn"`
+	TrafficOut           int64            `json:"trafficOut"`
+	TrafficServers       int              `json:"trafficServers"`
 }
 
 func NewDashboardHandler(dashboardService *dashboard.Service) *DashboardHandler {
@@ -49,6 +54,11 @@ func (dh *DashboardHandler) RegisterHandlers(e *core.ServeEvent) {
 			MaxLatency:           stats.MaxLatency,
 			ProxyTypeCounts:      stats.ProxyTypeCounts,
 			UptimeSeconds:        stats.UptimeSeconds,
+			VisitorsTotal:        stats.VisitorsTotal,
+			VisitorsEnabled:      stats.VisitorsEnabled,
+			TrafficIn:            stats.TrafficIn,
+			TrafficOut:           stats.TrafficOut,
+			TrafficServers:       stats.TrafficServers,
 		})
 	}))
 }

@@ -49,13 +49,22 @@ func main() {
 	settingsService := system.NewService(app)
 	geoService := monitoring.NewGeoService(app)
 	metricsService := monitoring.NewMetricsService(app)
-	dashboardService := dashboard.NewService(app, serverService, proxyService, metricsService)
+	frpsService := monitoring.NewFrpsService(app)
+	probeService := monitoring.NewProbeService(app, frpsService)
+	dashboardService := dashboard.NewService(app, serverService, proxyService, metricsService, frpsService)
 	metricsScheduler := monitoring.NewMetricsScheduler(app, metricsService)
 	networkMonitorService := monitoring.NewMonitorService(app, geoService, metricsService)
 	importService := importer.NewService(app)
 	notifyService := notify.NewService(app)
 	frpcService.SetObserver(notifyService)
 	networkMonitorService.SetLatencyObserver(notifyService.ObserveLatency)
+	probeService.SetObserver(func(serverID, serverName string, results []monitoring.ProbeResult) {
+		states := make([]notify.ProbeState, 0, len(results))
+		for _, r := range results {
+			states = append(states, notify.ProbeState{ID: r.ProxyID, Name: r.Name, Endpoint: r.Endpoint, Reachable: r.Reachable})
+		}
+		notifyService.ObserveProbes(serverID, serverName, states)
+	})
 	versionService := version.NewService(app)
 
 	// HTTP Handlers
@@ -68,6 +77,7 @@ func main() {
 	notifyHandler := httphandler.NewNotifyHandler(notifyService)
 	proxyHandler := httphandler.NewProxyHandler(app)
 	backupHandler := httphandler.NewBackupHandler(app, backup.NewService(app))
+	monitorHandler := httphandler.NewMonitorHandler(app, frpsService, probeService)
 
 	// Hooks: reload the running frpc whenever one of its proxies or visitors changes.
 	reloadServers := func(e *core.RecordEvent, serverIds ...string) {
@@ -137,11 +147,13 @@ func main() {
 		}
 		metricsService.ForgetServer(serverId)
 		notifyService.ForgetServer(serverId)
+		frpsService.ForgetServer(serverId)
 	})
 
 	// Stop background work before the app shuts down (kcp/quic sessions close gracefully).
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
 		networkMonitorService.Stop()
+		probeService.Stop()
 		frpcService.StopAll()
 		return e.Next()
 	})
@@ -163,6 +175,7 @@ func main() {
 			networkMonitorService.UpdateIntervals(settingsService.GetMonitoringIntervals())
 		})
 		metricsScheduler.Register()
+		probeService.Start()
 
 		// Register routes for each module
 		frpcHandler.RegisterHandlers(e)
@@ -174,6 +187,7 @@ func main() {
 		notifyHandler.RegisterHandlers(e)
 		proxyHandler.RegisterHandlers(e)
 		backupHandler.RegisterHandlers(e)
+		monitorHandler.RegisterHandlers(e)
 
 		// Serve static files from embedded FS
 		content, err := fs.Sub(pbPublicDir, "pb_public")

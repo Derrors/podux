@@ -62,6 +62,38 @@ type tomlProxyConfig struct {
 	SecretKey     string                 `toml:"secretKey"`
 	AllowUsers    []string               `toml:"allowUsers"`
 	HealthCheck   map[string]interface{} `toml:"healthCheck"`
+	Plugin        map[string]interface{} `toml:"plugin"`
+
+	// Stored in fh_proxies.options.
+	Locations         []string               `toml:"locations"`
+	HTTPUser          string                 `toml:"httpUser"`
+	HTTPPassword      string                 `toml:"httpPassword"`
+	HostHeaderRewrite string                 `toml:"hostHeaderRewrite"`
+	RequestHeaders    map[string]interface{} `toml:"requestHeaders"`
+	ResponseHeaders   map[string]interface{} `toml:"responseHeaders"`
+	RouteByHTTPUser   string                 `toml:"routeByHTTPUser"`
+	Multiplexer       string                 `toml:"multiplexer"`
+	LoadBalancer      map[string]interface{} `toml:"loadBalancer"`
+}
+
+// options collects the proxy keys Podux keeps in fh_proxies.options.
+func (p tomlProxyConfig) options() map[string]interface{} {
+	opts := map[string]interface{}{}
+	set := func(key string, v interface{}, empty bool) {
+		if !empty {
+			opts[key] = v
+		}
+	}
+	set("locations", p.Locations, len(p.Locations) == 0)
+	set("httpUser", p.HTTPUser, p.HTTPUser == "")
+	set("httpPassword", p.HTTPPassword, p.HTTPPassword == "")
+	set("hostHeaderRewrite", p.HostHeaderRewrite, p.HostHeaderRewrite == "")
+	set("requestHeaders", p.RequestHeaders, len(p.RequestHeaders) == 0)
+	set("responseHeaders", p.ResponseHeaders, len(p.ResponseHeaders) == 0)
+	set("routeByHTTPUser", p.RouteByHTTPUser, p.RouteByHTTPUser == "")
+	set("multiplexer", p.Multiplexer, p.Multiplexer == "")
+	set("loadBalancer", p.LoadBalancer, len(p.LoadBalancer) == 0)
+	return opts
 }
 
 type tomlVisitorConfig struct {
@@ -74,6 +106,9 @@ type tomlVisitorConfig struct {
 	BindPort       int                    `toml:"bindPort"`
 	KeepTunnelOpen bool                   `toml:"keepTunnelOpen"`
 	Transport      map[string]interface{} `toml:"transport"`
+	// FallbackTo names another visitor in the same file.
+	FallbackTo        string `toml:"fallbackTo"`
+	FallbackTimeoutMs int    `toml:"fallbackTimeoutMs"`
 }
 
 // ==================== API Data Types ====================
@@ -130,7 +165,7 @@ type ImportPreviewResponse struct {
 const WarningTLSFilePathIgnored = "tls_file_path_ignored"
 
 // WarningUnsupportedProxySkipped means the TOML has proxy types Podux can't manage
-// (such as tcpmux); they are left out of the preview and the import.
+// (unknown types); they are left out of the preview and the import.
 const WarningUnsupportedProxySkipped = "unsupported_proxy_skipped"
 
 // WarningUnsupportedVisitorSkipped means the TOML has visitors whose type is missing
@@ -142,7 +177,7 @@ func proxyTypeOf(p tomlProxyConfig) (string, bool) {
 	switch p.Type {
 	case "":
 		return "tcp", true
-	case "tcp", "udp", "http", "https", "stcp", "sudp", "xtcp":
+	case "tcp", "udp", "http", "https", "stcp", "sudp", "xtcp", "tcpmux":
 		return p.Type, true
 	}
 	return p.Type, false
@@ -548,6 +583,10 @@ func (s *Service) handleProxyImport(
 		proxyRecord.Set("secretKey", p.SecretKey)
 		proxyRecord.Set("allowUsers", p.AllowUsers)
 		proxyRecord.Set("healthCheck", p.HealthCheck)
+		proxyRecord.Set("options", p.options())
+		if len(p.Plugin) > 0 {
+			proxyRecord.Set("plugin", p.Plugin)
+		}
 		proxyRecord.Set("status", "enabled")
 		proxyRecord.Set("bootStatus", "offline")
 		proxyRecord.Set("description", "")
@@ -578,6 +617,7 @@ func (s *Service) handleVisitorImport(
 		return fmt.Errorf("找不到访问端集合: %w", err)
 	}
 
+	saved := map[string]*core.Record{} // TOML visitor name -> saved record
 	for _, v := range cfg.Visitors {
 		if !visitorTypeOk(v) {
 			result.VisitorsSkipped++
@@ -616,7 +656,21 @@ func (s *Service) handleVisitorImport(
 		if err := txApp.Save(record); err != nil {
 			return fmt.Errorf("保存访问端 %s 失败: %w", v.Name, err)
 		}
+		saved[v.Name] = record
 		result.VisitorsImported++
+	}
+
+	// fallbackTo names a visitor in the TOML; Podux stores the visitor's record ID.
+	for _, v := range cfg.Visitors {
+		record, fb := saved[v.Name], saved[v.FallbackTo]
+		if record == nil || fb == nil || v.FallbackTo == v.Name {
+			continue
+		}
+		record.Set("fallbackTo", fb.Id)
+		record.Set("fallbackTimeoutMs", v.FallbackTimeoutMs)
+		if err := txApp.Save(record); err != nil {
+			return fmt.Errorf("保存访问端 %s 失败: %w", v.Name, err)
+		}
 	}
 	return nil
 }

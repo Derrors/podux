@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"podux/internal/infrastructure/persistence"
+	"podux/internal/testutil"
+
 	golog "github.com/fatedier/golib/log"
 )
 
@@ -110,5 +113,48 @@ func TestLevelFilterFollowsLoweredThreshold(t *testing.T) {
 
 	if got, want := out.String(), "info-1\ndebug-2\n"; got != want {
 		t.Fatalf("written = %q, want %q", got, want)
+	}
+}
+
+func TestAllServersFilterAndWriteLog(t *testing.T) {
+	app := testutil.NewApp(t)
+	s1 := testutil.SaveRecord(t, app, "fh_servers", map[string]any{"serverName": "home", "serverAddr": "1.1.1.1", "serverPort": 7000})
+	logPath := sharedLogPath(app.DataDir())
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := strings.Join([]string{
+		"2026-10-30 10:00:00.000 [I] [client/service.go:1] [podux:" + s1.Id + "] login ok",
+		"2026-10-30 10:00:01.000 [D] [client/service.go:2] [podux:" + s1.Id + "] debug detail",
+		"2026-10-30 10:00:02.000 [W] [frp/global.go:3] global warning",
+		"2026-10-30 10:00:03.000 [I] [client/service.go:4] [podux:zzzzzzzzzzzzzzz] other server",
+	}, "\n") + "\n"
+	if err := os.WriteFile(logPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fs := NewService(app, persistence.NewServerRepository(app), persistence.NewProxyRepository(app), persistence.NewVisitorRepository(app))
+
+	var all strings.Builder
+	if err := fs.WriteLog(AllServers, &all); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"[home] login ok", "[home] debug detail", "global warning", "[zzzzzzzzzzzzzzz] other server"} {
+		if !strings.Contains(all.String(), want) {
+			t.Errorf("all-servers log lacks %q:\n%s", want, all.String())
+		}
+	}
+
+	var one strings.Builder
+	if err := fs.WriteLog(s1.Id, &one); err != nil {
+		t.Fatal(err)
+	}
+	// The server's own view uses its log level (info by default) and strips the tag.
+	if got := one.String(); !strings.Contains(got, "] login ok") || strings.Contains(got, "debug detail") ||
+		strings.Contains(got, "global") || strings.Contains(got, "podux:") {
+		t.Errorf("server log = %q", got)
+	}
+
+	if err := fs.WriteLog("../etc", &one); err == nil {
+		t.Error("invalid id accepted")
 	}
 }

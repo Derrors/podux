@@ -47,6 +47,16 @@ type serverState struct {
 	slow               int
 	slowAlerted        bool
 	proxies            map[string]*proxyState
+	// probes tracks external probes per proxy; name holds the probed endpoint.
+	probes map[string]*proxyState
+}
+
+// ProbeState is one proxy's external probe result.
+type ProbeState struct {
+	ID        string
+	Name      string
+	Endpoint  string
+	Reachable bool
 }
 
 type Service struct {
@@ -215,6 +225,58 @@ func (s *Service) ObserveProxies(serverID, serverName string, states []ProxyStat
 	}
 }
 
+// ObserveProbes records one round of external probes of a running server's proxies.
+// Proxies failing failThreshold probes in a row are reported together.
+func (s *Service) ObserveProbes(serverID, serverName string, results []ProbeState) {
+	settings, err := s.GetSettings()
+	if err != nil || !settings.Enabled {
+		return
+	}
+
+	var down, back []string
+	s.mu.Lock()
+	st := s.state(serverID)
+	seen := map[string]bool{}
+	for _, r := range results {
+		seen[r.ID] = true
+		ps := st.probes[r.ID]
+		if ps == nil {
+			ps = &proxyState{}
+			st.probes[r.ID] = ps
+		}
+		label := r.Name + " (" + r.Endpoint + ")"
+		if r.Reachable {
+			if ps.alerted {
+				back = append(back, label)
+			}
+			ps.offline, ps.alerted = 0, false
+			continue
+		}
+		ps.offline++
+		if ps.offline >= failThreshold && !ps.alerted {
+			ps.alerted = true
+			down = append(down, label)
+		}
+	}
+	// Proxies no longer probed (offline in frpc, disabled, deleted) are dropped quietly.
+	for id := range st.probes {
+		if !seen[id] {
+			delete(st.probes, id)
+		}
+	}
+	s.mu.Unlock()
+
+	lang := s.language()
+	sort.Strings(down)
+	sort.Strings(back)
+	if len(down) > 0 && settings.Events.ProxyUnreachable {
+		s.send(render(lang, EventProxyUnreachable, serverID, serverName, failThreshold, joinNames(down)))
+	}
+	if len(back) > 0 && settings.Events.Recovered {
+		s.send(render(lang, EventProxyReachable, serverID, serverName, joinNames(back)))
+	}
+}
+
 // FrpcExited reports that a server's frpc stopped without the user asking.
 func (s *Service) FrpcExited(serverID, serverName string, exitErr error) {
 	s.ServerStopped(serverID)
@@ -246,6 +308,7 @@ func (s *Service) ServerStopped(serverID string) {
 	defer s.mu.Unlock()
 	if st := s.servers[serverID]; st != nil {
 		st.proxies = map[string]*proxyState{}
+		st.probes = map[string]*proxyState{}
 	}
 }
 
@@ -259,7 +322,7 @@ func (s *Service) ForgetServer(serverID string) {
 func (s *Service) state(serverID string) *serverState {
 	st := s.servers[serverID]
 	if st == nil {
-		st = &serverState{proxies: map[string]*proxyState{}}
+		st = &serverState{proxies: map[string]*proxyState{}, probes: map[string]*proxyState{}}
 		s.servers[serverID] = st
 	}
 	return st

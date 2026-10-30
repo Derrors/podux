@@ -81,7 +81,7 @@ allowUsers = ["*"]
 
 [[proxies]]
 name = "mux"
-type = "tcpmux"
+type = "ftp"
 localPort = 80
 
 [[visitors]]
@@ -166,5 +166,92 @@ func TestImportSecretTypesAndVisitors(t *testing.T) {
 	}
 	if result.VisitorsImported != 0 || result.VisitorsSkipped != 2 {
 		t.Errorf("re-import result = %+v", result)
+	}
+}
+
+const optionsToml = `
+serverAddr = "frps2.example.com"
+
+[[proxies]]
+name = "web"
+type = "http"
+localPort = 80
+customDomains = ["a.example.com"]
+locations = ["/api"]
+httpUser = "u"
+httpPassword = "p"
+hostHeaderRewrite = "internal"
+requestHeaders.set.x-from = "podux"
+loadBalancer.group = "web"
+loadBalancer.groupKey = "k"
+
+[[proxies]]
+name = "mux"
+type = "tcpmux"
+multiplexer = "httpconnect"
+customDomains = ["ssh.example.com"]
+localPort = 22
+
+[[proxies]]
+name = "files"
+type = "tcp"
+remotePort = 6000
+[proxies.plugin]
+type = "static_file"
+localPath = "/srv/files"
+stripPrefix = "static"
+
+[[visitors]]
+name = "p2p"
+type = "xtcp"
+serverName = "nas"
+bindPort = 6001
+fallbackTo = "relay"
+fallbackTimeoutMs = 500
+
+[[visitors]]
+name = "relay"
+type = "stcp"
+serverName = "nas"
+bindPort = -1
+`
+
+func TestImportOptionsPluginsAndFallback(t *testing.T) {
+	app := testutil.NewApp(t)
+	s := NewService(app)
+
+	preview, err := s.ParseToml(&ParseTomlRequest{TomlContent: optionsToml})
+	if err != nil || len(preview.Proxies) != 3 || len(preview.Warnings) != 0 {
+		t.Fatalf("preview = %+v, %v", preview, err)
+	}
+	_, err = s.ExecuteImport(&ExecuteImportRequest{
+		TomlContent: optionsToml, ImportServer: true, ImportVisitors: true,
+		Proxies: []ProxyImportOption{{Name: "web", Import: true}, {Name: "mux", Import: true}, {Name: "files", Import: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	web, _ := app.FindFirstRecordByData("fh_proxies", "name", "web")
+	var opts map[string]any
+	if err := web.UnmarshalJSONField("options", &opts); err != nil {
+		t.Fatal(err)
+	}
+	lb, _ := opts["loadBalancer"].(map[string]any)
+	if opts["httpUser"] != "u" || opts["hostHeaderRewrite"] != "internal" || lb["group"] != "web" || opts["locations"] == nil {
+		t.Errorf("web options = %v", opts)
+	}
+	if mux, _ := app.FindFirstRecordByData("fh_proxies", "name", "mux"); mux.GetString("proxyType") != "tcpmux" {
+		t.Errorf("tcpmux not imported: %v", mux)
+	}
+	files, _ := app.FindFirstRecordByData("fh_proxies", "name", "files")
+	if !strings.Contains(files.GetString("plugin"), "static_file") || !strings.Contains(files.GetString("plugin"), "/srv/files") {
+		t.Errorf("plugin = %s", files.GetString("plugin"))
+	}
+
+	p2p, _ := app.FindFirstRecordByData("fh_visitors", "name", "p2p")
+	relay, _ := app.FindFirstRecordByData("fh_visitors", "name", "relay")
+	if p2p.GetString("fallbackTo") != relay.Id || p2p.GetInt("fallbackTimeoutMs") != 500 {
+		t.Errorf("fallback = %q/%d, want %q/500", p2p.GetString("fallbackTo"), p2p.GetInt("fallbackTimeoutMs"), relay.Id)
 	}
 }

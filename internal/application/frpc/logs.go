@@ -109,18 +109,45 @@ var levelTags = map[string]golog.Level{
 	"[E]": golog.ErrorLevel,
 }
 
+// AllServers is the server ID that selects the whole frpc log, including lines
+// that belong to no server.
+const AllServers = "all"
+
 // lineFilter selects one server's lines at or above its configured level and
-// strips the server tag from them.
+// strips the server tag from them. With names set (the AllServers view) it keeps
+// every line and replaces server tags with "[<server name>] ".
 type lineFilter struct {
 	tag      string
 	minLevel golog.Level
+	names    map[string]string
 }
 
 func newLineFilter(serverID, levelStr string) lineFilter {
 	return lineFilter{tag: serverLogTag(serverID), minLevel: parseLevel(levelStr)}
 }
 
+// newAllFilter keeps every line, naming servers by their display names.
+func newAllFilter(names map[string]string) lineFilter {
+	return lineFilter{minLevel: golog.TraceLevel, names: names}
+}
+
 func (f lineFilter) apply(line string) (string, bool) {
+	if f.names != nil {
+		start := strings.Index(line, "["+serverLogPrefixName+":")
+		if start < 0 {
+			return line, true
+		}
+		end := strings.Index(line[start:], "] ")
+		if end < 0 {
+			return line, true
+		}
+		id := line[start+len(serverLogPrefixName)+2 : start+end]
+		name := f.names[id]
+		if name == "" {
+			name = id
+		}
+		return line[:start] + "[" + name + "] " + line[start+end+2:], true
+	}
 	idx := strings.Index(line, f.tag)
 	if idx < 0 {
 		return "", false

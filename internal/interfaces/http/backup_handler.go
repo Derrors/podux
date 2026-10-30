@@ -39,7 +39,7 @@ func backupError(e *core.RequestEvent, err error) error {
 }
 
 func (h *BackupHandler) RegisterHandlers(e *core.ServeEvent) {
-	e.Router.GET("/api/backups", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.GET("/api/system/backups", requireAuth(func(e *core.RequestEvent) error {
 		list, err := h.service.List()
 		if err != nil {
 			return backupError(e, err)
@@ -47,7 +47,7 @@ func (h *BackupHandler) RegisterHandlers(e *core.ServeEvent) {
 		return e.JSON(http.StatusOK, map[string]any{"backups": list, "schedule": h.service.GetSchedule()})
 	}))
 
-	e.Router.POST("/api/backups", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.POST("/api/system/backups", requireAuth(func(e *core.RequestEvent) error {
 		name, err := h.service.Create(e.Request.Context(), buildinfo.AppVersion)
 		if err != nil {
 			return backupError(e, err)
@@ -55,7 +55,7 @@ func (h *BackupHandler) RegisterHandlers(e *core.ServeEvent) {
 		return e.JSON(http.StatusOK, map[string]string{"name": name})
 	}))
 
-	e.Router.PUT("/api/backups/schedule", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.PUT("/api/system/backups/schedule", requireAuth(func(e *core.RequestEvent) error {
 		var sc backup.Schedule
 		if err := e.BindBody(&sc); err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -66,7 +66,7 @@ func (h *BackupHandler) RegisterHandlers(e *core.ServeEvent) {
 		return e.JSON(http.StatusOK, h.service.GetSchedule())
 	}))
 
-	e.Router.POST("/api/backups/upload", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.POST("/api/system/backups/upload", requireAuth(func(e *core.RequestEvent) error {
 		_, fh, err := e.Request.FormFile("file")
 		if err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "missing backup file"})
@@ -78,7 +78,7 @@ func (h *BackupHandler) RegisterHandlers(e *core.ServeEvent) {
 		return e.JSON(http.StatusOK, map[string]string{"name": name})
 	})).Bind(apis.BodyLimit(maxBackupUpload))
 
-	e.Router.GET("/api/backups/{name}", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.GET("/api/system/backups/{name}", requireAuth(func(e *core.RequestEvent) error {
 		name := e.Request.PathValue("name")
 		r, size, err := h.service.Open(name)
 		if err != nil {
@@ -93,7 +93,7 @@ func (h *BackupHandler) RegisterHandlers(e *core.ServeEvent) {
 		return err
 	}))
 
-	e.Router.DELETE("/api/backups/{name}", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.DELETE("/api/system/backups/{name}", requireAuth(func(e *core.RequestEvent) error {
 		if err := h.service.Delete(e.Request.PathValue("name")); err != nil {
 			return backupError(e, err)
 		}
@@ -101,7 +101,7 @@ func (h *BackupHandler) RegisterHandlers(e *core.ServeEvent) {
 	}))
 
 	// Restore answers first, then replaces the data and restarts Podux in the background.
-	e.Router.POST("/api/backups/{name}/restore", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.POST("/api/system/backups/{name}/restore", requireAuth(func(e *core.RequestEvent) error {
 		name := e.Request.PathValue("name")
 		if !h.service.Exists(name) {
 			return backupError(e, backup.ErrNotFound)
