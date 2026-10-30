@@ -18,7 +18,7 @@
 也可以用命令行下载（以 Linux amd64 为例，版本号换成最新版本）：
 
 ```bash
-VERSION=v0.2.2
+VERSION=v0.2.3
 curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${VERSION}-linux-amd64.tar.gz
 curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/checksums.txt
 sha256sum --ignore-missing -c checksums.txt

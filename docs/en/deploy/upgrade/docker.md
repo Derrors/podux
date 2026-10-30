@@ -47,13 +47,13 @@ docker run -d \
 Replace the `latest` tag with a version number (without the `v`), for example:
 
 ```yaml
-image: ghcr.io/derrors/podux:0.2.2
+image: ghcr.io/derrors/podux:0.2.3
 ```
 
 If your `docker-compose.yml` uses `${VERSION:-latest}` (see [Docker Installation](/en/deploy/install/docker)), you can also run:
 
 ```bash
-VERSION=0.2.2 docker compose up -d
+VERSION=0.2.3 docker compose up -d
 ```
 
 ## Rolling Back
@@ -67,5 +67,5 @@ docker compose down
 rm -rf ./data && cp -a ./data.bak-<date> ./data
 
 # Point the image tag back at the old version and start
-VERSION=0.2.1 docker compose up -d
+VERSION=0.2.2 docker compose up -d
 ```
