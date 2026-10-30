@@ -8,7 +8,7 @@ import (
 	serverdomain "podux/internal/domain/server"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 type DashboardStats struct {

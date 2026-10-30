@@ -6,7 +6,7 @@ import (
 	"podux/internal/domain/proxy"
 	"podux/internal/testutil"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 func newTestApp(t *testing.T) core.App {

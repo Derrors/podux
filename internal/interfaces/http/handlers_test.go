@@ -19,8 +19,8 @@ import (
 	"podux/internal/infrastructure/persistence"
 	"podux/internal/testutil"
 
-	"github.com/pocketbase/pocketbase/apis"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/apis"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // newTestRouter registers every custom route on PocketBase's own router, so requests

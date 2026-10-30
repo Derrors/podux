@@ -3,7 +3,7 @@ package version
 import (
 	"runtime/debug"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 type Service struct {

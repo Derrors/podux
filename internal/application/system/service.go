@@ -10,7 +10,7 @@ import (
 
 	"podux/pkg/buildinfo"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 const SettingsID = "wcstsqmz8hur331"

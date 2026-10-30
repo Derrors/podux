@@ -3,8 +3,8 @@ package server
 import (
 	"fmt"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // RegisterDeleteHooks makes deleting an fh_servers record also delete its proxies,

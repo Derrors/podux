@@ -1,6 +1,6 @@
 package monitoring
 
-import "github.com/pocketbase/pocketbase/core"
+import "ganigeorgiev.com/pocketbase/pocketbase/core"
 
 // MetricsScheduler registers cron jobs for metrics aggregation and data retention.
 type MetricsScheduler struct {

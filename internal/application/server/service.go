@@ -3,7 +3,7 @@ package server
 import (
 	serverdomain "podux/internal/domain/server"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 type Service struct {

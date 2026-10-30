@@ -7,7 +7,7 @@ import (
 
 	"podux/internal/application/frpc"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 type FrpcHandler struct {

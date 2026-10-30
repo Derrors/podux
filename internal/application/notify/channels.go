@@ -11,8 +11,8 @@ import (
 	"net/mail"
 	"strings"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/mailer"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/tools/mailer"
 )
 
 // sendAll delivers m to every enabled channel and returns each channel's error.

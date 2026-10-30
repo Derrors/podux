@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // GeoService resolves IP addresses to geolocation data with a 24-hour in-memory cache.

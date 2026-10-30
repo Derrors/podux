@@ -2,9 +2,11 @@
 
 ## Project Scope and Technology Stack
 
-Podux is a web management platform for centrally managing frpc server configurations, proxies, connection status, network latency, and runtime logs. The current codebase uses Go 1.27, PocketBase 0.40.6, and embedded frp 0.71.1. The application frontend is under `site/` and uses React 19, TypeScript 5.9, Vite 7, Radix Themes 3, and Tailwind CSS 4. `docs/` is a VitePress 1 documentation site; its Vue dependency does not mean that the application frontend uses Vue.
+Podux is a web management platform for centrally managing frpc server configurations, proxies, connection status, network latency, and runtime logs. The current codebase uses Go 1.27, PocketBase 0.41.1 (module `ganigeorgiev.com/pocketbase/pocketbase`), and embedded frp 0.71.1. The application frontend is under `site/` and uses React 19, TypeScript 5.9, Vite 7, Radix Themes 3, and Tailwind CSS 4. `docs/` is a VitePress 1 documentation site; its Vue dependency does not mean that the application frontend uses Vue.
 
 Treat `go.mod`, `site/package.json`, and `docs/package.json` as the sources of truth for versions and dependencies. Do not infer versions from documentation examples.
+
+PocketBase left GitHub in v0.41: its Go modules (`pocketbase`, `dbx`, `ozzo-validation`) are now published under `ganigeorgiev.com/pocketbase/*`, and `github.com/pocketbase/*` is archived. Import only the new paths; check new releases and the changelog at `https://ganigeorgiev.com/pocketbase/pocketbase` (or in the module's `CHANGELOG.md` after `go mod download`).
 
 ## Directory Map
 

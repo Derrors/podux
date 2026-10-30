@@ -3,7 +3,7 @@ package proxy
 import (
 	proxydomain "podux/internal/domain/proxy"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 type Service struct {

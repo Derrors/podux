@@ -6,7 +6,7 @@ import (
 
 	_ "podux/migrations"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // NewApp returns a bootstrapped app with all migrations applied in a temp data dir.

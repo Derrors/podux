@@ -13,7 +13,7 @@ import (
 	"podux/internal/application/system"
 	"podux/internal/testutil"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // newTestService returns a service with notifications enabled and messages captured.

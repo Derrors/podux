@@ -6,8 +6,8 @@ import (
 
 	"podux/internal/testutil"
 
-	validation "github.com/pocketbase/ozzo-validation/v4"
-	"github.com/pocketbase/pocketbase/core"
+	validation "ganigeorgiev.com/pocketbase/ozzo-validation/v4"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 func newRecord(t *testing.T, app core.App, collection string, fields map[string]any) *core.Record {

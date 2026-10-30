@@ -17,7 +17,7 @@ import (
 
 	"podux/internal/application/system"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // failThreshold is how many consecutive bad observations raise an alert.

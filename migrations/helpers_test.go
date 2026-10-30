@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // revertThrough rolls back app migrations one at a time, newest first, until

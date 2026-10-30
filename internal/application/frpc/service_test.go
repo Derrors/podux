@@ -10,7 +10,7 @@ import (
 	proxydomain "podux/internal/domain/proxy"
 	serverdomain "podux/internal/domain/server"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 type fakeServerRepo struct {

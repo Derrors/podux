@@ -12,7 +12,7 @@ import (
 	"podux/internal/infrastructure/persistence"
 	"podux/internal/testutil"
 
-	"github.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/dbx"
 )
 
 // TestStopDuringLaunchCancelsIt stops a server while LaunchFrpc is still building its

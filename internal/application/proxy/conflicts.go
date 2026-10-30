@@ -8,9 +8,9 @@ import (
 	proxydomain "podux/internal/domain/proxy"
 	"podux/internal/domain/visitor"
 
-	"github.com/pocketbase/dbx"
-	validation "github.com/pocketbase/ozzo-validation/v4"
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/dbx"
+	validation "ganigeorgiev.com/pocketbase/ozzo-validation/v4"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 // Validation error codes returned in the PocketBase error data; the UI translates them.

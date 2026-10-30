@@ -3,7 +3,7 @@ package httphandler
 import (
 	"podux/internal/application/version"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 type VersionHandler struct {

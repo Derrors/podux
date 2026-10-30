@@ -5,7 +5,7 @@ import (
 
 	"podux/internal/application/notify"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 type NotifyHandler struct {

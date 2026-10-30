@@ -3,16 +3,17 @@ module podux
 go 1.27
 
 require (
+	ganigeorgiev.com/pocketbase/dbx v1.13.0
+	ganigeorgiev.com/pocketbase/ozzo-validation/v4 v4.4.1
+	ganigeorgiev.com/pocketbase/pocketbase v0.41.1
 	github.com/fatedier/frp v0.71.1
 	github.com/fatedier/golib v0.8.2
 	github.com/pelletier/go-toml/v2 v2.2.0
-	github.com/pocketbase/dbx v1.12.0
-	github.com/pocketbase/ozzo-validation/v4 v4.3.0
-	github.com/pocketbase/pocketbase v0.40.6
 	github.com/spf13/cobra v1.10.2
 )
 
 require (
+	ganigeorgiev.com/fexpr v0.7.0 // indirect
 	github.com/Azure/go-ntlmssp v0.1.1 // indirect
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
@@ -24,7 +25,6 @@ require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
-	github.com/ganigeorgiev/fexpr v0.6.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
@@ -52,7 +52,7 @@ require (
 	github.com/xtaci/kcp-go/v5 v5.6.13 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/image v0.47.0 // indirect
-	golang.org/x/net v0.61.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect

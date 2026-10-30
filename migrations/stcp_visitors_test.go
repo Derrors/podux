@@ -5,7 +5,7 @@ import (
 
 	"podux/internal/testutil"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 func TestSecretProxiesAndVisitors(t *testing.T) {

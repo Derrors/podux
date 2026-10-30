@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"podux/internal/application/system"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 type SystemHandler struct {

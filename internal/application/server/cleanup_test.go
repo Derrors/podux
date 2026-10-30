@@ -7,7 +7,7 @@ import (
 
 	"podux/internal/testutil"
 
-	"github.com/pocketbase/pocketbase/core"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
 func seedServer(t *testing.T, app core.App, name string) (server *core.Record, proxyIDs []string) {

@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
+	"ganigeorgiev.com/pocketbase/dbx"
+	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/pelletier/go-toml/v2"
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
 )
 
 // ==================== TOML Parse Types ====================
