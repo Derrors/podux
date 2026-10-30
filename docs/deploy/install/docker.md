@@ -16,7 +16,7 @@ ghcr.io/derrors/podux:latest
 ```
 
 - 支持架构：`linux/amd64`、`linux/arm64`、`linux/arm/v7`
-- 标签：除 `latest` 外，每个版本都有对应的标签（如 `0.2.5`），生产环境建议固定版本
+- 标签：除 `latest` 外，每个版本都有对应的标签（如 `0.2.6`），生产环境建议固定版本
 - 容器内以 UID/GID 1000 运行，数据目录为 `/app/pb_data`，监听 `8090` 端口，内置健康检查（`/api/health`）
 
 ## 网络模式

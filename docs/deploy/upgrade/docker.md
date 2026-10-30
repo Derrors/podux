@@ -47,13 +47,13 @@ docker run -d \
 把镜像标签从 `latest` 换成版本号（不带 `v`），例如：
 
 ```yaml
-image: ghcr.io/derrors/podux:0.2.5
+image: ghcr.io/derrors/podux:0.2.6
 ```
 
 如果 `docker-compose.yml` 使用了 `${VERSION:-latest}`（见 [Docker 安装](/deploy/install/docker)），也可以直接：
 
 ```bash
-VERSION=0.2.5 docker compose up -d
+VERSION=0.2.6 docker compose up -d
 ```
 
 ## 回滚
@@ -67,5 +67,5 @@ docker compose down
 rm -rf ./data && cp -a ./data.bak-<日期> ./data
 
 # 把镜像标签改回旧版本后启动
-VERSION=0.2.4 docker compose up -d
+VERSION=0.2.5 docker compose up -d
 ```

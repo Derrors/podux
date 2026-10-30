@@ -16,7 +16,7 @@ ghcr.io/derrors/podux:latest
 ```
 
 - Architectures: `linux/amd64`, `linux/arm64`, `linux/arm/v7`
-- Tags: besides `latest`, every release has its own tag (such as `0.2.5`); pin a version in production
+- Tags: besides `latest`, every release has its own tag (such as `0.2.6`); pin a version in production
 - The container runs as UID/GID 1000, keeps data in `/app/pb_data`, listens on port `8090`, and has a built-in health check (`/api/health`)
 
 ## Network Mode
