@@ -1,3 +1,6 @@
+/** frp auth.additionalScopes: also authenticate heartbeats and new work connections. */
+export type AuthScope = "HeartBeats" | "NewWorkConns";
+
 export type ServerBootStatus = "running" | "stopped" | (string & {});
 
 export interface NetworkStatus {
@@ -57,7 +60,12 @@ export interface ServerRecord extends Omit<ServerListItem, "networkStatus"> {
     oidcClientId: string;
     oidcClientSecret: string;
     oidcAudience: string;
+    oidcScope?: string;
     oidcTokenEndpoint: string;
+    oidcAdditionalParams?: Record<string, string>;
+    oidcTrustedCa?: string;
+    oidcInsecureSkipVerify?: boolean;
+    additionalScopes?: AuthScope[];
   };
   transport?: {
     protocol: "tcp" | "kcp" | "quic" | "websocket" | "wss";

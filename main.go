@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log"
 
+	"podux/internal/application/apikey"
 	"podux/internal/application/backup"
 	"podux/internal/application/dashboard"
 	"podux/internal/application/frpc"
@@ -77,6 +78,8 @@ func main() {
 	proxyHandler := httphandler.NewProxyHandler(app)
 	backupHandler := httphandler.NewBackupHandler(app, backup.NewService(app))
 	monitorHandler := httphandler.NewMonitorHandler(app, frpsService, probeService)
+	apiKeyService := apikey.NewService(app)
+	apiKeyHandler := httphandler.NewAPIKeyHandler(apiKeyService, monitoring.NewExporter(app, metricsService, frpsService, probeService))
 
 	// Hooks: reload the running frpc whenever one of its proxies or visitors changes.
 	reloadServers := func(e *core.RecordEvent, serverIds ...string) {
@@ -176,6 +179,9 @@ func main() {
 		metricsScheduler.Register()
 		probeService.Start()
 
+		// API keys only unlock routes wrapped with requireScope; see httphandler.APIKeyAuth.
+		e.Router.Bind(httphandler.APIKeyAuth(apiKeyService))
+
 		// Register routes for each module
 		frpcHandler.RegisterHandlers(e)
 		versionHandler.RegisterHandlers(e)
@@ -187,6 +193,7 @@ func main() {
 		proxyHandler.RegisterHandlers(e)
 		backupHandler.RegisterHandlers(e)
 		monitorHandler.RegisterHandlers(e)
+		apiKeyHandler.RegisterHandlers(e)
 
 		// Serve static files from embedded FS
 		content, err := fs.Sub(pbPublicDir, "pb_public")

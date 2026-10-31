@@ -2,11 +2,11 @@
 
 ## Sources of Truth and Migration Constraints
 
-PocketBase uses SQLite and registers Go migrations through the blank import of `migrations` in `main.go`; `migratecmd` enables `Automigrate: true`. `migrations/1774402980_collections_snapshot.go` imports the collection snapshot with `ImportCollectionsByMarshaledJSON(..., false)`; its rollback function is currently empty. `migrations/1793274060_enable_rate_limits.go` turns on PocketBase's built-in rate limiting (off by default) and ensures a `*:auth` rule (2 password logins per 3 seconds per client IP); existing rules are kept, and its rollback disables rate limiting. `migrations/1793360460_proxy_description.go` adds the optional `fh_proxies.description` text field; its rollback removes the field. `migrations/1793446860_stcp_visitors.go` adds stcp/sudp/xtcp to `fh_proxies.proxyType`, adds `secretKey`, `allowUsers`, and `healthCheck` to `fh_proxies`, and creates `fh_visitors`; its rollback drops the collection and fields. `migrations/1793533260_notifications.go` adds `fh_settings.notifications`; its rollback removes it. `migrations/1793619660_schema_cleanup.go` turns the port fields into integer number fields (converting stored text), drops `fh_version`, merges duplicate metrics targets and hourly/daily rows and adds unique indexes; its rollback restores text ports, `fh_version` and the old indexes (merged duplicates stay merged). `migrations/1793706060_proxy_options.go` adds the tcpmux proxy type, `fh_proxies.options`/`expiresAt`, `fh_visitors.fallbackTo`/`fallbackTimeoutMs` and `fh_servers.dashboard`; its rollback removes them. Migration tests roll back with `revertThrough` in `migrations/helpers_test.go`, which keeps working as migrations are added. The migration, not any running `pb_data/data.db`, is therefore the primary schema source of truth.
+PocketBase uses SQLite and registers Go migrations through the blank import of `migrations` in `main.go`; `migratecmd` enables `Automigrate: true`. `migrations/1774402980_collections_snapshot.go` imports the collection snapshot with `ImportCollectionsByMarshaledJSON(..., false)`; its rollback function is currently empty. `migrations/1793274060_enable_rate_limits.go` turns on PocketBase's built-in rate limiting (off by default) and ensures a `*:auth` rule (2 password logins per 3 seconds per client IP); existing rules are kept, and its rollback disables rate limiting. `migrations/1793360460_proxy_description.go` adds the optional `fh_proxies.description` text field; its rollback removes the field. `migrations/1793446860_stcp_visitors.go` adds stcp/sudp/xtcp to `fh_proxies.proxyType`, adds `secretKey`, `allowUsers`, and `healthCheck` to `fh_proxies`, and creates `fh_visitors`; its rollback drops the collection and fields. `migrations/1793533260_notifications.go` adds `fh_settings.notifications`; its rollback removes it. `migrations/1793619660_schema_cleanup.go` turns the port fields into integer number fields (converting stored text), drops `fh_version`, merges duplicate metrics targets and hourly/daily rows and adds unique indexes; its rollback restores text ports, `fh_version` and the old indexes (merged duplicates stay merged). `migrations/1793706060_proxy_options.go` adds the tcpmux proxy type, `fh_proxies.options`/`expiresAt`, `fh_visitors.fallbackTo`/`fallbackTimeoutMs` and `fh_servers.dashboard`; its rollback removes them. `migrations/1793792460_api_keys.go` creates `fh_api_keys`; its rollback drops it. Migration tests roll back with `revertThrough` in `migrations/helpers_test.go`, which keeps working as migrations are added. The migration, not any running `pb_data/data.db`, is therefore the primary schema source of truth.
 
 Every structure/rule/index change must add a reviewable migration with an appropriate rollback. Never modify production SQLite directly or make changes only through the PocketBase Admin UI. "Default" below records only snapshot autogeneration behavior; fields without an explicit statement have no verified schema default.
 
-The snapshot also contains PocketBase system collections such as `_mfas`, `_otps`, `_externalAuths`, `_authOrigins`, and `_superusers`, which are not individually modeled here. There are nine application collections: `fh_users`, `fh_servers`, `fh_proxies`, `fh_visitors`, `fh_settings`, `fh_metrics_targets`, `fh_metrics_raw`, `fh_metrics_hourly`, and `fh_metrics_daily`.
+The snapshot also contains PocketBase system collections such as `_mfas`, `_otps`, `_externalAuths`, `_authOrigins`, and `_superusers`, which are not individually modeled here. There are ten application collections: `fh_users`, `fh_servers`, `fh_proxies`, `fh_visitors`, `fh_settings`, `fh_api_keys`, `fh_metrics_targets`, `fh_metrics_raw`, `fh_metrics_hourly`, and `fh_metrics_daily`.
 
 Every base collection has a required system text primary key named `id`, automatically generated as 15 lowercase alphanumeric characters. Collections with `created`/`updated` use autodate fields. In the descriptions below, `—` means an empty rule, so only a superuser may perform that operation through the PocketBase Record API; this does not restrict internal server-side database/service access.
 
@@ -45,7 +45,7 @@ Purpose: remote frps connections and shared frpc configuration.
 | `serverAddr` | text | Required | frps address |
 | `serverPort` | number | Required, integer 0–65535 | frps port |
 | `description` | text | Optional | Description |
-| `auth` | json | Optional | frp authentication (`method`, `token`, flat `oidcClientId`/`oidcClientSecret`/`oidcAudience`/`oidcTokenEndpoint`, mapped to frp's `auth.oidc` at launch); may contain tokens/secrets |
+| `auth` | json | Optional | frp authentication: `method`, `token`, `additionalScopes`, and flat `oidcClientId`/`oidcClientSecret`/`oidcAudience`/`oidcScope`/`oidcTokenEndpoint`/`oidcAdditionalParams`/`oidcTrustedCa` (PEM, written to `certs/oidc-ca.pem`)/`oidcInsecureSkipVerify`, mapped to frp's `auth.oidc` at launch. Only the chosen method's fields reach frp; may contain tokens/secrets |
 | `transport` | json | Optional | frp transport/TLS; may contain certificate private keys |
 | `metadatas` | json | Optional | frp metadata |
 | `log` | json | Optional | frp logging configuration |
@@ -116,6 +116,21 @@ Index: non-unique `serverId`. All rules require authentication (`@request.auth.i
 Purpose: system initialization state and general settings. Fields are optional `initialized` bool, optional `general` JSON, and autodate `created`/`updated`; there are no application indexes. All list/view/create/update/delete rules require authentication, but the unauthenticated custom initialization API writes the fixed ID `wcstsqmz8hur331` inside a server-side transaction. Used `general` keys include `defaultLanguage`, `latencyCheckInterval`, and `locationCheckInterval`; updates merge into the stored keys. The optional `notifications` JSON holds alert settings (`enabled`, `events`, `latencyThresholdMs`, and `webhook`/`telegram`/`bark`/`email` channels); it may contain bot tokens and webhook URLs, so treat it as secret.
 
 Mapping: `application/system.Service`, the system handler, React GeneralSettings, and the initialization flow; `notifications` maps to `application/notify`, the notify handler, and React NotificationSettings.
+
+### `fh_api_keys`
+
+Purpose: API keys for scripts and Prometheus. It has no relations, so it is not in the diagram.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `name` | text, max 100 | Yes | Label shown in the UI |
+| `keyHash` | text, max 64, hidden | Yes | Hex SHA-256 of the key; the key itself is never stored |
+| `prefix` | text, max 32 | No | First 12 characters of the key (`pdx_` + 8), to recognize it |
+| `scope` | select `read`/`write` | Yes | `write` also allows everything `read` does |
+| `lastUsedAt` | date | No | Written at most once a minute per key |
+| `created`,`updated` | autodate | Automatic | Creation/update timestamps |
+
+Index: unique `keyHash`. All rules are nil (superusers only): Podux users manage keys through `/api/api-keys`, never the collection API, and the hidden hash is not returned by it. Keys are 32 random bytes, base64url-encoded after `pdx_`; a fast hash is enough for that entropy. Mapping: `application/apikey`, `httphandler.APIKeyAuth`/`requireScope`, the API key handler, and React ApiKeySettings.
 
 ### `fh_metrics_targets`
 

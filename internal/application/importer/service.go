@@ -26,8 +26,21 @@ type tomlFrpClientConfig struct {
 }
 
 type tomlAuthConfig struct {
-	Method string `toml:"method"`
-	Token  string `toml:"token"`
+	Method           string         `toml:"method"`
+	Token            string         `toml:"token"`
+	AdditionalScopes []string       `toml:"additionalScopes"`
+	OIDC             tomlOIDCConfig `toml:"oidc"`
+}
+
+type tomlOIDCConfig struct {
+	ClientID                 string            `toml:"clientID"`
+	ClientSecret             string            `toml:"clientSecret"`
+	Audience                 string            `toml:"audience"`
+	Scope                    string            `toml:"scope"`
+	TokenEndpointURL         string            `toml:"tokenEndpointURL"`
+	AdditionalEndpointParams map[string]string `toml:"additionalEndpointParams"`
+	TrustedCaFile            string            `toml:"trustedCaFile"`
+	InsecureSkipVerify       bool              `toml:"insecureSkipVerify"`
 }
 
 type tomlLogConfig struct {
@@ -254,11 +267,7 @@ func (s *Service) ParseToml(req *ParseTomlRequest) (*ImportPreviewResponse, erro
 		existingServerId = existingServerRow.Id
 	}
 
-	// Build auth map
-	authMap := map[string]interface{}{
-		"method": cfg.Auth.Method,
-		"token":  cfg.Auth.Token,
-	}
+	authMap, authWarnings := buildAuthMap(cfg.Auth)
 
 	// Build log map with defaults
 	logLevel := cfg.Log.Level
@@ -275,6 +284,9 @@ func (s *Service) ParseToml(req *ParseTomlRequest) (*ImportPreviewResponse, erro
 	}
 
 	transportMap, warnings := buildTransportMap(cfg.Transport)
+	if len(authWarnings) > 0 && !slices.Contains(warnings, WarningTLSFilePathIgnored) {
+		warnings = append(warnings, authWarnings...)
+	}
 
 	metadatas := cfg.Metadatas
 	if metadatas == nil {
@@ -457,10 +469,8 @@ func (s *Service) handleServerImport(
 		metadatas = map[string]string{}
 	}
 
-	authJSON, _ := json.Marshal(map[string]interface{}{
-		"method": cfg.Auth.Method,
-		"token":  cfg.Auth.Token,
-	})
+	authMap, _ := buildAuthMap(cfg.Auth)
+	authJSON, _ := json.Marshal(authMap)
 	logJSON, _ := json.Marshal(map[string]interface{}{
 		"level":   logLevel,
 		"maxDays": logMaxDays,
@@ -692,6 +702,35 @@ func (s *Service) findVisitorID(app core.App, serverId, name string) string {
 // buildTransportMap converts the TOML transport section into the stored JSON shape.
 // frp's TOML references TLS files by path while Podux stores their PEM contents,
 // so path values are dropped and reported as a warning.
+// buildAuthMap maps [auth] to fh_servers.auth, whose OIDC settings are flat keys
+// as the server form saves them. A CA given as a path is dropped with a warning.
+func buildAuthMap(a tomlAuthConfig) (map[string]interface{}, []string) {
+	var warnings []string
+	ca := a.OIDC.TrustedCaFile
+	if ca != "" && !strings.Contains(ca, "-----BEGIN") {
+		ca = ""
+		warnings = append(warnings, WarningTLSFilePathIgnored)
+	}
+	m := map[string]interface{}{
+		"method":                 a.Method,
+		"token":                  a.Token,
+		"oidcClientId":           a.OIDC.ClientID,
+		"oidcClientSecret":       a.OIDC.ClientSecret,
+		"oidcAudience":           a.OIDC.Audience,
+		"oidcScope":              a.OIDC.Scope,
+		"oidcTokenEndpoint":      a.OIDC.TokenEndpointURL,
+		"oidcTrustedCa":          ca,
+		"oidcInsecureSkipVerify": a.OIDC.InsecureSkipVerify,
+	}
+	if len(a.OIDC.AdditionalEndpointParams) > 0 {
+		m["oidcAdditionalParams"] = a.OIDC.AdditionalEndpointParams
+	}
+	if len(a.AdditionalScopes) > 0 {
+		m["additionalScopes"] = a.AdditionalScopes
+	}
+	return m, warnings
+}
+
 func buildTransportMap(t tomlTransportConfig) (map[string]interface{}, []string) {
 	protocol := t.Protocol
 	if protocol == "" {

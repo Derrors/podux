@@ -93,6 +93,16 @@ check "export redacts the token" "<redacted>" "$(api GET "/api/frpc/export?id=$S
 check "log download" "start proxy success" "$(api GET "/api/frpc/logs/download?id=$S")"
 check "all-servers log names servers" "[e2e]" "$(api GET "/api/frpc/logs/download?id=all")"
 
+echo "== API keys and metrics"
+KEY=$(api POST /api/api-keys -d '{"name":"e2e","scope":"read"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+[ -n "$KEY" ] || fail "create API key"
+metrics() { curl -s "$B/api/metrics" -H "Authorization: Bearer $KEY"; }
+check "metrics: tcp proxy online" "proxy=\"web\",type=\"tcp\",server_id=\"$S\",server=\"e2e\"} 1" "$(metrics | grep '^podux_proxy_online')"
+check "metrics: traffic from frps" "podux_proxy_today_traffic_in_bytes{proxy_id=\"$TCP\"" "$(metrics)"
+check "metrics: proxy reachable" "podux_proxy_reachable{proxy_id=\"$TCP\"" "$(metrics)"
+check "read key cannot stop frpc" "403" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST "$B/api/frpc/terminate" -H "Authorization: Bearer $KEY" -d "{\"id\":\"$S\"}")"
+check "key is not a session" '"totalItems":0' "$(curl -s "$B/api/collections/fh_servers/records" -H "Authorization: Bearer $KEY")"
+
 echo "== expiry"
 EXP=$(proxy '"name":"tmp","proxyType":"tcp","localIP":"127.0.0.1","localPort":18090,"remotePort":16089,"expiresAt":"2020-01-01 00:00:00.000Z"' | id_of)
 wait_for "expired proxy disabled" 75 sh -c "curl -s '$B/api/collections/fh_proxies/records/$EXP' -H 'Authorization: $T' | grep -q '\"status\":\"disabled\"'"

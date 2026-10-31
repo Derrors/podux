@@ -20,9 +20,10 @@ var secretKeys = map[string]bool{
 
 // Exported TLS files, relative to the exported frpc.toml.
 const (
-	exportCertFile = "certs/cert.pem"
-	exportKeyFile  = "certs/key.pem"
-	exportCAFile   = "certs/ca.pem"
+	exportCertFile   = "certs/cert.pem"
+	exportKeyFile    = "certs/key.pem"
+	exportCAFile     = "certs/ca.pem"
+	exportOIDCCAFile = "certs/oidc-ca.pem"
 )
 
 // ExportToml renders a server's configuration as an frpc.toml that native frpc can
@@ -57,6 +58,11 @@ func (fs *Service) ExportToml(serverID string, includeSecrets bool) ([]byte, err
 			tls.TrustedCaFile = exportCAFile
 			files = append(files, exportCAFile)
 		}
+	}
+
+	if common.Auth.OIDC.TrustedCaFile != "" {
+		common.Auth.OIDC.TrustedCaFile = exportOIDCCAFile
+		files = append(files, exportOIDCCAFile)
 	}
 
 	files = append(files, exportPluginCerts(proxies)...)

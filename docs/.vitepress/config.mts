@@ -36,8 +36,10 @@ export default defineConfig({
             items: [
               { text: '代理进阶设置', link: '/guide/proxy-options' },
               { text: 'STCP/XTCP 与访问端', link: '/guide/secret-proxies' },
+              { text: 'OIDC 认证', link: '/guide/oidc' },
               { text: '流量与可达性', link: '/guide/traffic' },
               { text: '告警通知', link: '/guide/notifications' },
+              { text: 'API 与指标', link: '/guide/api' },
               { text: '导出配置', link: '/guide/export' },
             ]
           },
@@ -105,8 +107,10 @@ export default defineConfig({
             items: [
               { text: 'Proxy Options', link: '/en/guide/proxy-options' },
               { text: 'STCP/XTCP and Visitors', link: '/en/guide/secret-proxies' },
+              { text: 'OIDC Authentication', link: '/en/guide/oidc' },
               { text: 'Traffic and Reachability', link: '/en/guide/traffic' },
               { text: 'Alerts', link: '/en/guide/notifications' },
+              { text: 'API and Metrics', link: '/en/guide/api' },
               { text: 'Export Config', link: '/en/guide/export' }
             ]
           },

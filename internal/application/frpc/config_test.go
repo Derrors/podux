@@ -1,7 +1,10 @@
 package frpc
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"podux/internal/infrastructure/persistence"
@@ -13,11 +16,15 @@ import (
 
 func TestGenCommonCfgsMapsFlatOIDC(t *testing.T) {
 	app := testutil.NewApp(t)
+	ca := "-----BEGIN CERTIFICATE-----\nidp\n-----END CERTIFICATE-----"
 	server := testutil.SaveRecord(t, app, "fh_servers", map[string]any{
 		"serverName": "s", "serverAddr": "127.0.0.1", "serverPort": 7000, "bootStatus": "stopped",
 		"auth": map[string]any{
-			"method": "oidc", "oidcClientId": "cid", "oidcClientSecret": "secret",
-			"oidcAudience": "aud", "oidcTokenEndpoint": "https://idp.example.com/token",
+			// token is left over from the token method; frp should not get it.
+			"method": "oidc", "token": "old-token", "additionalScopes": []string{"HeartBeats"},
+			"oidcClientId": "cid", "oidcClientSecret": "secret", "oidcAudience": "aud", "oidcScope": "frp",
+			"oidcTokenEndpoint": "https://idp.example.com/token", "oidcAdditionalParams": map[string]string{"resource": "frps"},
+			"oidcTrustedCa": ca, "oidcInsecureSkipVerify": true,
 		},
 		"transport": map[string]any{"tls": map[string]any{"enable": false}},
 	})
@@ -27,14 +34,48 @@ func TestGenCommonCfgsMapsFlatOIDC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := v1.AuthOIDCClientConfig{
-		ClientID: "cid", ClientSecret: "secret", Audience: "aud",
-		TokenEndpointURL: "https://idp.example.com/token",
+	o := cfg.Auth.OIDC
+	if cfg.Auth.Method != "oidc" || cfg.Auth.Token != "" || len(cfg.Auth.AdditionalScopes) != 1 ||
+		o.ClientID != "cid" || o.ClientSecret != "secret" || o.Audience != "aud" || o.Scope != "frp" ||
+		o.TokenEndpointURL != "https://idp.example.com/token" || o.AdditionalEndpointParams["resource"] != "frps" ||
+		!o.InsecureSkipVerify {
+		t.Fatalf("auth = %+v", cfg.Auth)
 	}
-	if cfg.Auth.Method != "oidc" || cfg.Auth.OIDC.ClientID != want.ClientID ||
-		cfg.Auth.OIDC.ClientSecret != want.ClientSecret || cfg.Auth.OIDC.Audience != want.Audience ||
-		cfg.Auth.OIDC.TokenEndpointURL != want.TokenEndpointURL {
-		t.Fatalf("auth = %+v, want method oidc with %+v", cfg.Auth, want)
+	// The pasted CA is written next to the TLS certificates and referenced by path.
+	if b, err := os.ReadFile(o.TrustedCaFile); err != nil || string(b) != ca || filepath.Base(o.TrustedCaFile) != "oidc-ca.pem" {
+		t.Fatalf("oidc CA file %q: %v %q", o.TrustedCaFile, err, b)
+	}
+	if err := cfg.Complete(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validation.NewConfigValidator(nil).ValidateClientCommonConfig(cfg); err != nil {
+		t.Fatalf("frp rejects the config: %v", err)
+	}
+}
+
+func TestGenCommonCfgsDropsOIDCForToken(t *testing.T) {
+	app := testutil.NewApp(t)
+	server := testutil.SaveRecord(t, app, "fh_servers", map[string]any{
+		"serverName": "s", "serverAddr": "127.0.0.1", "serverPort": 7000, "bootStatus": "stopped",
+		"auth":      map[string]any{"method": "token", "token": "tok", "oidcClientId": "cid", "oidcClientSecret": "secret"},
+		"transport": map[string]any{"tls": map[string]any{"enable": false}},
+	})
+	fs := NewService(app, persistence.NewServerRepository(app), persistence.NewProxyRepository(app), persistence.NewVisitorRepository(app))
+
+	cfg, err := fs.genCommonCfgs(&server.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.Token != "tok" || cfg.Auth.OIDC.ClientID != "" || cfg.Auth.OIDC.ClientSecret != "" {
+		t.Fatalf("auth = %+v", cfg.Auth)
+	}
+}
+
+func TestSensitiveRegexMasksOIDCSecret(t *testing.T) {
+	cfg := v1.ClientCommonConfig{Auth: v1.AuthClientConfig{Method: "oidc", OIDC: v1.AuthOIDCClientConfig{ClientID: "cid", ClientSecret: "oidc-secret"}}}
+	b, _ := json.Marshal(cfg)
+	if masked := string(sensitiveRegex.ReplaceAll(b, []byte(`"${1}":"***"`))); strings.Contains(masked, "oidc-secret") || !strings.Contains(masked, "cid") {
+		t.Fatalf("masked config: %s", masked)
 	}
 }
 

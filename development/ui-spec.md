@@ -43,7 +43,7 @@ The project has no custom token file. It primarily consumes Radix CSS variables 
 
 - Dashboard: `site/src/pages/Dashboard/DashboardPage.view.tsx` combines `PageHeader`, `StatCard`, Radix Grid/Card, and `TopologyChart`; data orchestration is in `useDashboard.ts`.
 - Servers/Proxies: `site/src/pages/Servers/ServersPage.view.tsx` and `site/src/pages/Proxies/ProxiesPage.view.tsx` are the primary references for responsive lists, status badges, action menus, and AlertDialog. Their forms are under the corresponding `*FormPage` directories.
-- Settings: `site/src/pages/Settings/SettingsPage.view.tsx` and `SettingsPage.css` use a 240px sidebar, active accent state, and content area. `GeneralSettings.tsx` demonstrates `FormItem`, loading, and save toast; `ProfileSettings.tsx` demonstrates profile cards and security sections.
+- Settings: `site/src/pages/Settings/SettingsPage.view.tsx` and `SettingsPage.css` use a 240px sidebar, active accent state, and content area; at 760px and below the sidebar becomes a horizontally scrolling row of tabs above the content, and the content area has `min-width: 0` so wide tables scroll inside their `overflow-x-auto` wrapper. `GeneralSettings.tsx` demonstrates `FormItem`, loading, and save toast; `ProfileSettings.tsx` demonstrates profile cards and security sections; `ApiKeySettings.tsx` shows a newly created secret once in a Callout with a copy button.
 
 ## Responsiveness, Themes, Internationalization, and Accessibility
 
@@ -64,6 +64,5 @@ The project has no custom token file. It primarily consumes Radix CSS variables 
 ## Technical Debt
 
 - There is no centralized project-owned set of spacing, shadow, z-index, or motion tokens; the UI relies on Radix scales mixed with local pixel values.
-- Settings has only a desktop 240px sidebar, with no dedicated mobile adaptation rules found; verify on a real device.
 - Error state, ErrorBoundary, and form-error presentation do not yet follow a unified shared pattern.
 - Actual interaction animations do not yet systematically honor `prefers-reduced-motion`.

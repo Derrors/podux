@@ -7,6 +7,7 @@ import { apiGet, apiPost } from "../../../lib/api";
 import { notifyError } from "../../../lib/notify";
 import { toast } from "sonner";
 import { REGEX } from "../../../lib/regex";
+import type { AuthScope } from "../../../types/server";
 
 export interface ServerFormData {
   serverName: string;
@@ -22,7 +23,13 @@ export interface ServerFormData {
     oidcClientId: string;
     oidcClientSecret: string;
     oidcAudience: string;
+    oidcScope: string;
     oidcTokenEndpoint: string;
+    oidcAdditionalParams: Record<string, string>;
+    /** PEM contents of a CA for the token endpoint, like the TLS fields. */
+    oidcTrustedCa: string;
+    oidcInsecureSkipVerify: boolean;
+    additionalScopes: AuthScope[];
   };
   log: {
     level: "trace" | "debug" | "info" | "warn" | "error";
@@ -59,7 +66,12 @@ const defaultData: ServerFormData = {
     oidcClientId: "",
     oidcClientSecret: "",
     oidcAudience: "",
+    oidcScope: "",
     oidcTokenEndpoint: "",
+    oidcAdditionalParams: {},
+    oidcTrustedCa: "",
+    oidcInsecureSkipVerify: false,
+    additionalScopes: [],
   },
   log: {
     level: "info",
@@ -80,6 +92,19 @@ const defaultData: ServerFormData = {
   metadatas: {},
   dashboard: { url: "", user: "", password: "" },
 };
+
+/** The checks frp makes on auth.oidc at startup, so they show up on the form instead. */
+export function validateOidc(auth: ServerFormData["auth"], t: (key: string) => string): Record<string, string> {
+  const errors: Record<string, string> = {};
+  if (!auth.oidcClientId.trim()) errors.oidcClientId = t("server.errorRequired");
+  const endpoint = auth.oidcTokenEndpoint.trim();
+  if (!endpoint) errors.oidcTokenEndpoint = t("server.errorRequired");
+  else if (!/^https?:\/\/[^/\s]+/i.test(endpoint)) errors.oidcTokenEndpoint = t("server.errorOidcEndpoint");
+  const keys = Object.keys(auth.oidcAdditionalParams);
+  if (keys.includes("scope")) errors.oidcAdditionalParams = t("server.errorOidcParamScope");
+  else if (keys.includes("audience") && auth.oidcAudience.trim()) errors.oidcAdditionalParams = t("server.errorOidcParamAudience");
+  return errors;
+}
 
 export function useServerForm() {
   const { t } = useTranslation();
@@ -117,7 +142,12 @@ export function useServerForm() {
           serverVersion: record.serverVersion || "built-in",
           description: record.description || "",
           autoConnection: record.autoConnection || false,
-          auth: { ...defaultData.auth, ...(record.auth || {}) },
+          auth: {
+            ...defaultData.auth,
+            ...(record.auth || {}),
+            oidcAdditionalParams: record.auth?.oidcAdditionalParams || {},
+            additionalScopes: record.auth?.additionalScopes || [],
+          },
           log: { ...defaultData.log, ...(record.log || {}) },
           transport: {
             ...defaultData.transport,
@@ -159,8 +189,11 @@ export function useServerForm() {
     }
   };
 
-  const handleAuthChange = (field: keyof ServerFormData["auth"], value: string) => {
+  const handleAuthChange = <K extends keyof ServerFormData["auth"]>(field: K, value: ServerFormData["auth"][K]) => {
     setFormData((prev) => ({ ...prev, auth: { ...prev.auth, [field]: value } }));
+    if (field === "oidcClientId" || field === "oidcTokenEndpoint" || field === "oidcAdditionalParams" || field === "oidcAudience") {
+      setErrors((prev) => ({ ...prev, oidcClientId: "", oidcTokenEndpoint: "", oidcAdditionalParams: "" }));
+    }
   };
 
   const handleLogChange = (field: keyof ServerFormData["log"], value: string | number) => {
@@ -205,6 +238,7 @@ export function useServerForm() {
     else if (!REGEX.IP_OR_HOSTNAME.test(data.serverAddr)) newErrors.serverAddr = t("server.errorInvalidAddr");
     if (!data.serverPort) newErrors.serverPort = t("server.errorRequired");
     else if (!REGEX.PORT.test(data.serverPort.toString())) newErrors.serverPort = t("server.errorInvalidPort");
+    if (data.auth.method === "oidc") Object.assign(newErrors, validateOidc(data.auth, t));
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };

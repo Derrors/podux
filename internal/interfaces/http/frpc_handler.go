@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"podux/internal/application/apikey"
 	"podux/internal/application/frpc"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
@@ -23,7 +24,7 @@ func NewFrpcHandler(app core.App, service *frpc.Service) *FrpcHandler {
 }
 
 func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
-	e.Router.POST("/api/frpc/launch", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.POST("/api/frpc/launch", requireScope(apikey.ScopeWrite, func(e *core.RequestEvent) error {
 		data := struct {
 			ID string `json:"id"`
 		}{}
@@ -119,7 +120,7 @@ func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
 		return e.Blob(http.StatusOK, "application/toml; charset=utf-8", out)
 	}))
 
-	e.Router.POST("/api/frpc/terminate", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.POST("/api/frpc/terminate", requireScope(apikey.ScopeWrite, func(e *core.RequestEvent) error {
 		data := struct {
 			ID string `json:"id"`
 		}{}
@@ -140,7 +141,7 @@ func (h *FrpcHandler) RegisterHandlers(e *core.ServeEvent) {
 		return e.JSON(200, map[string]string{"message": "frpc terminated"})
 	}))
 
-	e.Router.POST("/api/frpc/reload", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.POST("/api/frpc/reload", requireScope(apikey.ScopeWrite, func(e *core.RequestEvent) error {
 		data := struct {
 			ID string `json:"id"`
 		}{}

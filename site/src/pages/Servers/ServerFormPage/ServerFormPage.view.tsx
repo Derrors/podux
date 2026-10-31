@@ -20,6 +20,7 @@ import { FormItem } from "../../../components/FormItem";
 import { PageHeader } from "../../../components/PageHeader";
 import { SectionHeading } from "../../../components/SectionHeading";
 import { DashboardSection } from "./DashboardSection";
+import { AuthScopesField, OidcFields } from "./OidcFields";
 import { RadioCardGroup } from "../../../components/RadioCardGroup";
 import { type ServerFormData } from "./useServerForm";
 
@@ -32,7 +33,7 @@ interface ServerFormPageViewProps {
   frpVersion: string;
   mounted: boolean;
   onChange: (field: keyof Omit<ServerFormData, "auth" | "log" | "transport" | "metadatas">, value: string | number | boolean) => void;
-  onAuthChange: (field: keyof ServerFormData["auth"], value: string) => void;
+  onAuthChange: <K extends keyof ServerFormData["auth"]>(field: K, value: ServerFormData["auth"][K]) => void;
   onLogChange: (field: keyof ServerFormData["log"], value: string | number) => void;
   onTransportChange: (field: keyof ServerFormData["transport"], value: string) => void;
   onTlsChange: (field: keyof ServerFormData["transport"]["tls"], value: boolean) => void;
@@ -70,7 +71,6 @@ export function ServerFormPageView({
 }: ServerFormPageViewProps) {
   const { t } = useTranslation();
   const [showToken, setShowToken] = useState(false);
-  const [showOidcSecret, setShowOidcSecret] = useState(false);
   const [newMetaKey, setNewMetaKey] = useState("");
   const [newMetaValue, setNewMetaValue] = useState("");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -189,11 +189,10 @@ export function ServerFormPageView({
                       options={[
                         { value: "none",  label: t("server.authMethodNone"),  icon: "lucide:ban" },
                         { value: "token", label: t("server.authMethodToken"), icon: "lucide:key" },
-                        { value: "oidc",  label: t("server.authMethodOidc"),  icon: "lucide:shield-check", comingSoon: true },
+                        { value: "oidc",  label: t("server.authMethodOidc"),  icon: "lucide:shield-check" },
                       ]}
                       value={formData.auth.method}
                       onChange={(v) => onAuthChange("method", v as ServerFormData["auth"]["method"])}
-                      comingSoonLabel={t("common.comingSoon")}
                     />
                   </FormItem>
 
@@ -229,50 +228,10 @@ export function ServerFormPageView({
                   </AnimatePresence>
 
                   {formData.auth.method === "oidc" && (
-                    <Flex direction="column" gap="3">
-                      <FormItem label={t("server.clientId")}>
-                        <TextField.Root
-                          size="2"
-                          placeholder={t("server.clientIdPlaceholder")}
-                          value={formData.auth.oidcClientId}
-                          onChange={(e) => onAuthChange("oidcClientId", e.target.value)}
-                        />
-                      </FormItem>
-                      <FormItem label={t("server.clientSecret")}>
-                        <TextField.Root
-                          size="2"
-                          type={showOidcSecret ? "text" : "password"}
-                          placeholder={t("server.clientSecretPlaceholder")}
-                          value={formData.auth.oidcClientSecret}
-                          onChange={(e) => onAuthChange("oidcClientSecret", e.target.value)}
-                        >
-                          <TextField.Slot side="right">
-                            <Icon
-                              icon={showOidcSecret ? "lucide:eye-off" : "lucide:eye"}
-                              className="cursor-pointer"
-                              onClick={() => setShowOidcSecret(!showOidcSecret)}
-                            />
-                          </TextField.Slot>
-                        </TextField.Root>
-                      </FormItem>
-                      <FormItem label={t("server.audience")}>
-                        <TextField.Root
-                          size="2"
-                          placeholder={t("server.audiencePlaceholder")}
-                          value={formData.auth.oidcAudience}
-                          onChange={(e) => onAuthChange("oidcAudience", e.target.value)}
-                        />
-                      </FormItem>
-                      <FormItem label={t("server.tokenEndpoint")}>
-                        <TextField.Root
-                          size="2"
-                          placeholder={t("server.tokenEndpointPlaceholder")}
-                          value={formData.auth.oidcTokenEndpoint}
-                          onChange={(e) => onAuthChange("oidcTokenEndpoint", e.target.value)}
-                        />
-                      </FormItem>
-                    </Flex>
+                    <OidcFields auth={formData.auth} errors={errors} onChange={onAuthChange} />
                   )}
+
+                  {formData.auth.method !== "none" && <AuthScopesField auth={formData.auth} onChange={onAuthChange} />}
                 </Flex>
               </section>
 

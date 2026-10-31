@@ -8,6 +8,7 @@ import { ProfileSettings } from "./ProfileSettings";
 import { GeneralSettings } from "./GeneralSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { BackupSettings } from "./BackupSettings";
+import { ApiKeySettings } from "./ApiKeySettings";
 import "./SettingsPage.css";
 
 export function SettingsView() {
@@ -30,7 +31,7 @@ export function SettingsView() {
 
         {/* Main Interface */}
         <Card size="3" className="settings-card">
-          <Flex>
+          <Flex className="settings-layout">
             {/* Modern Navigation Sidebar */}
             <Box className="settings-sidebar">
               <Flex direction="column" gap="2" className="settings-nav">
@@ -67,6 +68,18 @@ export function SettingsView() {
                     <Icon icon="lucide:archive" width="18" height="18" />
                     <Text size="2" weight="medium">
                       {t("backup.tab")}
+                    </Text>
+                  </Flex>
+                </button>
+                <button
+                  className="nav-item"
+                  data-state={activeTab === "api" ? "active" : "inactive"}
+                  onClick={() => handleTabChange("api")}
+                >
+                  <Flex align="center" gap="3">
+                    <Icon icon="lucide:key-round" width="18" height="18" />
+                    <Text size="2" weight="medium">
+                      {t("apiKeys.tab")}
                     </Text>
                   </Flex>
                 </button>
@@ -119,6 +132,17 @@ export function SettingsView() {
                     transition={{ duration: 0.4 }}
                   >
                     <BackupSettings />
+                  </motion.div>
+                )}
+                {activeTab === "api" && (
+                  <motion.div
+                    key="api"
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -20 }}
+                    transition={{ duration: 0.4 }}
+                  >
+                    <ApiKeySettings />
                   </motion.div>
                 )}
                 {activeTab === "profile" && (

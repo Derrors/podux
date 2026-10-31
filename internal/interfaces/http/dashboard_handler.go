@@ -1,6 +1,7 @@
 package httphandler
 
 import (
+	"podux/internal/application/apikey"
 	"podux/internal/application/dashboard"
 	"podux/pkg/response"
 
@@ -40,7 +41,7 @@ func (dh *DashboardHandler) RegisterHandlers(e *core.ServeEvent) {
 		return e.JSON(200, data)
 	}))
 
-	e.Router.GET("/api/dashboard/stats", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.GET("/api/dashboard/stats", requireScope(apikey.ScopeRead, func(e *core.RequestEvent) error {
 		stats, err := dh.dashboardService.GetStats()
 		if err != nil {
 			return e.JSON(500, response.Error(err))

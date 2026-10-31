@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"podux/internal/application/apikey"
 	"podux/internal/application/proxy"
 
 	validation "ganigeorgiev.com/pocketbase/ozzo-validation/v4"
@@ -28,7 +29,7 @@ func (h *ProxyHandler) RegisterHandlers(e *core.ServeEvent) {
 	// Enable, disable, delete or move several proxies at once, all or nothing.
 	// A failure names the proxy and, for validation errors such as a port
 	// conflict, the field, code and params like PocketBase's own errors.
-	e.Router.POST("/api/proxies/batch", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.POST("/api/proxies/batch", requireScope(apikey.ScopeWrite, func(e *core.RequestEvent) error {
 		var req batchRequest
 		if err := e.BindBody(&req); err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})

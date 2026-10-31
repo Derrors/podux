@@ -37,7 +37,7 @@ Podux 正是为解决这些问题而生。
 集中管理多个 frps 服务器，支持：
 
 - 每台服务器对应一个独立的 frpc 实例，可单独启动、停止
-- token 与 OIDC 认证；tcp、kcp、quic、websocket、wss 传输协议，可配置 TLS 证书
+- token 与 [OIDC](/guide/oidc) 认证；tcp、kcp、quic、websocket、wss 传输协议，可配置 TLS 证书
 - 开启"自动连接"的服务器在 Podux 启动时自动上线
 - 定时探测延迟并保留历史曲线，显示服务器地理位置
 - 删除服务器时一并清理其代理和监控数据
@@ -67,6 +67,7 @@ Podux 正是为解决这些问题而生。
 - 读取 frps 管理面板显示每个代理的流量，并从外部探测代理是否真的可以访问，见[流量与可达性](/guide/traffic)
 - 服务器不可达、延迟过高、代理掉线或外网不可达、frpc 意外退出时，通过 Webhook（含企业微信、钉钉、飞书）、Telegram、Bark 或邮件通知，见[告警通知](/guide/notifications)
 - 把服务器的配置导出为原生 frpc 可用的 `frpc.toml`，见[导出配置](/guide/export)
+- 用 API Key 让脚本和 Home Assistant 调用，`/api/metrics` 提供 Prometheus 指标，见 [API 与指标](/guide/api)
 - 在界面中备份、定时备份和恢复全部数据，见[数据与备份](/deploy/backup)
 
 ### 热重载

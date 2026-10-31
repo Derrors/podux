@@ -79,7 +79,7 @@ Once connected, the server shows as running and starts displaying latency and lo
 You can now reach the machine with `ssh -p 6022 user@your-server.com`.
 
 ::: tip Already have an frpc config?
-Upload your existing `frpc.toml` on the **Import** page to preview and import its server, proxies and visitors in one go. Unsupported proxy types (such as TCPMUX) are skipped with a warning.
+Upload your existing `frpc.toml` on the **Import** page to preview and import its server, proxies and visitors in one go. Server auth settings, including [OIDC](/en/guide/oidc), are imported too; unknown proxy types are skipped with a warning.
 :::
 
 ## PocketBase Admin UI (Optional)

@@ -49,6 +49,7 @@ Podux embeds frpc as a library. The backend is built on [PocketBase](https://poc
 - **Proxies**: form-based TCP, UDP, HTTP, HTTPS, TCPMUX, STCP, SUDP and XTCP proxies with subdomains and custom domains, HTTP sign-in and path routing, load balancing, encryption, compression, bandwidth limits, health checks, 9 plugins and expiry; port and domain conflicts are caught on save; batch actions and cloning; changes are hot-reloaded and **only proxies whose config changed are restarted**
 - **Visitors**: listen on a local port to reach STCP/SUDP/XTCP proxies published by other machines, without a public port on frps
 - **Monitoring and alerts**: dashboard and topology chart; latency history and server geolocation; per-proxy traffic from the frps dashboard; external probes of whether proxies are really reachable; live frpc logs with filters and download; alerts by webhook (including WeCom, DingTalk and Feishu), Telegram, Bark or email when frps is unreachable, proxies go offline or become unreachable, and more
+- **API and metrics**: read-only or read-and-write API keys for scripts and Home Assistant; Prometheus metrics at `/api/metrics` for Grafana
 - **Import, export and backups**: import an existing frpc TOML config, with a preview and duplicate detection; export a server's configuration as an `frpc.toml` native frpc can run; back up, schedule backups and restore in the UI
 - **More**: first-run admin setup and rate-limited login; Chinese / English UI, light / dark theme, mobile-friendly layout
 
@@ -107,7 +108,7 @@ You can also run the [binary](https://derrors.github.io/podux/en/deploy/install/
 | | |
 | --- | --- |
 | Getting started | [What is Podux](https://derrors.github.io/podux/en/guide/what-is-podux.html) · [Getting started](https://derrors.github.io/podux/en/guide/getting-started.html) · [Compatibility](https://derrors.github.io/podux/en/guide/compatibility.html) |
-| Features | [Proxy options](https://derrors.github.io/podux/en/guide/proxy-options.html) · [STCP/XTCP and visitors](https://derrors.github.io/podux/en/guide/secret-proxies.html) · [Traffic and reachability](https://derrors.github.io/podux/en/guide/traffic.html) · [Alerts](https://derrors.github.io/podux/en/guide/notifications.html) · [Export config](https://derrors.github.io/podux/en/guide/export.html) |
+| Features | [Proxy options](https://derrors.github.io/podux/en/guide/proxy-options.html) · [STCP/XTCP and visitors](https://derrors.github.io/podux/en/guide/secret-proxies.html) · [Traffic and reachability](https://derrors.github.io/podux/en/guide/traffic.html) · [Alerts](https://derrors.github.io/podux/en/guide/notifications.html) · [API and metrics](https://derrors.github.io/podux/en/guide/api.html) · [Export config](https://derrors.github.io/podux/en/guide/export.html) |
 | Install | [Docker](https://derrors.github.io/podux/en/deploy/install/docker.html) · [Binary](https://derrors.github.io/podux/en/deploy/install/binary.html) |
 | Operations | [Data and backups](https://derrors.github.io/podux/en/deploy/backup.html) · Upgrade: [Docker](https://derrors.github.io/podux/en/deploy/upgrade/docker.html) / [Binary](https://derrors.github.io/podux/en/deploy/upgrade/binary.html) |
 | Help | [FAQ](https://derrors.github.io/podux/en/troubleshoot/faq.html) · [Issues](https://github.com/Derrors/podux/issues) |

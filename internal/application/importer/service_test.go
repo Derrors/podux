@@ -255,3 +255,46 @@ func TestImportOptionsPluginsAndFallback(t *testing.T) {
 		t.Errorf("fallback = %q/%d, want %q/500", p2p.GetString("fallbackTo"), p2p.GetInt("fallbackTimeoutMs"), relay.Id)
 	}
 }
+
+func TestBuildAuthMapOIDC(t *testing.T) {
+	var cfg tomlFrpClientConfig
+	src := `
+[auth]
+method = "oidc"
+additionalScopes = ["HeartBeats"]
+[auth.oidc]
+clientID = "cid"
+clientSecret = "secret"
+audience = "aud"
+scope = "frp"
+tokenEndpointURL = "https://idp.example.com/token"
+trustedCaFile = "/etc/frp/idp-ca.pem"
+insecureSkipVerify = true
+[auth.oidc.additionalEndpointParams]
+resource = "frps"
+`
+	if err := toml.Unmarshal([]byte(src), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	m, warnings := buildAuthMap(cfg.Auth)
+	want := map[string]any{
+		"method": "oidc", "oidcClientId": "cid", "oidcClientSecret": "secret", "oidcAudience": "aud",
+		"oidcScope": "frp", "oidcTokenEndpoint": "https://idp.example.com/token", "oidcTrustedCa": "",
+		"oidcInsecureSkipVerify": true,
+	}
+	for k, v := range want {
+		if m[k] != v {
+			t.Errorf("%s = %v, want %v", k, m[k], v)
+		}
+	}
+	if p, _ := m["oidcAdditionalParams"].(map[string]string); p["resource"] != "frps" {
+		t.Errorf("oidcAdditionalParams = %v", m["oidcAdditionalParams"])
+	}
+	if s, _ := m["additionalScopes"].([]string); !slices.Equal(s, []string{"HeartBeats"}) {
+		t.Errorf("additionalScopes = %v", m["additionalScopes"])
+	}
+	// The CA was a path, which Podux cannot read.
+	if !slices.Equal(warnings, []string{WarningTLSFilePathIgnored}) {
+		t.Errorf("warnings = %v", warnings)
+	}
+}

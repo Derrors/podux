@@ -21,8 +21,39 @@
 
 .settings-content {
   flex: 1;
+  /* Lets wide tables scroll inside their own overflow box instead of widening the page. */
+  min-width: 0;
   padding: 24px 32px;
   min-height: 500px;
+}
+
+/* Mobile: the sidebar becomes a row of tabs above the content. */
+@media (max-width: 760px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-sidebar {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--gray-5);
+    padding: 12px;
+    overflow-x: auto;
+  }
+
+  .settings-nav {
+    flex-direction: row !important;
+  }
+
+  .settings-nav .nav-item {
+    width: auto !important;
+    white-space: nowrap;
+  }
+
+  .settings-content {
+    padding: 20px 16px;
+    min-height: 0;
+  }
 }
 
 .nav-item {

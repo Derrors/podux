@@ -40,7 +40,7 @@ Podux was built to solve exactly these problems.
 Centrally manage multiple frps servers with support for:
 
 - One independent frpc instance per server, started and stopped individually
-- Token and OIDC authentication; tcp, kcp, quic, websocket and wss transports, with configurable TLS certificates
+- Token and [OIDC](/en/guide/oidc) authentication; tcp, kcp, quic, websocket and wss transports, with configurable TLS certificates
 - Servers with "auto connect" come online when Podux starts
 - Periodic latency probes with history charts, plus server geolocation
 - Deleting a server also removes its proxies and monitoring data
@@ -70,6 +70,7 @@ Listen on a local port to reach STCP/SUDP/XTCP proxies published by other machin
 - Read each proxy's traffic from the frps dashboard and probe from outside whether proxies are really reachable; see [Traffic and Reachability](/en/guide/traffic)
 - Get notified through webhooks (including WeCom, DingTalk and Feishu), Telegram, Bark or email when frps is unreachable or slow, proxies go offline or become unreachable, or frpc exits; see [Alerts](/en/guide/notifications)
 - Export a server's configuration as an `frpc.toml` native frpc can run; see [Export Config](/en/guide/export)
+- Let scripts and Home Assistant call Podux with API keys, and scrape Prometheus metrics from `/api/metrics`; see [API and Metrics](/en/guide/api)
 - Back up, schedule backups and restore all data in the UI; see [Data and Backups](/en/deploy/backup)
 
 ### Hot Reload

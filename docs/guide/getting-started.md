@@ -79,7 +79,7 @@ docker compose up -d
 之后即可通过 `ssh -p 6022 user@your-server.com` 访问本机。
 
 ::: tip 已有 frpc 配置？
-在 **导入** 页面上传现有的 `frpc.toml`，预览后即可批量导入服务器、代理和访问端。暂不支持的代理类型（如 TCPMUX）会被跳过并提示。
+在 **导入** 页面上传现有的 `frpc.toml`，预览后即可批量导入服务器、代理和访问端。服务器的认证设置（包括 [OIDC](/guide/oidc)）也会一起导入；无法识别的代理类型会被跳过并提示。
 :::
 
 ## PocketBase 管理后台（可选）

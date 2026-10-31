@@ -26,7 +26,7 @@ import (
 )
 
 var validServerID = regexp.MustCompile(`^[a-z0-9]{15}$`)
-var sensitiveRegex = regexp.MustCompile(`"(?i)(token|password|sk|pwd|secretkey|httpuser|httppwd|oidctoken|oidcclientsecret)":"(?:[^"\\]|\\.)*"`)
+var sensitiveRegex = regexp.MustCompile(`"(?i)(token|password|sk|pwd|secretkey|clientsecret|httpuser|httppwd|oidctoken|oidcclientsecret)":"(?:[^"\\]|\\.)*"`)
 
 // ErrAlreadyRunning is returned when launching a server that is already running or starting.
 var ErrAlreadyRunning = errors.New("frpc is already running for this server")
@@ -131,10 +131,15 @@ func NewService(app core.App, serverRepo serverdomain.Repository, proxyRepo prox
 
 // storedOIDC is the flat OIDC part of fh_servers.auth as saved by the server form.
 type storedOIDC struct {
-	ClientID      string `json:"oidcClientId"`
-	ClientSecret  string `json:"oidcClientSecret"`
-	Audience      string `json:"oidcAudience"`
-	TokenEndpoint string `json:"oidcTokenEndpoint"`
+	ClientID         string            `json:"oidcClientId"`
+	ClientSecret     string            `json:"oidcClientSecret"`
+	Audience         string            `json:"oidcAudience"`
+	Scope            string            `json:"oidcScope"`
+	TokenEndpoint    string            `json:"oidcTokenEndpoint"`
+	AdditionalParams map[string]string `json:"oidcAdditionalParams"`
+	// TrustedCa holds the PEM contents of a CA for the token endpoint, like the TLS fields.
+	TrustedCa          string `json:"oidcTrustedCa"`
+	InsecureSkipVerify bool   `json:"oidcInsecureSkipVerify"`
 }
 
 func (o storedOIDC) applyTo(cfg *v1.AuthOIDCClientConfig) {
@@ -147,8 +152,26 @@ func (o storedOIDC) applyTo(cfg *v1.AuthOIDCClientConfig) {
 	if o.Audience != "" {
 		cfg.Audience = o.Audience
 	}
+	if o.Scope != "" {
+		cfg.Scope = o.Scope
+	}
 	if o.TokenEndpoint != "" {
 		cfg.TokenEndpointURL = o.TokenEndpoint
+	}
+	for k, v := range o.AdditionalParams {
+		if k == "" {
+			continue
+		}
+		if cfg.AdditionalEndpointParams == nil {
+			cfg.AdditionalEndpointParams = map[string]string{}
+		}
+		cfg.AdditionalEndpointParams[k] = v
+	}
+	if o.TrustedCa != "" {
+		cfg.TrustedCaFile = o.TrustedCa
+	}
+	if o.InsecureSkipVerify {
+		cfg.InsecureSkipVerify = true
 	}
 }
 
@@ -207,6 +230,18 @@ func (fs *Service) genCommonCfgs(id *string) (*v1.ClientCommonConfig, error) {
 			cfg.Transport.TLS.TrustedCaFile = ""
 		}
 	}
+
+	if ca := cfg.Auth.OIDC.TrustedCaFile; ca != "" {
+		certsDir := filepath.Join(fs.getFrpMainPath(id), "certs")
+		if err := os.MkdirAll(certsDir, 0700); err != nil {
+			return nil, err
+		}
+		caFile := filepath.Join(certsDir, "oidc-ca.pem")
+		if err := os.WriteFile(caFile, []byte(ca), 0644); err != nil {
+			return nil, err
+		}
+		cfg.Auth.OIDC.TrustedCaFile = caFile
+	}
 	return cfg, nil
 }
 
@@ -244,6 +279,12 @@ func (fs *Service) buildCommonCfg(id *string) (*v1.ClientCommonConfig, error) {
 		return nil, fmt.Errorf("parse auth config: %w", err)
 	}
 	oidc.applyTo(&authConfig.OIDC)
+	// The form keeps the fields of the other method; send frp only the chosen one's.
+	if authConfig.Method == v1.AuthMethodOIDC {
+		authConfig.Token = ""
+	} else {
+		authConfig.OIDC = v1.AuthOIDCClientConfig{}
+	}
 	if authConfig.Method != "none" && authConfig.Method != "" {
 		cfg.Auth = authConfig
 	}

@@ -83,3 +83,44 @@ func TestExportTomlLoadsInFrpc(t *testing.T) {
 		}
 	}
 }
+
+func TestExportOIDC(t *testing.T) {
+	app := testutil.NewApp(t)
+	server := testutil.SaveRecord(t, app, "fh_servers", map[string]any{
+		"serverName": "s", "serverAddr": "frps.example.com", "serverPort": 7000,
+		"auth": map[string]any{
+			"method": "oidc", "token": "old-token", "additionalScopes": []string{"HeartBeats", "NewWorkConns"},
+			"oidcClientId": "cid", "oidcClientSecret": "oidc-secret", "oidcScope": "frp",
+			"oidcTokenEndpoint": "https://idp.example.com/token", "oidcAdditionalParams": map[string]string{"resource": "frps"},
+			"oidcTrustedCa": "-----BEGIN CERTIFICATE-----\nidp\n-----END CERTIFICATE-----",
+		},
+		"transport": map[string]any{"tls": map[string]any{"enable": false}},
+	})
+	fs := NewService(app, persistence.NewServerRepository(app), persistence.NewProxyRepository(app), persistence.NewVisitorRepository(app))
+
+	out, err := fs.ExportToml(server.Id, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(out)
+	if strings.Contains(text, "oidc-secret") || strings.Contains(text, "old-token") || strings.Contains(text, "BEGIN CERTIFICATE") {
+		t.Errorf("export leaks a secret, the unused token or the CA contents:\n%s", text)
+	}
+	for _, want := range []string{"clientID = 'cid'", "clientSecret = '" + RedactedValue + "'", "trustedCaFile = 'certs/oidc-ca.pem'", "resource = 'frps'"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("export lacks %q:\n%s", want, text)
+		}
+	}
+
+	path := filepath.Join(t.TempDir(), "frpc.toml")
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	common, _, _, _, err := config.LoadClientConfig(path, true)
+	if err != nil {
+		t.Fatalf("frpc cannot load the export: %v\n%s", err, text)
+	}
+	if common.Auth.Method != "oidc" || common.Auth.OIDC.Scope != "frp" || len(common.Auth.AdditionalScopes) != 2 {
+		t.Fatalf("loaded auth %+v", common.Auth)
+	}
+}

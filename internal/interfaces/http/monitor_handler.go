@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"podux/internal/application/apikey"
 	"podux/internal/application/monitoring"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
@@ -30,7 +31,7 @@ type proxyStatus struct {
 
 func (h *MonitorHandler) RegisterHandlers(e *core.ServeEvent) {
 	// Per-proxy traffic and reachability, for one server (?serverId=) or all of them.
-	e.Router.GET("/api/proxies/status", requireAuth(func(e *core.RequestEvent) error {
+	e.Router.GET("/api/proxies/status", requireScope(apikey.ScopeRead, func(e *core.RequestEvent) error {
 		serverID := e.Request.URL.Query().Get("serverId")
 		var ids []string
 		if serverID != "" {

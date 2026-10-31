@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"podux/internal/application/apikey"
 	"podux/internal/application/backup"
 	"podux/internal/application/dashboard"
 	"podux/internal/application/frpc"
@@ -40,6 +41,7 @@ func newTestRouter(t *testing.T) (core.App, http.Handler) {
 		t.Fatal(err)
 	}
 	e := &core.ServeEvent{App: app, Router: r}
+	r.Bind(APIKeyAuth(apikey.NewService(app)))
 	NewFrpcHandler(app, frpc.NewService(app, serverRepo, proxyRepo, persistence.NewVisitorRepository(app))).RegisterHandlers(e)
 	NewVersionHandler(app, version.NewService(app)).RegisterHandlers(e)
 	NewDashboardHandler(dashboardService).RegisterHandlers(e)
@@ -50,7 +52,9 @@ func newTestRouter(t *testing.T) (core.App, http.Handler) {
 	NewProxyHandler(app).RegisterHandlers(e)
 	NewBackupHandler(app, backup.NewService(app)).RegisterHandlers(e)
 	frps := monitoring.NewFrpsService(app)
-	NewMonitorHandler(app, frps, monitoring.NewProbeService(app, frps)).RegisterHandlers(e)
+	probes := monitoring.NewProbeService(app, frps)
+	NewMonitorHandler(app, frps, probes).RegisterHandlers(e)
+	NewAPIKeyHandler(apikey.NewService(app), monitoring.NewExporter(app, metricsService, frps, probes)).RegisterHandlers(e)
 	proxy.RegisterConflictChecks(app)
 
 	mux, err := r.BuildMux()
@@ -126,6 +130,10 @@ var protectedRoutes = []struct{ method, url string }{
 	{http.MethodDelete, "/api/system/backups/x.zip"},
 	{http.MethodPost, "/api/system/backups/x.zip/restore"},
 	{http.MethodGet, "/api/frpc/logs/download?id=all"},
+	{http.MethodGet, "/api/api-keys"},
+	{http.MethodPost, "/api/api-keys"},
+	{http.MethodDelete, "/api/api-keys/aaaaaaaaaaaaaaa"},
+	{http.MethodGet, "/api/metrics"},
 }
 
 func TestProtectedRoutesRequireAuth(t *testing.T) {
