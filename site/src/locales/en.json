@@ -540,7 +540,9 @@
     "expiresAtCurrent": "Currently expires at {{time}}",
     "errorExpiry": "Choose a time in the future",
     "expiresIn": "Expires in {{time}}",
-    "expiring": "Expiring"
+    "expiring": "Expiring",
+    "subdomainOnly": "Subdomain {{name}}",
+    "subdomainHostUnknown": "Configure the server's frps dashboard to show the full domain under frps's subdomainHost"
   },
   "settings": {
     "title": "Settings",

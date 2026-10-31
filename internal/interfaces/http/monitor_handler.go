@@ -51,12 +51,17 @@ func (h *MonitorHandler) RegisterHandlers(e *core.ServeEvent) {
 			return out[id]
 		}
 		dashboards := map[string]string{} // server ID -> error, for servers with a dashboard
+		// server ID -> frps subdomainHost, so lists can show <subdomain>.<subdomainHost>
+		subdomainHosts := map[string]string{}
 		for _, id := range ids {
 			stats, err := h.frps.ServerStats(e.Request.Context(), id)
 			if err != nil || stats == nil {
 				continue
 			}
 			dashboards[id] = stats.Error
+			if stats.Info != nil && stats.Info.SubdomainHost != "" {
+				subdomainHosts[id] = stats.Info.SubdomainHost
+			}
 			for pid, t := range stats.Proxies {
 				get(pid).Traffic = &t
 			}
@@ -64,7 +69,7 @@ func (h *MonitorHandler) RegisterHandlers(e *core.ServeEvent) {
 		for pid, r := range h.probe.Results() {
 			get(pid).Probe = &r
 		}
-		return e.JSON(http.StatusOK, map[string]any{"proxies": out, "dashboards": dashboards})
+		return e.JSON(http.StatusOK, map[string]any{"proxies": out, "dashboards": dashboards, "subdomainHosts": subdomainHosts})
 	}))
 
 	// frps info and today's totals for one server; empty when no dashboard is configured.

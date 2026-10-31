@@ -350,7 +350,7 @@ export function ServerDetailView({
                         )}
                       </Table.Cell>
                       <Table.Cell>
-                        <ProxyEndpoints proxy={proxy} serverAddr={server.serverAddr} />
+                        <ProxyEndpoints proxy={proxy} subdomainHost={frps?.info?.subdomainHost} />
                       </Table.Cell>
                       <Table.Cell>
                         <Badge radius="full" color={proxy.bootStatus === "online" ? "green" : "red"}>

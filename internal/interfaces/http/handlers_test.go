@@ -405,3 +405,31 @@ func TestMonitoringEndpointsWithoutDashboard(t *testing.T) {
 		t.Errorf("frps-test bad url: %d", rec.Code)
 	}
 }
+
+func TestProxyStatusReportsSubdomainHost(t *testing.T) {
+	app, h := newTestRouter(t)
+	token := userToken(t, app)
+	dash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/serverinfo" {
+			_, _ = w.Write([]byte(`{"proxies":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"version":"0.71.1","subdomainHost":"frp.example.com"}`))
+	}))
+	defer dash.Close()
+	s := testutil.SaveRecord(t, app, "fh_servers", map[string]any{
+		"serverName": "s", "serverAddr": "1.1.1.1", "serverPort": 7000,
+		"dashboard": map[string]any{"url": dash.URL},
+	})
+	testutil.SaveRecord(t, app, "fh_servers", map[string]any{"serverName": "plain", "serverAddr": "2.2.2.2", "serverPort": 7000})
+
+	rec := do(t, h, http.MethodGet, "/api/proxies/status", token, "")
+	var out struct{ SubdomainHosts map[string]string }
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &out) != nil {
+		t.Fatalf("status: %d %s", rec.Code, rec.Body)
+	}
+	// Only servers whose dashboard reports a subdomainHost are listed.
+	if len(out.SubdomainHosts) != 1 || out.SubdomainHosts[s.Id] != "frp.example.com" {
+		t.Errorf("subdomainHosts = %v", out.SubdomainHosts)
+	}
+}

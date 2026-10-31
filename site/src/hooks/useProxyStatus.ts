@@ -25,7 +25,11 @@ interface StatusResponse {
   proxies: Record<string, ProxyStatus>;
   /** Server ID -> dashboard error ("" when it worked), for servers with a dashboard. */
   dashboards: Record<string, string>;
+  /** Server ID -> frps subdomainHost, for servers whose dashboard reports one. */
+  subdomainHosts: Record<string, string>;
 }
+
+const EMPTY: StatusResponse = { proxies: {}, dashboards: {}, subdomainHosts: {} };
 
 const POLL_MS = 30_000;
 
@@ -34,17 +38,22 @@ const POLL_MS = 30_000;
  * every 30s. Pass a server ID to limit it to one server.
  */
 export function useProxyStatus(serverId?: string) {
-  const [data, setData] = useState<StatusResponse>({ proxies: {}, dashboards: {} });
+  const [data, setData] = useState<StatusResponse>(EMPTY);
 
   const load = useCallback(async () => {
     try {
       const url = serverId ? `/api/proxies/status?serverId=${serverId}` : "/api/proxies/status";
-      setData((await apiGet<StatusResponse>(url)) ?? { proxies: {}, dashboards: {} });
+      setData({ ...EMPTY, ...(await apiGet<StatusResponse>(url)) });
     } catch {
       // Status is supplementary; the proxy list itself reports load errors.
     }
   }, [serverId]);
 
   usePolling(load, POLL_MS, { immediate: true, restartKey: serverId });
-  return { statuses: data.proxies, dashboards: data.dashboards, hasTraffic: Object.keys(data.dashboards).length > 0 };
+  return {
+    statuses: data.proxies,
+    dashboards: data.dashboards,
+    subdomainHosts: data.subdomainHosts,
+    hasTraffic: Object.keys(data.dashboards).length > 0,
+  };
 }

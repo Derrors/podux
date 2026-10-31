@@ -102,7 +102,7 @@ export function useProxies() {
     });
   const [servers, setServers] = useState<ServerOption[]>([]);
   const [batchBusy, setBatchBusy] = useState(false);
-  const { statuses } = useProxyStatus();
+  const { statuses, subdomainHosts } = useProxyStatus();
 
   useEffect(() => {
     apiGet<ServerOption[] | null>("/api/servers/options")
@@ -155,6 +155,7 @@ export function useProxies() {
     deleteProxy,
     toggleStatus,
     statuses,
+    subdomainHosts,
     servers,
     selected,
     toggleSelected,

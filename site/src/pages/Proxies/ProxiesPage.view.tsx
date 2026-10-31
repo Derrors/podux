@@ -34,6 +34,7 @@ interface ProxiesViewProps {
   deleteProxy: (id: string) => Promise<void>;
   toggleStatus: (proxy: Proxy) => Promise<void>;
   statuses: Record<string, ProxyStatus>;
+  subdomainHosts: Record<string, string>;
   servers: ServerOption[];
   selected: Set<string>;
   toggleSelected: (id: string) => void;
@@ -56,6 +57,7 @@ export function ProxiesView({
   deleteProxy,
   toggleStatus,
   statuses,
+  subdomainHosts,
   servers,
   selected,
   toggleSelected,
@@ -284,7 +286,7 @@ export function ProxiesView({
                               )}
                             </Table.Cell>
                             <Table.Cell>
-                              <ProxyEndpoints proxy={proxy} serverAddr={server?.serverAddr} />
+                              <ProxyEndpoints proxy={proxy} subdomainHost={subdomainHosts[proxy.serverId]} />
                             </Table.Cell>
                             <Table.Cell>
                               <Badge

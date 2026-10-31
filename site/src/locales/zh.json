@@ -540,7 +540,9 @@
     "expiresAtCurrent": "当前将在 {{time}} 到期",
     "errorExpiry": "请选择一个未来的时间",
     "expiresIn": "{{time}} 后到期",
-    "expiring": "即将停用"
+    "expiring": "即将停用",
+    "subdomainOnly": "子域名 {{name}}",
+    "subdomainHostUnknown": "配置该服务器的 frps 管理面板后，会显示 frps 的 subdomainHost 拼成的完整域名"
   },
   "settings": {
     "title": "设置",
