@@ -18,7 +18,7 @@ Without systemd, stop the Podux process first, then back up the directory passed
 ### 2. Download the New Version
 
 ```bash
-VERSION=v0.2.7
+VERSION=v0.2.8
 curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${VERSION}-linux-amd64.tar.gz
 tar -xzf podux-${VERSION}-linux-amd64.tar.gz
 ```

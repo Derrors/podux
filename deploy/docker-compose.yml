@@ -4,7 +4,7 @@
 #   mkdir -p data && sudo chown 1000:1000 data
 #   docker compose up -d
 #
-# Pin a version with VERSION=0.2.7 docker compose up -d (defaults to latest).
+# Pin a version with VERSION=0.2.8 docker compose up -d (defaults to latest).
 
 services:
   podux:

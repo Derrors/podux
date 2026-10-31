@@ -18,7 +18,7 @@ Go to [GitHub Releases](https://github.com/Derrors/podux/releases/latest) and pi
 Or download from the command line (Linux amd64 shown; use the latest version):
 
 ```bash
-VERSION=v0.2.7
+VERSION=v0.2.8
 curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/podux-${VERSION}-linux-amd64.tar.gz
 curl -LO https://github.com/Derrors/podux/releases/download/${VERSION}/checksums.txt
 sha256sum --ignore-missing -c checksums.txt
