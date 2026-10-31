@@ -106,7 +106,9 @@
     "topologyLocalListener": "Local listener",
     "topologyFallbackOnly": "Fallback only",
     "topologyHandledByPlugin": "Handled by a plugin",
-    "trafficSplit": "In {{in}} · Out {{out}}"
+    "trafficSplit": "In {{in}} · Out {{out}}",
+    "topologyFullscreen": "View fullscreen",
+    "topologyFullscreenHint": "Drag to pan; scroll or pinch to zoom"
   },
   "server": {
     "title": "Servers",

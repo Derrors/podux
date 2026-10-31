@@ -106,7 +106,9 @@
     "topologyLocalListener": "本机监听",
     "topologyFallbackOnly": "仅作回退",
     "topologyHandledByPlugin": "由插件处理",
-    "trafficSplit": "入站 {{in}} · 出站 {{out}}"
+    "trafficSplit": "入站 {{in}} · 出站 {{out}}",
+    "topologyFullscreen": "全屏查看",
+    "topologyFullscreenHint": "可拖动画布、滚轮或双指缩放查看细节"
   },
   "server": {
     "title": "服务器",

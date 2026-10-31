@@ -1,15 +1,16 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
   BackgroundVariant,
+  Controls,
   Handle,
   Position,
   type Node,
   type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Flex, Text, useThemeContext } from "@radix-ui/themes";
+import { Dialog, Flex, IconButton, Text, Tooltip, useThemeContext } from "@radix-ui/themes";
 import { Icon } from "@iconify/react/offline";
 import { useTranslation } from "react-i18next";
 import type { TopologyData } from "./useDashboard";
@@ -381,6 +382,7 @@ export function TopologyChart({ topology }: TopologyChartProps) {
   const { t } = useTranslation();
   const themeCtx = useThemeContext();
   const isDark = themeCtx.appearance === "dark";
+  const [fullscreen, setFullscreen] = useState(false);
   const { servers, proxies, visitors } = topology;
 
   const { nodes, edges, totalRows } = useMemo(() => {
@@ -542,26 +544,87 @@ export function TopologyChart({ topology }: TopologyChartProps) {
   const containerH = Math.max(480, Math.min(900, totalRows * ROW_H + 80));
 
   return (
-    <div style={{ height: containerH, borderRadius: 8, overflow: "hidden" }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        colorMode={isDark ? "dark" : "light"}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable={false}
-        panOnDrag
-        zoomOnScroll
-        minZoom={0.25}
-        maxZoom={2}
-        proOptions={{ hideAttribution: true }}
-        style={{ background: P.pageBg }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color={P.dot} />
-      </ReactFlow>
-    </div>
+    <>
+      {/* Read-only on the dashboard: wheel and touch scroll the page instead of zooming the chart. */}
+      <div style={{ position: "relative", height: containerH, borderRadius: 8, overflow: "hidden" }}>
+        <TopologyFlow nodes={nodes} edges={edges} isDark={isDark} interactive={false} />
+        <Tooltip content={t("dashboard.topologyFullscreen")}>
+          <IconButton
+            variant="surface"
+            color="gray"
+            aria-label={t("dashboard.topologyFullscreen")}
+            onClick={() => setFullscreen(true)}
+            style={{ position: "absolute", top: 12, right: 12 }}
+          >
+            <Icon icon="lucide:maximize-2" width="16" height="16" />
+          </IconButton>
+        </Tooltip>
+      </div>
+
+      <Dialog.Root open={fullscreen} onOpenChange={setFullscreen}>
+        <Dialog.Content
+          width="100%"
+          maxWidth="1600px"
+          height="92vh"
+          maxHeight="92vh"
+          style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}
+        >
+          <Flex justify="between" align="start" gap="3">
+            <Flex direction="column" gap="1">
+              <Dialog.Title size="4" mb="0">
+                {t("dashboard.topology")}
+              </Dialog.Title>
+              <Dialog.Description size="2" color="gray">
+                {t("dashboard.topologyFullscreenHint")}
+              </Dialog.Description>
+            </Flex>
+            <Dialog.Close>
+              <IconButton variant="ghost" color="gray" aria-label={t("common.close")}>
+                <Icon icon="lucide:x" width="18" height="18" />
+              </IconButton>
+            </Dialog.Close>
+          </Flex>
+          <div style={{ flex: 1, minHeight: 0, borderRadius: 8, overflow: "hidden" }}>
+            <TopologyFlow nodes={nodes} edges={edges} isDark={isDark} interactive />
+          </div>
+        </Dialog.Content>
+      </Dialog.Root>
+    </>
+  );
+}
+
+interface TopologyFlowProps {
+  nodes: Node[];
+  edges: Edge[];
+  isDark: boolean;
+  /** Pan, zoom and zoom controls; off for the inline dashboard chart. */
+  interactive: boolean;
+}
+
+function TopologyFlow({ nodes, edges, isDark, interactive }: TopologyFlowProps) {
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      colorMode={isDark ? "dark" : "light"}
+      fitView
+      fitViewOptions={{ padding: 0.2 }}
+      nodesDraggable={false}
+      nodesConnectable={false}
+      elementsSelectable={false}
+      panOnDrag={interactive}
+      zoomOnScroll={interactive}
+      zoomOnPinch={interactive}
+      zoomOnDoubleClick={interactive}
+      preventScrolling={interactive}
+      minZoom={0.25}
+      maxZoom={2}
+      proOptions={{ hideAttribution: true }}
+      style={{ background: P.pageBg }}
+    >
+      <Background variant={BackgroundVariant.Dots} gap={22} size={1} color={P.dot} />
+      {interactive && <Controls showInteractive={false} />}
+    </ReactFlow>
   );
 }
