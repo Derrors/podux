@@ -30,6 +30,7 @@ func TestMonitor513ServersAndStopWait(t *testing.T) {
 	}
 	metrics := NewMetricsService(app)
 	monitor := NewMonitorService(app, NewGeoService(app), metrics)
+	t.Cleanup(monitor.Stop)
 	var starts, active, peak atomic.Int32
 	monitor.ping = func(ctx context.Context, _ string, _ time.Duration) utils.PingResult {
 		starts.Add(1)
@@ -42,19 +43,28 @@ func TestMonitor513ServersAndStopWait(t *testing.T) {
 		}
 		return utils.PingResult{Latency: 1, Reachable: true}
 	}
-	monitor.Start(time.Hour, time.Hour)
-	waitFor(t, func() bool {
-		metrics.latestLock.RLock()
-		defer metrics.latestLock.RUnlock()
-		return len(metrics.latest) == 513
-	})
+	// This checks complete pagination, not a throughput SLA. Join the round's
+	// workers and writer instead of requiring 513 DB samples within the generic
+	// three-second async timeout on shared CI runners under the race detector.
+	monitor.updateAllServersLatency()
 	monitor.Stop()
+	if len(metrics.latest) != 513 {
+		t.Fatalf("latest statuses = %d, want 513", len(metrics.latest))
+	}
+	var stored int
+	if err := app.DB().Select("COUNT(*)").From("fh_metrics_raw").Row(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != 513 {
+		t.Fatalf("stored samples = %d, want 513", stored)
+	}
 	if starts.Load() != 513 || active.Load() != 0 || peak.Load() > latencyConcurrency {
 		t.Fatalf("starts=%d active=%d peak=%d", starts.Load(), active.Load(), peak.Load())
 	}
 	// A second monitor blocks every probe until cancellation. Stop waits for both
 	// the fixed pool and aggregator, and must not emit unreachable cancellations.
 	monitor = NewMonitorService(app, NewGeoService(app), NewMetricsService(app))
+	t.Cleanup(monitor.Stop)
 	started := make(chan struct{}, latencyConcurrency)
 	monitor.ping = func(ctx context.Context, _ string, _ time.Duration) utils.PingResult {
 		active.Add(1)
