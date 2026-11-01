@@ -11,6 +11,8 @@ export interface Proxy {
   transport?: Record<string, unknown>;
   secretKey?: string;
   allowUsers?: string[] | null;
+  /** Only disables Podux's external reachability probe; missing means false. */
+  probeDisabled?: boolean;
   healthCheck?: HealthCheck | null;
   options?: Record<string, unknown> | null;
   plugin?: Record<string, unknown> | null;

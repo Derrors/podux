@@ -17,10 +17,15 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
-// ProbeInterval is how often online proxies are probed from outside.
+// ProbeInterval is the target interval between external probe rounds. Slow or
+// large rounds may take longer; they never overlap or catch up with a burst.
 const ProbeInterval = time.Minute
 
-const probeTimeout = 8 * time.Second
+const (
+	probeTimeout     = 8 * time.Second
+	probeConcurrency = 4
+	probeMinSpacing  = 250 * time.Millisecond
+)
 
 // frpsNotFoundMarker is in frps's own 404 page, served when no proxy matches a request.
 const frpsNotFoundMarker = "Faithfully yours, frp."
@@ -49,34 +54,67 @@ type ProbeService struct {
 	mu       sync.Mutex
 	results  map[string]ProbeResult
 	observer ProbeObserver
-	stop     chan struct{}
-	stopOnce sync.Once
+	started  bool
+	workers  sync.WaitGroup // Add is guarded by mu and forbidden after cancellation.
+	ctx      context.Context
+	cancel   context.CancelFunc
+	round    chan struct{} // coalesces concurrent ProbeAll calls
+
+	// observeMu orders completed batches against opt-out hooks without holding
+	// mu while calling the observer (which may read Results).
+	observeMu   sync.Mutex
+	invalidated map[string]bool // proxy settings changed during the current round
+	active      map[string]context.CancelFunc
 }
 
 func NewProbeService(app core.App, frps *FrpsService) *ProbeService {
-	return &ProbeService{app: app, frps: frps, results: map[string]ProbeResult{}, stop: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &ProbeService{
+		app: app, frps: frps, results: map[string]ProbeResult{},
+		ctx: ctx, cancel: cancel, round: make(chan struct{}, 1),
+		invalidated: map[string]bool{}, active: map[string]context.CancelFunc{},
+	}
 }
 
 // SetObserver registers fn; call it before Start.
 func (s *ProbeService) SetObserver(fn ProbeObserver) { s.observer = fn }
 
-// Start probes every ProbeInterval until Stop.
+// Start schedules non-overlapping rounds until Stop. Calling Start again is a no-op.
 func (s *ProbeService) Start() {
+	s.mu.Lock()
+	if s.started || s.ctx.Err() != nil {
+		s.mu.Unlock()
+		return
+	}
+	s.started = true
+	s.workers.Add(1)
+	s.mu.Unlock()
 	go func() {
-		ticker := time.NewTicker(ProbeInterval)
-		defer ticker.Stop()
+		defer s.workers.Done()
+		timer := time.NewTimer(ProbeInterval)
+		defer timer.Stop()
 		for {
 			select {
-			case <-s.stop:
+			case <-s.ctx.Done():
 				return
-			case <-ticker.C:
-				s.ProbeAll(context.Background())
+			case <-timer.C:
+				started := time.Now()
+				s.ProbeAll(s.ctx)
+				// No queued ticker events: a slow round is not followed by a
+				// catch-up burst, even if its last TCP probe finished instantly.
+				timer.Reset(max(probeMinSpacing, ProbeInterval-time.Since(started)))
 			}
 		}
 	}()
 }
 
-func (s *ProbeService) Stop() { s.stopOnce.Do(func() { close(s.stop) }) }
+// Stop cancels both queued and in-flight probes, then waits for them to exit.
+func (s *ProbeService) Stop() {
+	s.mu.Lock()
+	s.cancel()
+	s.mu.Unlock()
+	s.workers.Wait()
+}
 
 // Results returns the latest results, keyed by proxy ID.
 func (s *ProbeService) Results() map[string]ProbeResult {
@@ -93,40 +131,60 @@ type probeTarget struct {
 	id, name, proxyType, endpoint, host, path string
 }
 
-// ProbeAll probes the online proxies of every running server once.
+// ProbeAll probes the online proxies of every running server once. Concurrent
+// calls are coalesced, and Stop also cancels rounds started directly by callers.
 func (s *ProbeService) ProbeAll(ctx context.Context) {
+	s.mu.Lock()
+	if s.ctx.Err() != nil || ctx.Err() != nil {
+		s.mu.Unlock()
+		return
+	}
+	s.workers.Add(1)
+	s.mu.Unlock()
+	defer s.workers.Done()
+
+	select {
+	case s.round <- struct{}{}:
+		defer func() { <-s.round }()
+	default:
+		return
+	}
+	// Only a new round may use re-enabled proxies. An off/on toggle must not
+	// revive a queued target or a late result from the previous settings.
+	s.mu.Lock()
+	clear(s.invalidated)
+	s.mu.Unlock()
+	ctx, cancel := context.WithCancel(ctx)
+	stopCancel := context.AfterFunc(s.ctx, cancel)
+	defer stopCancel()
+	defer cancel()
+
 	servers, err := s.app.FindAllRecords("fh_servers", dbx.HashExp{"bootStatus": "running"})
 	if err != nil {
 		s.app.Logger().Warn("Proxy probe: failed to list servers", "error", err)
 		return
 	}
 	seen := map[string]bool{}
+	var wg sync.WaitGroup
 	for _, srv := range servers {
+		if ctx.Err() != nil {
+			break
+		}
 		targets := s.targets(ctx, srv)
-		results := make([]ProbeResult, len(targets))
-		var wg sync.WaitGroup
-		for i, t := range targets {
+		for _, t := range targets {
 			seen[t.id] = true
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				err := probe(ctx, t)
-				results[i] = ProbeResult{ProxyID: t.id, Name: t.name, Endpoint: t.endpoint, Reachable: err == nil, Checked: time.Now()}
-				if err != nil {
-					results[i].Error = err.Error()
-				}
-			}()
 		}
-		wg.Wait()
-
-		s.mu.Lock()
-		for _, r := range results {
-			s.results[r.ProxyID] = r
-		}
-		s.mu.Unlock()
-		if s.observer != nil {
-			s.observer(srv.Id, srv.GetString("serverName"), results)
-		}
+		// Each server has its own pacing and concurrency limit; a slow
+		// tunnel does not hold up probes of another server.
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.probeServer(ctx, srv, targets)
+		}()
+	}
+	wg.Wait()
+	if ctx.Err() != nil {
+		return // An interrupted round must not discard previous results.
 	}
 
 	// Forget proxies that are no longer probed (offline, disabled, deleted, server stopped).
@@ -139,10 +197,95 @@ func (s *ProbeService) ProbeAll(ctx context.Context) {
 	s.mu.Unlock()
 }
 
+func (s *ProbeService) probeServer(ctx context.Context, srv *core.Record, targets []probeTarget) {
+	results := make([]ProbeResult, len(targets))
+	probeTargets(ctx, targets, func(ctx context.Context, i int, t probeTarget) {
+		s.mu.Lock()
+		if s.invalidated[t.id] || ctx.Err() != nil {
+			s.mu.Unlock()
+			return
+		}
+		probeCtx, cancel := context.WithCancel(ctx)
+		s.active[t.id] = cancel
+		s.mu.Unlock()
+
+		err := probe(probeCtx, t)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		defer cancel()
+		delete(s.active, t.id)
+		if s.invalidated[t.id] || probeCtx.Err() != nil {
+			return // Opt-out/shutdown/caller cancellation is not an unreachable endpoint.
+		}
+		r := ProbeResult{ProxyID: t.id, Name: t.name, Endpoint: t.endpoint, Reachable: err == nil, Checked: time.Now()}
+		if err != nil {
+			r.Error = err.Error()
+		}
+		results[i] = r
+		s.results[r.ProxyID] = r // Publish without waiting for the rest of the round.
+	})
+	// Alerts consume complete rounds, excluding targets disabled while this
+	// batch was waiting. Serialize dispatch with hooks so old batches cannot
+	// recreate an alert state just cleared by an opt-out (or off/on toggle).
+	s.observeMu.Lock()
+	defer s.observeMu.Unlock()
+	if ctx.Err() == nil && s.observer != nil {
+		s.mu.Lock()
+		filtered := results[:0]
+		for _, r := range results {
+			if r.ProxyID != "" && !s.invalidated[r.ProxyID] {
+				filtered = append(filtered, r)
+			}
+		}
+		s.mu.Unlock()
+		s.observer(srv.Id, srv.GetString("serverName"), filtered)
+	}
+}
+
+// probeTargets spreads starts over the target interval with bounded in-flight
+// work. Pacing is needed even for TCP probes that return before frps has finished
+// opening a work connection; a semaphore alone would still allow a burst.
+func probeTargets(ctx context.Context, targets []probeTarget, run func(context.Context, int, probeTarget)) {
+	if len(targets) == 0 {
+		return
+	}
+	spacing := max(probeMinSpacing, ProbeInterval/time.Duration(len(targets)))
+	slots := make(chan struct{}, probeConcurrency)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	for i, t := range targets {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case slots <- struct{}{}:
+		}
+		if ctx.Err() != nil {
+			<-slots
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			run(ctx, i, t)
+		}()
+		// Reset after obtaining a slot, not against an absolute schedule:
+		// slow probes cannot accumulate overdue launches that fire together.
+		timer.Reset(spacing)
+	}
+}
+
 // targets lists a server's probeable proxies that frpc reports online.
 func (s *ProbeService) targets(ctx context.Context, srv *core.Record) []probeTarget {
 	proxies, err := s.app.FindAllRecords("fh_proxies",
-		dbx.HashExp{"serverId": srv.Id, "status": "enabled", "bootStatus": "online"},
+		dbx.HashExp{"serverId": srv.Id, "status": "enabled", "bootStatus": "online", "probeDisabled": false},
 		dbx.In("proxyType", "tcp", "http", "https"),
 	)
 	if err != nil {

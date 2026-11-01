@@ -311,7 +311,12 @@ export function ProxiesView({
                               </Badge>
                             </Table.Cell>
                             <Table.Cell>
-                              <ProxyHealth proxyId={proxy.id} proxyName={proxy.name ?? ""} status={statuses[proxy.id]} />
+                              <ProxyHealth
+                                proxyId={proxy.id}
+                                proxyName={proxy.name ?? ""}
+                                status={statuses[proxy.id]}
+                                probeDisabled={proxy.probeDisabled}
+                              />
                             </Table.Cell>
                             <Table.Cell>
                               <ProxyStatusToggle

@@ -11,19 +11,21 @@ interface ProxyHealthProps {
   proxyId: string;
   proxyName: string;
   status?: ProxyStatus;
+  probeDisabled?: boolean;
 }
 
 /**
  * Today's frps traffic (click for 7 days) and the latest external probe of a proxy.
- * Renders a dash when neither is available.
+ * An explicit opt-out hides stale probe results, never traffic or its history.
+ * Renders a dash when neither is available and probing hasn't been disabled.
  */
-export function ProxyHealth({ proxyId, proxyName, status }: ProxyHealthProps) {
+export function ProxyHealth({ proxyId, proxyName, status, probeDisabled = false }: ProxyHealthProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const traffic = status?.traffic;
-  const probe = status?.probe;
+  const probe = probeDisabled ? undefined : status?.probe;
 
-  if (!traffic && !probe) {
+  if (!traffic && !probe && !probeDisabled) {
     return (
       <Text size="2" color="gray">
         -
@@ -33,6 +35,11 @@ export function ProxyHealth({ proxyId, proxyName, status }: ProxyHealthProps) {
 
   return (
     <Flex direction="column" gap="1" align="start">
+      {probeDisabled && (
+        <Badge color="gray" variant="soft" size="1">
+          {t("proxy.probeDisabled")}
+        </Badge>
+      )}
       {probe && (
         <Tooltip content={probe.reachable ? probe.endpoint : `${probe.endpoint}: ${probe.error ?? ""}`}>
           <Badge color={probe.reachable ? "green" : "red"} variant="soft" size="1">

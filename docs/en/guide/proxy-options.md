@@ -39,6 +39,8 @@ Proxies of one group may use the same port or domain without tripping the confli
 
 frpc checks the local service periodically (TCP connect or HTTP request), takes the proxy offline after the set number of failures and brings it back when it recovers. Not available with a plugin (the plugin replaces the local service).
 
+This is independent of the [External reachability probe](/en/guide/traffic#external-reachability-probes) switch under **Network Config**. External probes are initiated by Podux, enabled by default, and the switch is only shown for TCP, HTTP and HTTPS. Turning it off does not disable the proxy, change tunnel settings or turn off these health checks, nor does it affect traffic stats or history.
+
 ## Plugins
 
 With a plugin, frpc handles connections itself instead of forwarding them to the local address and port:
@@ -71,7 +73,7 @@ The proxy list shows the time left under a temporary proxy's name. Enabling an e
 
 Tick proxies in the proxy list (current page) to **enable, disable, move to another server or delete** them together. A batch either fully succeeds or changes nothing: if enabling one of them would conflict with another proxy's port, the message names both.
 
-The **Clone** button opens a new-proxy form filled from that proxy; the remote port and domains are cleared so the copy doesn't collide with the original.
+The **Clone** button opens a new-proxy form filled from that proxy; the remote port and domains are cleared so the copy doesn't collide with the original, and its external reachability probe setting is preserved.
 
 ## Conflict Checks
 

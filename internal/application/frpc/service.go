@@ -340,6 +340,7 @@ func (fs *Service) genProxyCfgs(serverId *string) ([]v1.ProxyConfigurer, error) 
 
 		options, _ := proxyData["options"].(map[string]interface{})
 		delete(proxyData, "options")
+		delete(proxyData, "probeDisabled") // Podux's public probe setting is not an frpc option.
 		for _, key := range proxyOptionKeys[proxyMap.ProxyType] {
 			if v, ok := options[key]; ok && !isEmptyOption(v) {
 				proxyData[key] = v

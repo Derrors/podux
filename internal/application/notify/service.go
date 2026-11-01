@@ -312,6 +312,16 @@ func (s *Service) ServerStopped(serverID string) {
 	}
 }
 
+// ForgetProbe clears only a proxy's external-probe counters and alert state.
+// Opting out is neither a failure nor a recovery; frpc's offline alerts remain.
+func (s *Service) ForgetProbe(proxyID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, st := range s.servers {
+		delete(st.probes, proxyID)
+	}
+}
+
 // ForgetServer drops all state of a deleted server.
 func (s *Service) ForgetServer(serverID string) {
 	s.mu.Lock()

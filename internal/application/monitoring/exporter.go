@@ -58,14 +58,15 @@ func (x *Exporter) Write(ctx context.Context, w io.Writer) error {
 		return err
 	}
 	var proxies []struct {
-		ID         string `db:"id"`
-		Name       string `db:"name"`
-		ProxyType  string `db:"proxyType"`
-		Status     string `db:"status"`
-		BootStatus string `db:"bootStatus"`
-		ServerID   string `db:"serverId"`
+		ID            string `db:"id"`
+		Name          string `db:"name"`
+		ProxyType     string `db:"proxyType"`
+		Status        string `db:"status"`
+		BootStatus    string `db:"bootStatus"`
+		ServerID      string `db:"serverId"`
+		ProbeDisabled bool   `db:"probeDisabled"`
 	}
-	if err := x.app.DB().Select("id", "name", "proxyType", "status", "bootStatus", "serverId").From("fh_proxies").
+	if err := x.app.DB().Select("id", "name", "proxyType", "status", "bootStatus", "serverId", "probeDisabled").From("fh_proxies").
 		OrderBy("serverId", "name", "id").All(&proxies); err != nil {
 		return err
 	}
@@ -130,7 +131,7 @@ func (x *Exporter) Write(ctx context.Context, w io.Writer) error {
 		l := []string{"proxy_id", p.ID, "proxy", p.Name, "type", p.ProxyType, "server_id", p.ServerID, "server", names[p.ServerID]}
 		proxyEnabled.add(boolValue(p.Status == "enabled"), l...)
 		proxyOnline.add(boolValue(p.BootStatus == "online"), l...)
-		if r, ok := probes[p.ID]; ok {
+		if r, ok := probes[p.ID]; ok && !p.ProbeDisabled {
 			proxyReachable.add(boolValue(r.Reachable), l...)
 		}
 		if t, ok := traffic[p.ID]; ok {

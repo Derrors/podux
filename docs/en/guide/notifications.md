@@ -11,7 +11,7 @@ Alerts cover **running** servers only. To avoid false alarms from network blips 
 | Server unreachable | frps fails 3 latency probes in a row |
 | High latency | Latency exceeds the threshold in 3 probes in a row (a threshold of 0 turns this off) |
 | Proxies offline | An enabled proxy is offline for over 15 seconds; proxies of one server that go down together share one message |
-| Proxy unreachable from outside | Online in frpc but failing 3 external probes in a row (about 3 minutes); see [Traffic and Reachability](/en/guide/traffic#external-reachability-probes) |
+| Proxy unreachable from outside | Online in frpc but failing external probes in 3 consecutive complete server rounds (usually about 3 minutes, depending on round completion; many or slow targets take longer); see [Traffic and Reachability](/en/guide/traffic#external-reachability-probes) |
 | frpc exited | frpc stops without you stopping it, e.g. its first login to frps failed at startup |
 | Temporary proxy expired | A proxy with an [expiry](/en/guide/proxy-options#expiry) was disabled |
 | Recovery | One more message when a problem above clears |

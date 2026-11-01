@@ -363,7 +363,12 @@ export function ServerDetailView({
                         </Badge>
                       </Table.Cell>
                       <Table.Cell>
-                        <ProxyHealth proxyId={proxy.id} proxyName={proxy.name ?? ""} status={proxyStatuses[proxy.id]} />
+                        <ProxyHealth
+                          proxyId={proxy.id}
+                          proxyName={proxy.name ?? ""}
+                          status={proxyStatuses[proxy.id]}
+                          probeDisabled={proxy.probeDisabled}
+                        />
                       </Table.Cell>
                       <Table.Cell>
                         <ProxyStatusToggle

@@ -65,6 +65,7 @@ func main() {
 		}
 		notifyService.ObserveProbes(serverID, serverName, states)
 	})
+	probeService.RegisterProxyHooks(notifyService.ForgetProbe)
 	versionService := version.NewService(app)
 
 	// HTTP Handlers
@@ -99,7 +100,10 @@ func main() {
 	})
 	app.OnRecordAfterUpdateSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
 		// A proxy moved to another server must also be removed from the old one.
-		reloadServers(e, e.Record.GetString("serverId"), e.Record.Original().GetString("serverId"))
+		// The Podux-only public probe switch never requires an frpc reload.
+		if frpc.ProxyNeedsReload(e.Record) {
+			reloadServers(e, e.Record.GetString("serverId"), e.Record.Original().GetString("serverId"))
+		}
 		return e.Next()
 	})
 	app.OnRecordAfterDeleteSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {

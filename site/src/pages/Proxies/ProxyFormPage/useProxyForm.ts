@@ -34,6 +34,8 @@ export interface ProxyFormData {
   subdomain: string;
   encryption: boolean;
   compression: boolean;
+  /** Positive UI switch; saved as probeDisabled = !probeEnabled, independent of healthCheck. */
+  probeEnabled: boolean;
   description: string;
   plugin: PluginState;
   /** HTTP / tcpmux / load balancing settings stored in fh_proxies.options. */
@@ -69,6 +71,7 @@ const DEFAULT_FORM: ProxyFormData = {
   subdomain: "",
   encryption: false,
   compression: false,
+  probeEnabled: true,
   description: "",
   plugin: { enabled: false, type: "socks5", fields: {} },
   options: EMPTY_OPTIONS,
@@ -200,6 +203,7 @@ export function useProxyForm() {
           customDomains: cloneFrom ? [] : (record.customDomains as string[] | undefined) || [],
           encryption: transportFlag(transport, "useEncryption", "use_encryption"),
           compression: transportFlag(transport, "useCompression", "use_compression"),
+          probeEnabled: record.probeDisabled !== true,
           description: (record.description as string) || "",
           plugin: pluginFromRecord(plugin),
           options: optionsFromRecord(options),
@@ -411,6 +415,7 @@ export function useProxyForm() {
       secretKey: isSecret ? data.secretKey.trim() : "",
       allowUsers: isSecret && allowUsers.length > 0 ? allowUsers : null,
       healthCheck,
+      probeDisabled: !data.probeEnabled,
       transport: {
         ...keptTransport,
         useEncryption: data.encryption,

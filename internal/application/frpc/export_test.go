@@ -24,8 +24,9 @@ func TestExportTomlLoadsInFrpc(t *testing.T) {
 	ssh := testutil.SaveRecord(t, app, "fh_proxies", map[string]any{
 		"name": "ssh", "proxyType": "tcp", "serverId": server.Id, "localIP": "127.0.0.1", "localPort": "22",
 		"remotePort": "6022", "status": "enabled", "bootStatus": "offline",
-		"transport":   map[string]any{"useEncryption": true, "bandwidthLimit": "1MB"},
-		"healthCheck": map[string]any{"type": "tcp", "intervalSeconds": 10},
+		"transport":     map[string]any{"useEncryption": true, "bandwidthLimit": "1MB"},
+		"healthCheck":   map[string]any{"type": "tcp", "intervalSeconds": 10},
+		"probeDisabled": true,
 	})
 	testutil.SaveRecord(t, app, "fh_proxies", map[string]any{
 		"name": "nas", "proxyType": "stcp", "serverId": server.Id, "localIP": "127.0.0.1", "localPort": "5000",
@@ -57,6 +58,9 @@ func TestExportTomlLoadsInFrpc(t *testing.T) {
 			if !strings.Contains(text, want) {
 				t.Errorf("export lacks %q:\n%s", want, text)
 			}
+		}
+		if strings.Contains(text, "probeDisabled") {
+			t.Error("Podux-only probe setting leaked into frpc configuration")
 		}
 		if strings.Contains(text, "BEGIN CERTIFICATE") || strings.Contains(text, "off-") ||
 			strings.Count(text, "[proxies.healthCheck]") != 1 || strings.Contains(text, "= 0\n") {

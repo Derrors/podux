@@ -14,7 +14,7 @@ import {
 } from "@radix-ui/themes";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
-import { useRef } from "react";
+import { useId, useRef } from "react";
 
 import { FormItem } from "../../../components/FormItem";
 import { CopyableText } from "../../../components/CopyableText";
@@ -85,6 +85,7 @@ export function ProxyFormPageView({
 }: ProxyFormPageViewProps) {
   const { t } = useTranslation();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const probeSwitchId = useId();
 
   if (loadingProxy) {
     return (
@@ -156,7 +157,7 @@ export function ProxyFormPageView({
                           <Icon icon="lucide:triangle-alert" width="14" height="14" />
                         </Callout.Icon>
                         <Callout.Text>
-                          <Flex align="center" justify="between" gap="2">
+                          <Flex as="span" align="center" justify="between" gap="2">
                             <Text size="1">{t("proxy.noServersAvailable")}</Text>
                             <Button
                               size="1"
@@ -360,6 +361,30 @@ export function ProxyFormPageView({
                         {t("proxy.remotePortDesc")}
                       </Text>
                     </FormItem>
+                  )}
+
+                  {["tcp", "http", "https"].includes(formData.type) && (
+                    <>
+                      <Separator size="4" />
+                      <Flex justify="between" align="start" gap="3">
+                        <Box className="min-w-0">
+                          <Text as="label" htmlFor={probeSwitchId} size="2" weight="medium">
+                            {t("proxy.probeEnabled")}
+                          </Text>
+                          <Text as="p" id={`${probeSwitchId}-description`} size="1" color="gray">
+                            {t("proxy.probeEnabledDesc")}
+                          </Text>
+                        </Box>
+                        <Switch
+                          id={probeSwitchId}
+                          size="2"
+                          className="shrink-0"
+                          checked={formData.probeEnabled}
+                          onCheckedChange={(v) => onChange("probeEnabled", v)}
+                          aria-describedby={`${probeSwitchId}-description`}
+                        />
+                      </Flex>
+                    </>
                   )}
                 </Flex>
               </section>

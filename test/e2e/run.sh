@@ -88,7 +88,8 @@ sleep 16 # frps dashboard stats are cached for 15s
 check "traffic from frps dashboard" "todayTrafficIn" "$(api GET /api/proxies/status)"
 check "7-day history" "trafficIn" "$(api GET /api/proxies/$TCP/traffic)"
 check "frps info" '"version"' "$(api GET /api/servers/$S/frps)"
-wait_for "external probe marks the tcp proxy reachable" 75 sh -c "curl -s '$B/api/proxies/status' -H 'Authorization: $T' | grep -q '\"reachable\":true'"
+# The first round starts after a minute and staggers targets over the next minute.
+wait_for "external probe marks the tcp proxy reachable" 135 sh -c "curl -s '$B/api/proxies/status' -H 'Authorization: $T' | grep -q '\"proxyId\":\"$TCP\"[^}]*\"reachable\":true'"
 check "export redacts the token" "<redacted>" "$(api GET "/api/frpc/export?id=$S")"
 check "log download" "start proxy success" "$(api GET "/api/frpc/logs/download?id=$S")"
 check "all-servers log names servers" "[e2e]" "$(api GET "/api/frpc/logs/download?id=all")"
@@ -102,6 +103,19 @@ check "metrics: traffic from frps" "podux_proxy_today_traffic_in_bytes{proxy_id=
 check "metrics: proxy reachable" "podux_proxy_reachable{proxy_id=\"$TCP\"" "$(metrics)"
 check "read key cannot stop frpc" "403" "$(curl -s -o /dev/null -w '%{http_code}' -XPOST "$B/api/frpc/terminate" -H "Authorization: Bearer $KEY" -d "{\"id\":\"$S\"}")"
 check "key is not a session" '"totalItems":0' "$(curl -s "$B/api/collections/fh_servers/records" -H "Authorization: Bearer $KEY")"
+
+echo "== per-proxy public probe opt-out"
+BEFORE_EXPORT=$(api GET "/api/frpc/export?id=$S")
+check "turn off only public probing" '"probeDisabled":true' "$(api PATCH "/api/collections/fh_proxies/records/$TCP" -d '{"probeDisabled":true}')"
+if api GET /api/proxies/status | grep -q "\"proxyId\":\"$TCP\""; then fail "opt-out kept an old probe result"; fi
+if metrics | grep -q "^podux_proxy_reachable{proxy_id=\"$TCP\""; then fail "opt-out emitted a reachability metric"; fi
+check "opt-out keeps traffic metrics" "podux_proxy_today_traffic_in_bytes{proxy_id=\"$TCP\"" "$(metrics)"
+check "opt-out keeps proxy online" "proxy=\"web\",type=\"tcp\",server_id=\"$S\",server=\"e2e\"} 1" "$(metrics | grep '^podux_proxy_online')"
+check "opt-out keeps tcp tunnel working" "API is healthy" "$(curl -sf http://127.0.0.1:16080/api/health)"
+[ "$BEFORE_EXPORT" = "$(api GET "/api/frpc/export?id=$S")" ] || fail "opt-out changed frpc config or healthCheck"
+check "re-enable public probing" '"probeDisabled":false' "$(api PATCH "/api/collections/fh_proxies/records/$TCP" -d '{"probeDisabled":false}')"
+wait_for "fresh probe after re-enabling" 135 sh -c "curl -s '$B/api/proxies/status' -H 'Authorization: $T' | grep -q '\"proxyId\":\"$TCP\"[^}]*\"reachable\":true'"
+check "reachability metric resumes" "podux_proxy_reachable{proxy_id=\"$TCP\"" "$(metrics)"
 
 echo "== expiry"
 EXP=$(proxy '"name":"tmp","proxyType":"tcp","localIP":"127.0.0.1","localPort":18090,"remotePort":16089,"expiresAt":"2020-01-01 00:00:00.000Z"' | id_of)

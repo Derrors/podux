@@ -53,6 +53,8 @@ func newTestRouter(t *testing.T) (core.App, http.Handler) {
 	NewBackupHandler(app, backup.NewService(app)).RegisterHandlers(e)
 	frps := monitoring.NewFrpsService(app)
 	probes := monitoring.NewProbeService(app, frps)
+	probes.RegisterProxyHooks(nil)
+	t.Cleanup(probes.Stop)
 	NewMonitorHandler(app, frps, probes).RegisterHandlers(e)
 	NewAPIKeyHandler(apikey.NewService(app), monitoring.NewExporter(app, metricsService, frps, probes)).RegisterHandlers(e)
 	proxy.RegisterConflictChecks(app)
