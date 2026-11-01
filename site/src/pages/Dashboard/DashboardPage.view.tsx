@@ -1,10 +1,9 @@
-import { Box, Card, Flex, Text, Tooltip as HintTooltip } from "@radix-ui/themes";
-import type { DashboardStats, TopologyData } from "./useDashboard";
-import { TopologyChart } from "./TopologyChart";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { Box, Button, Card, Flex, Text, Tooltip as HintTooltip } from "@radix-ui/themes";
+import type { useDashboard } from "./useDashboard";
+import { ProxyDistribution } from "./ProxyDistribution";
 import { Icon } from "@iconify/react/offline";
 import { PageHeader } from "../../components/PageHeader";
-import { useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { AnimateNumber } from "../../components/AnimateNumber";
@@ -12,10 +11,11 @@ import { useTranslation } from "react-i18next";
 import { StatCard } from "../../components/StatCard";
 import { formatBytes } from "../../lib/format";
 
-interface DashboardViewProps {
-  stats: DashboardStats;
-  topology: TopologyData;
-}
+const TopologyChart = lazy(() =>
+  import("./TopologyChart").then((m) => ({ default: m.TopologyChart }))
+);
+
+type DashboardViewProps = ReturnType<typeof useDashboard>;
 
 // Helper function to format uptime
 function formatUptime(seconds: number): string {
@@ -32,7 +32,16 @@ function formatUptime(seconds: number): string {
   }
 }
 
-export function DashboardView({ stats, topology }: DashboardViewProps) {
+export function DashboardView({
+  stats,
+  topology,
+  statsLoading,
+  topologyLoading,
+  statsFailed,
+  topologyFailed,
+  loadStats,
+  loadTopology,
+}: DashboardViewProps) {
   const { t } = useTranslation();
   // "4.6 GB" -> number and unit, styled like the other cards' "195 ms".
   const [trafficValue, trafficUnit] = formatBytes(stats.trafficIn + stats.trafficOut).split(" ");
@@ -52,6 +61,19 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
         visible={mounted}
       />
 
+      {statsLoading && (
+        <Text role="status" color="gray">
+          {t("common.loading")}
+        </Text>
+      )}
+      {statsFailed && (
+        <Flex role="alert" gap="3" align="center" wrap="wrap">
+          <Text color="gray">{t("dashboard.loadFailed")}</Text>
+          <Button variant="soft" onClick={() => void loadStats()}>
+            {t("errorBoundary.retry")}
+          </Button>
+        </Flex>
+      )}
       {/* Stats Cards Row 1 */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <motion.div
@@ -163,7 +185,9 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
               )
             }
             color="blue"
-            icon={<Icon icon="lucide:arrow-down-up" color="var(--blue-11)" width="32" height="32" />}
+            icon={
+              <Icon icon="lucide:arrow-down-up" color="var(--blue-11)" width="32" height="32" />
+            }
           />
         </motion.div>
       </div>
@@ -181,10 +205,38 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {(
               [
-                { to: "/servers", icon: "lucide:server", color: "var(--blue-9)", bg: "var(--blue-3)", titleKey: "nav.servers", descKey: "dashboard.qaServersDesc" },
-                { to: "/proxies", icon: "lucide:network", color: "var(--green-9)", bg: "var(--green-3)", titleKey: "nav.proxies", descKey: "dashboard.qaProxiesDesc" },
-                { to: "/import", icon: "lucide:file-input", color: "var(--orange-9)", bg: "var(--orange-3)", titleKey: "nav.import", descKey: "dashboard.qaImportDesc" },
-                { to: "/settings", icon: "lucide:settings-2", color: "var(--purple-9)", bg: "var(--purple-3)", titleKey: "nav.settings", descKey: "dashboard.qaSettingsDesc" },
+                {
+                  to: "/servers",
+                  icon: "lucide:server",
+                  color: "var(--blue-9)",
+                  bg: "var(--blue-3)",
+                  titleKey: "nav.servers",
+                  descKey: "dashboard.qaServersDesc",
+                },
+                {
+                  to: "/proxies",
+                  icon: "lucide:network",
+                  color: "var(--green-9)",
+                  bg: "var(--green-3)",
+                  titleKey: "nav.proxies",
+                  descKey: "dashboard.qaProxiesDesc",
+                },
+                {
+                  to: "/import",
+                  icon: "lucide:file-input",
+                  color: "var(--orange-9)",
+                  bg: "var(--orange-3)",
+                  titleKey: "nav.import",
+                  descKey: "dashboard.qaImportDesc",
+                },
+                {
+                  to: "/settings",
+                  icon: "lucide:settings-2",
+                  color: "var(--purple-9)",
+                  bg: "var(--purple-3)",
+                  titleKey: "nav.settings",
+                  descKey: "dashboard.qaSettingsDesc",
+                },
               ] as const
             ).map(({ to, icon, color, bg, titleKey, descKey }) => (
               <Link key={to} to={to} style={{ textDecoration: "none" }}>
@@ -213,7 +265,12 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
                       </Text>
                     </Flex>
                     <Flex justify="end">
-                      <Icon icon="lucide:arrow-right" color="var(--gray-8)" width="14" height="14" />
+                      <Icon
+                        icon="lucide:arrow-right"
+                        color="var(--gray-8)"
+                        width="14"
+                        height="14"
+                      />
                     </Flex>
                   </Flex>
                 </Card>
@@ -231,79 +288,8 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
           animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
           transition={{ duration: 0.5, delay: 0.5, ease: "easeOut" }}
         >
-          <Card size="3" style={{ outline: "none" }}>
-            <Flex direction="column" gap="4" style={{ outline: "none" }}>
-              {/* <Text size="3" weight="bold">
-                Proxy Type Distribution
-              </Text> */}
-
-              <Box className="h-[350px] w-full" style={{ outline: "none" }}>
-                {Object.keys(stats.proxyTypeCounts).length === 0 ? (
-                  <Flex
-                    direction="column"
-                    align="center"
-                    justify="center"
-                    gap="3"
-                    style={{ height: "100%" }}
-                  >
-                    <Icon icon="lucide:pie-chart" color="var(--gray-7)" width="56" height="56" />
-                    <Flex direction="column" align="center" gap="1">
-                      <Text size="3" weight="medium" color="gray">
-                        {t("dashboard.noProxies")}
-                      </Text>
-                      <Text size="2" color="gray">
-                        {t("dashboard.noProxiesDesc")}
-                      </Text>
-                    </Flex>
-                  </Flex>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart style={{ outline: "none" }}>
-                      <Pie
-                        style={{ outline: "none" }}
-                        data={Object.entries(stats.proxyTypeCounts).map(([type, count]) => ({
-                          name: type.toUpperCase(),
-                          value: count,
-                        }))}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
-                        outerRadius={100}
-                        fill="var(--accent-9)"
-                        dataKey="value"
-                      >
-                        {Object.keys(stats.proxyTypeCounts).map((type, index) => {
-                          const colors = {
-                            tcp: "var(--blue-9)",
-                            udp: "var(--green-9)",
-                            http: "var(--orange-9)",
-                            https: "var(--purple-9)",
-                          };
-                          return (
-                            <Cell
-                              key={`cell-${index}`}
-                              fill={colors[type as keyof typeof colors] || "var(--gray-9)"}
-                            />
-                          );
-                        })}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{
-                          backgroundColor: "var(--color-panel-solid)",
-                          borderColor: "var(--gray-5)",
-                          borderRadius: "var(--radius-3)",
-                          fontSize: "12px",
-                        }}
-                        labelStyle={{ color: "var(--gray-12)" }}
-                        itemStyle={{ color: "var(--gray-12)" }}
-                      />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </Box>
-            </Flex>
+          <Card size="3">
+            <ProxyDistribution counts={stats.proxyTypeCounts} />
           </Card>
         </motion.div>
 
@@ -354,8 +340,30 @@ export function DashboardView({ stats, topology }: DashboardViewProps) {
                 {t("dashboard.topologyDesc")}
               </Text>
             </Flex>
+            {topologyFailed && (
+              <Flex role="alert" gap="3" align="center" wrap="wrap">
+                <Text color="gray">{t("dashboard.topologyLoadFailed")}</Text>
+                <Button variant="soft" onClick={() => void loadTopology()}>
+                  {t("errorBoundary.retry")}
+                </Button>
+              </Flex>
+            )}
             <Box>
-              <TopologyChart topology={topology} />
+              {topologyLoading ? (
+                <Text role="status" color="gray">
+                  {t("common.loading")}
+                </Text>
+              ) : (
+                <Suspense
+                  fallback={
+                    <Text role="status" color="gray">
+                      {t("common.loading")}
+                    </Text>
+                  }
+                >
+                  <TopologyChart topology={topology} />
+                </Suspense>
+              )}
             </Box>
           </Flex>
         </Card>

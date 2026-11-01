@@ -1,6 +1,7 @@
 package monitoring
 
 import (
+	"context"
 	"podux/pkg/utils"
 	"sync"
 	"time"
@@ -37,6 +38,12 @@ func NewGeoService(app core.App) *GeoService {
 
 // Lookup returns geolocation for the given address, using the cache when valid.
 func (s *GeoService) Lookup(addr string) (*utils.GeoLocation, error) {
+	return s.LookupContext(context.Background(), addr)
+}
+func (s *GeoService) LookupContext(ctx context.Context, addr string) (*utils.GeoLocation, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.cacheLock.RLock()
 	if item, exists := s.cache[addr]; exists {
 		if time.Now().Before(item.ExpiresAt) {
@@ -46,12 +53,25 @@ func (s *GeoService) Lookup(addr string) (*utils.GeoLocation, error) {
 	}
 	s.cacheLock.RUnlock()
 
-	location, err := utils.GetGeoLocation(addr)
+	location, err := utils.GetGeoLocationContext(ctx, addr)
 	if err != nil {
 		return nil, err
 	}
 
 	s.cacheLock.Lock()
+	if len(s.cache) >= 4096 {
+		for key, item := range s.cache {
+			if time.Now().After(item.ExpiresAt) {
+				delete(s.cache, key)
+			}
+		}
+		if len(s.cache) >= 4096 {
+			for key := range s.cache {
+				delete(s.cache, key)
+				break
+			}
+		}
+	}
 	s.cache[addr] = &geoCacheItem{
 		Location:  location,
 		ExpiresAt: time.Now().Add(24 * time.Hour),

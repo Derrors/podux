@@ -165,7 +165,13 @@ func saveHTTPProbeServer(t *testing.T, app core.App, s *ProbeService, url string
 	server := testutil.SaveRecord(t, app, "fh_servers", map[string]any{
 		"serverName": "probe", "serverAddr": addr, "serverPort": 7000, "bootStatus": "running",
 	})
-	s.frps.cache[server.Id] = &ServerStats{Info: &FrpsInfo{VhostHTTPPort: portNumber}, Fetched: time.Now()}
+	cfg := DashboardConfig{URL: "http://unused.invalid"}
+	server.Set("dashboard", cfg)
+	if err := app.Save(server); err != nil {
+		t.Fatal(err)
+	}
+	s.frps.cache[server.Id] = &frpsEntry{cfg: cfg, stats: ServerStats{Info: &FrpsInfo{VhostHTTPPort: portNumber}, Fetched: time.Now(), LastAttempt: time.Now(), RefreshState: "idle"}}
+	t.Cleanup(s.frps.Stop)
 	proxies := make([]*core.Record, count)
 	for i := range proxies {
 		proxies[i] = testutil.SaveRecord(t, app, "fh_proxies", map[string]any{

@@ -37,6 +37,14 @@
     "previousPage": "Previous page",
     "pagination": "Pagination"
   },
+  "errorBoundary": {
+    "title": "The page could not be displayed",
+    "description": "An unexpected rendering error occurred. Try again, or reload the application if the problem persists.",
+    "chunkDescription": "Part of the application could not be loaded. This can happen after an update or a network interruption. Check your connection, then reload to get the latest version.",
+    "unsaved": "Retrying or reloading may discard unsaved changes. Your saved configuration is not affected.",
+    "retry": "Try again",
+    "reload": "Reload application"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "servers": "Servers",
@@ -108,7 +116,19 @@
     "topologyHandledByPlugin": "Handled by a plugin",
     "trafficSplit": "In {{in}} · Out {{out}}",
     "topologyFullscreen": "View fullscreen",
-    "topologyFullscreenHint": "Drag to pan; scroll or pinch to zoom"
+    "topologyFullscreenHint": "Drag to pan; scroll or pinch to zoom",
+    "topologyLoadFailed": "Failed to load topology. Previously loaded data is kept, if available.",
+    "distributionShare": "Share",
+    "topologyServer": "Server",
+    "topologyExpand": "Expand connections",
+    "topologyCollapse": "Collapse connections",
+    "topologyGraph": "Graph view",
+    "topologyTable": "Table view",
+    "topologyCount": "{{count}} connections · up to 10 per page",
+    "topologyLegend": "Solid green lines: active connections. Dashed gray lines: inactive connections. Use the table for full names and addresses.",
+    "topologyZoomIn": "Zoom in",
+    "topologyZoomOut": "Zoom out",
+    "topologyFitView": "Fit to view"
   },
   "server": {
     "title": "Servers",
@@ -863,7 +883,8 @@
     "restoring": "Restoring; Podux is restarting…",
     "restored": "Restored; reloading the page",
     "restoreFailed": "Failed to restore the backup",
-    "restoreTimeout": "Podux didn't come back in time; check the container or service logs"
+    "restoreTimeout": "Timed out waiting for the restore result; success is unconfirmed. Check the service logs before retrying.",
+    "restoreCheckLogs": "Restore did not complete. Check the container or service logs; a healthy service does not confirm restored data."
   },
   "apiKeys": {
     "tab": "API",

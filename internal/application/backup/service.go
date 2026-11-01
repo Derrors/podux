@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
@@ -46,11 +47,22 @@ type Schedule struct {
 }
 
 type Service struct {
-	app core.App
+	app          core.App
+	mu           sync.Mutex
+	operation    sync.Mutex
+	hooksOnce    sync.Once
+	active       bool
+	ctx          context.Context
+	cancel       context.CancelFunc
+	work         sync.WaitGroup
+	restoreDelay time.Duration
 }
 
 func NewService(app core.App) *Service {
-	return &Service{app: app}
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &Service{app: app, ctx: ctx, cancel: cancel, restoreDelay: 500 * time.Millisecond}
+	s.RegisterHooks()
+	return s
 }
 
 func validName(name string) bool {
@@ -123,6 +135,11 @@ func (c *closeBoth) Close() error {
 
 // Delete removes a backup.
 func (s *Service) Delete(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active {
+		return ErrBusy
+	}
 	if !validName(name) {
 		return ErrInvalidName
 	}
@@ -139,9 +156,22 @@ func (s *Service) Delete(name string) error {
 
 // Upload stores an uploaded backup zip under its own file name.
 func (s *Service) Upload(fh *multipart.FileHeader) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active {
+		return "", ErrBusy
+	}
 	name := fh.Filename
 	if !validName(name) {
 		return "", ErrInvalidName
+	}
+	file, err := fh.Open()
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	if err := validateArchive(file, fh.Size); err != nil {
+		return "", err
 	}
 	fsys, err := s.app.NewBackupsFilesystem()
 	if err != nil {

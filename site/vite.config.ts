@@ -35,11 +35,18 @@ const VENDOR_CHUNKS: Record<string, string[]> = {
     'tslib',
   ],
   'motion-vendor': ['framer-motion', 'motion-dom', 'motion-utils'],
+  // XYFlow and Recharts both use D3. Keep their small shared dependency separate,
+  // otherwise opening the topology also downloads the entire Recharts runtime.
+  'd3-vendor': [
+    'd3-drag', 'd3-interpolate', 'd3-selection', 'd3-zoom',
+    // Transitive dependencies of drag/zoom/transition (verified against package manifests).
+    'd3-color', 'd3-dispatch', 'd3-ease', 'd3-timer', 'd3-transition',
+  ],
   'chart-vendor': [
     'recharts',
     'd3-*',
-    'victory-vendor',
     'internmap',
+    'victory-vendor',
     '@reduxjs/*',
     'react-redux',
     'redux',

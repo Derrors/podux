@@ -5,6 +5,7 @@ import { notifyError } from "../../lib/notify";
 import { STALE } from "../../lib/latestRequest";
 import { useLatestRequest } from "../../hooks/useLatestRequest";
 import { usePolling } from "../../hooks/usePolling";
+import { reconcileTopology } from "./topologyData";
 
 export interface DashboardStats {
   totalProxies: number;
@@ -119,31 +120,62 @@ function toStats(data: DashboardStatsResponse): DashboardStats {
 
 export function useDashboard() {
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
-  const [topology, setTopology] = useState<TopologyData>({ servers: [], proxies: [], visitors: [] });
-  const request = useLatestRequest();
+  const [topology, setTopology] = useState<TopologyData>({
+    servers: [],
+    proxies: [],
+    visitors: [],
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [topologyLoading, setTopologyLoading] = useState(true);
+  const [statsFailed, setStatsFailed] = useState(false);
+  const [topologyFailed, setTopologyFailed] = useState(false);
+  const statsRequest = useLatestRequest();
+  const topologyRequest = useLatestRequest();
 
-  const load = useCallback(async () => {
+  const loadStats = useCallback(async () => {
     try {
-      const result = await request.run((signal) =>
-        Promise.all([
-          apiGet<DashboardStatsResponse>("/api/dashboard/stats", { signal }),
-          apiGet<TopologyData>("/api/dashboard/topology", { signal }),
-        ])
+      const data = await statsRequest.run((signal) =>
+        apiGet<DashboardStatsResponse>("/api/dashboard/stats", { signal })
       );
-      if (result === STALE) return;
-      const [statsData, topologyData] = result;
-      setStats(toStats(statsData));
-      setTopology({
-        servers: topologyData?.servers ?? [],
-        proxies: topologyData?.proxies ?? [],
-        visitors: topologyData?.visitors ?? [],
-      });
+      if (data === STALE) return;
+      setStats(toStats(data));
+      setStatsFailed(false);
+      setStatsLoading(false);
     } catch (err) {
-      notifyError(i18n.t("dashboard.loadFailed"), err, "dashboard-load");
+      setStatsLoading(false);
+      setStatsFailed(true);
+      notifyError(i18n.t("dashboard.loadFailed"), err, "dashboard-stats");
     }
-  }, [request]);
+  }, [statsRequest]);
 
-  usePolling(load, POLL_INTERVAL_MS, { immediate: true });
+  const loadTopology = useCallback(async () => {
+    try {
+      const data = await topologyRequest.run((signal) =>
+        apiGet<TopologyData>("/api/dashboard/topology", { signal })
+      );
+      if (data === STALE) return;
+      setTopology((previous) => reconcileTopology(previous, data ?? {}));
+      setTopologyFailed(false);
+      setTopologyLoading(false);
+    } catch (err) {
+      setTopologyLoading(false);
+      setTopologyFailed(true);
+      notifyError(i18n.t("dashboard.topologyLoadFailed"), err, "dashboard-topology");
+    }
+  }, [topologyRequest]);
 
-  return { stats, topology };
+  // Separate schedulers and abort controllers: a slow/failed topology never gates stats.
+  usePolling(loadStats, POLL_INTERVAL_MS, { immediate: true });
+  usePolling(loadTopology, POLL_INTERVAL_MS, { immediate: true });
+
+  return {
+    stats,
+    topology,
+    statsLoading,
+    topologyLoading,
+    statsFailed,
+    topologyFailed,
+    loadStats,
+    loadTopology,
+  };
 }

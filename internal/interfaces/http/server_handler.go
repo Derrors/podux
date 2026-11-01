@@ -73,6 +73,7 @@ func (h *ServerHandler) RegisterHandlers(e *core.ServeEvent) {
 		if perPage < 1 {
 			perPage = 10
 		}
+		perPage = min(perPage, 500)
 		search := e.Request.URL.Query().Get("search")
 
 		// One escaped LIKE expression for both the count and the page. PocketBase's "~"
@@ -179,9 +180,27 @@ func (h *ServerHandler) RegisterHandlers(e *core.ServeEvent) {
 
 	// Flat server list for dropdowns, with latest latency assembled.
 	e.Router.GET("/api/servers/options", requireAuth(func(e *core.RequestEvent) error {
-		records, err := h.app.FindRecordsByFilter("fh_servers", "", "-created", 500, 0)
-		if err != nil {
-			return e.JSON(500, response.Error(err))
+		// Preserve the flat-array contract, but read only dropdown columns in
+		// stable pages rather than silently truncating the inventory at 500.
+		var records []struct {
+			ID         string `db:"id"`
+			ServerName string `db:"serverName"`
+			BootStatus string `db:"bootStatus"`
+		}
+		for offset := int64(0); ; offset += 256 {
+			var page []struct {
+				ID         string `db:"id"`
+				ServerName string `db:"serverName"`
+				BootStatus string `db:"bootStatus"`
+			}
+			err := h.app.DB().Select("id", "serverName", "bootStatus").From("fh_servers").OrderBy("created DESC", "id DESC").Limit(256).Offset(offset).WithContext(e.Request.Context()).All(&page)
+			if err != nil {
+				return e.JSON(500, response.Error(err))
+			}
+			records = append(records, page...)
+			if len(page) < 256 {
+				break
+			}
 		}
 
 		latencyMap, err := h.metricsService.GetLatestLatencyBatch()
@@ -193,10 +212,10 @@ func (h *ServerHandler) RegisterHandlers(e *core.ServeEvent) {
 		items := make([]serverOptionVO, 0, len(records))
 		for _, r := range records {
 			items = append(items, serverOptionVO{
-				ID:            r.Id,
-				ServerName:    r.GetString("serverName"),
-				BootStatus:    r.GetString("bootStatus"),
-				NetworkStatus: latencyMap[r.Id],
+				ID:            r.ID,
+				ServerName:    r.ServerName,
+				BootStatus:    r.BootStatus,
+				NetworkStatus: latencyMap[r.ID],
 			})
 		}
 

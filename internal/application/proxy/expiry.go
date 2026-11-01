@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"database/sql"
+	"errors"
 	"time"
 
 	proxydomain "podux/internal/domain/proxy"
@@ -40,15 +42,40 @@ func DisableExpired(app core.App, now time.Time, onExpired ExpiredFunc) (int, er
 	}
 
 	byServer := map[string][]string{}
-	for _, r := range records {
-		r.Set("status", string(proxydomain.ProxyStatusDisabled))
-		r.Set("expiresAt", "")
-		if err := app.Save(r); err != nil {
-			app.Logger().Error("Failed to disable expired proxy", "proxyId", r.Id, "error", err)
+	for _, candidate := range records {
+		var disabled *core.Record
+		err := app.RunInTransaction(func(tx core.App) error {
+			// The scan is only a list of candidates. Re-read after acquiring the
+			// writer connection so renewal, deletion and target edits win if they
+			// were committed since the scan; never save its stale user fields.
+			r, err := tx.FindRecordById("fh_proxies", candidate.Id)
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			expires := r.GetDateTime("expiresAt")
+			if r.GetString("status") != string(proxydomain.ProxyStatusEnabled) || expires.IsZero() || expires.Time().After(now) {
+				return nil
+			}
+			r.Set("status", string(proxydomain.ProxyStatusDisabled))
+			r.Set("expiresAt", "")
+			if err := tx.Save(r.IgnoreUnchangedFields(true)); err != nil {
+				return err
+			}
+			disabled = r
+			return nil
+		})
+		if err != nil {
+			app.Logger().Error("Failed to disable expired proxy", "proxyId", candidate.Id, "error", err)
 			continue
 		}
-		app.Logger().Info("Disabled expired proxy", "proxyId", r.Id, "name", r.GetString("name"))
-		byServer[r.GetString("serverId")] = append(byServer[r.GetString("serverId")], r.GetString("name"))
+		if disabled != nil {
+			app.Logger().Info("Disabled expired proxy", "proxyId", disabled.Id, "name", disabled.GetString("name"))
+			serverID := disabled.GetString("serverId")
+			byServer[serverID] = append(byServer[serverID], disabled.GetString("name"))
+		}
 	}
 
 	disabled := 0

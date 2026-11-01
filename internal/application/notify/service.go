@@ -66,7 +66,12 @@ type Service struct {
 	mu      sync.Mutex
 	servers map[string]*serverState
 	// send delivers a message; replaced in tests.
-	send func(Message)
+	send    func(Message)
+	queueMu sync.Mutex
+	queue   chan Message
+	cancel  context.CancelFunc
+	workers sync.WaitGroup
+	stopped bool
 }
 
 func NewService(app core.App) *Service {
@@ -354,21 +359,78 @@ func (s *Service) language() string {
 	return "en"
 }
 
-// dispatch sends m in the background with the current settings and logs failures.
+// dispatch never starts one goroutine per alert. The bounded queue is best
+// effort: overload is explicitly logged instead of blocking tunnel/monitor work.
 func (s *Service) dispatch(m Message) {
-	go func() {
-		settings, err := s.GetSettings()
-		if err != nil || !settings.Enabled {
-			return
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	if s.stopped {
+		return
+	}
+	if s.queue == nil {
+		s.queue = make(chan Message, 256)
+		ctx, cancel := context.WithCancel(context.Background())
+		s.cancel = cancel
+		for range 2 {
+			s.workers.Add(1)
+			go s.deliver(ctx)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), sendTimeout)
-		defer cancel()
-		for channel, err := range s.sendAll(ctx, settings, m) {
-			if err != nil {
-				s.app.Logger().Warn("Failed to send notification", "channel", channel, "event", m.Event, "error", err)
-			} else {
-				s.app.Logger().Info("Notification sent", "channel", channel, "event", m.Event, "serverId", m.ServerID)
+	}
+	select {
+	case s.queue <- m:
+	default:
+		s.app.Logger().Warn("Notification queue full; alert dropped", "event", m.Event, "serverId", m.ServerID)
+	}
+}
+
+func (s *Service) deliver(ctx context.Context) {
+	defer s.workers.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case m := <-s.queue:
+			if ctx.Err() != nil {
+				return
+			}
+			settings, err := s.GetSettings()
+			if err != nil || !settings.Enabled {
+				continue
+			}
+			sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+			results := s.sendAll(sendCtx, settings, m)
+			cancel()
+			if ctx.Err() != nil {
+				return
+			}
+			for channel, err := range results {
+				if err != nil {
+					// Provider errors can echo credential-bearing webhook URLs.
+					s.app.Logger().Warn("Failed to send notification", "channel", channel, "event", m.Event)
+				} else {
+					s.app.Logger().Info("Notification sent", "channel", channel, "event", m.Event, "serverId", m.ServerID)
+				}
 			}
 		}
-	}()
+	}
+}
+
+// Stop cancels HTTP delivery and discards queued alerts. PocketBase's SMTP
+// interface cannot be canceled; bound shutdown even if either mail worker hangs.
+func (s *Service) Stop() {
+	s.queueMu.Lock()
+	s.stopped = true
+	if s.cancel != nil {
+		s.cancel()
+	}
+	s.queueMu.Unlock()
+	done := make(chan struct{})
+	go func() { s.workers.Wait(); close(done) }()
+	timer := time.NewTimer(sendTimeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		s.app.Logger().Warn("Notification shutdown timed out waiting for mail transport")
+	}
 }

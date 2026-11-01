@@ -7,6 +7,7 @@ import i18n from "../../i18n";
 import { apiFetch, apiGet, apiPost, apiPut } from "../../lib/api";
 import { notifyError } from "../../lib/notify";
 import { formatBytes } from "../../lib/format";
+import { RestoreTimeoutError, waitForRestore, type RestoreJob } from "../../lib/restoreJob";
 import { FormItem } from "../../components/FormItem";
 import { ConfirmDeleteDialog } from "../../components/ConfirmDeleteDialog";
 
@@ -28,21 +29,6 @@ const presetOf = (cron: string) => Object.entries(PRESETS).find(([, c]) => c ===
 
 const BASE = "/api/system/backups";
 
-/** Waits until Podux answers its health check again after a restore restarted it. */
-async function waitForRestart(timeoutMs = 120_000) {
-  const until = Date.now() + timeoutMs;
-  await new Promise((r) => setTimeout(r, 3000));
-  while (Date.now() < until) {
-    try {
-      if ((await fetch("/api/health")).ok) return true;
-    } catch {
-      // still restarting
-    }
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  return false;
-}
-
 export function BackupSettings() {
   const { t } = useTranslation();
   const [backups, setBackups] = useState<BackupInfo[] | null>(null);
@@ -52,6 +38,8 @@ export function BackupSettings() {
   const [deleteName, setDeleteName] = useState<string | null>(null);
   const [restoreName, setRestoreName] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const restoreRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => restoreRequest.current?.abort(), []);
 
   const load = useCallback(async () => {
     try {
@@ -131,21 +119,27 @@ export function BackupSettings() {
 
   const restore = (name: string) =>
     run("restore", async () => {
-      try {
-        await apiPost(`${BASE}/${encodeURIComponent(name)}/restore`, {});
-      } catch (err) {
-        notifyError(t("backup.restoreFailed"), err);
-        return;
-      }
+      const controller = new AbortController();
+      restoreRequest.current?.abort();
+      restoreRequest.current = controller;
       const toastId = toast.loading(t("backup.restoring"));
-      const ok = await waitForRestart();
-      toast.dismiss(toastId);
-      if (ok) {
+      try {
+        const job = await apiPost<RestoreJob>(`${BASE}/${encodeURIComponent(name)}/restore`, {}, { signal: controller.signal });
+        const result = await waitForRestore(job.id, controller.signal);
+        if (result.state === "failed") {
+          toast.error(t("backup.restoreFailed"), { description: t("backup.restoreCheckLogs") });
+          return;
+        }
         toast.success(t("backup.restored"));
-        // The restored database may hold other users and sessions; start over.
-        setTimeout(() => window.location.assign("/"), 1500);
-      } else {
-        toast.error(t("backup.restoreTimeout"));
+        // The restored database may hold different users and sessions.
+        window.location.assign("/");
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        if (err instanceof RestoreTimeoutError) toast.error(t("backup.restoreTimeout"));
+        else notifyError(t("backup.restoreFailed"), err);
+      } finally {
+        toast.dismiss(toastId);
+        if (restoreRequest.current === controller) restoreRequest.current = null;
       }
     });
 

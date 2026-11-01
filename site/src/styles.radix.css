@@ -1,0 +1,15 @@
+/* Public, precompiled Radix Themes 3 entry points. Keep all component variants and
+   responsive utilities; only unused color scales are omitted. The color guard test
+   checks literal AND dynamic color names against this list when UI code changes. */
+@import "@radix-ui/themes/tokens/colors/gray.css";
+@import "@radix-ui/themes/tokens/colors/slate.css";
+@import "@radix-ui/themes/tokens/colors/indigo.css";
+@import "@radix-ui/themes/tokens/colors/blue.css";
+@import "@radix-ui/themes/tokens/colors/green.css";
+@import "@radix-ui/themes/tokens/colors/red.css";
+@import "@radix-ui/themes/tokens/colors/amber.css";
+@import "@radix-ui/themes/tokens/colors/orange.css";
+@import "@radix-ui/themes/tokens/colors/purple.css";
+@import "@radix-ui/themes/tokens/base.css";
+@import "@radix-ui/themes/components.css";
+@import "@radix-ui/themes/utilities.css";

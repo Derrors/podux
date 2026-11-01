@@ -37,6 +37,12 @@ Under **Settings** → **Backups**:
 Backup files contain everything, including tokens and private keys; protect them like the data directory. They are stored inside the data directory, so **a disk failure loses them too**: download important backups elsewhere.
 :::
 
+Restore runs as one background job. The UI reports success only after data replacement is confirmed and the new process has booted; a healthy old process is not proof of success. Uploads validate ZIP paths and the `data.db` header. Failures have an explicit result. A timeout does not mean the operation was canceled: check service logs before retrying rather than submitting repeatedly.
+
+Only the latest restore job is retained, queryable for 24 hours, in `backups/.podux-restore.json` (permissions `0600`). It is excluded from new archives and survives restore. This file contains a random capability that can only read that job's status; do not share it publicly. Online restore relies on PocketBase's UNIX restart mechanism and is not supported on Windows.
+
+Podux is a single-process deployment: upgrades, restarts and restores interrupt its tunnels. It does not promise zero-downtime restore or support multiple instances sharing a data directory.
+
 ## Manual Backups
 
 **Offline backup (simplest)**: stop Podux and copy the whole data directory.

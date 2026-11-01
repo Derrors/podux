@@ -114,6 +114,11 @@ func TestVisitorConflicts(t *testing.T) {
 	}{
 		{"same port, default address", map[string]any{"bindPort": 6000, "bindAddr": "127.0.0.1"}, "bindPort"},
 		{"all interfaces overlaps", map[string]any{"bindPort": 6000, "bindAddr": "0.0.0.0"}, "bindPort"},
+		{"xtcp shares tcp port space", map[string]any{"visitorType": "xtcp", "bindPort": 6000}, "bindPort"},
+		{"sudp uses separate udp port space", map[string]any{"visitorType": "sudp", "bindPort": 6000}, ""},
+		{"mapped ipv4 is the same address", map[string]any{"bindPort": 6000, "bindAddr": "::ffff:127.0.0.1"}, "bindPort"},
+		{"ipv6 wildcard overlaps", map[string]any{"bindPort": 6000, "bindAddr": "::"}, "bindPort"},
+		{"ipv6 loopback is separate", map[string]any{"bindPort": 6000, "bindAddr": "::1"}, ""},
 		{"another address", map[string]any{"bindPort": 6000, "bindAddr": "192.168.1.2"}, ""},
 		{"another port", map[string]any{"bindPort": 6001}, ""},
 		{"unbound", map[string]any{"bindPort": -1}, ""},
@@ -132,6 +137,84 @@ func TestVisitorConflicts(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestVisitorIPv6AndUDPConflicts(t *testing.T) {
+	app := testutil.NewApp(t)
+	RegisterConflictChecks(app)
+	s := testutil.SaveRecord(t, app, "fh_servers", map[string]any{"serverName": "a", "serverAddr": "1.1.1.1", "serverPort": 7000})
+	fields := func(name, typ, addr string) map[string]any {
+		return map[string]any{"name": name, "visitorType": typ, "serverId": s.Id, "serverName": "p", "status": "enabled", "bindAddr": addr, "bindPort": 6000}
+	}
+	testutil.SaveRecord(t, app, "fh_visitors", fields("udp", "sudp", "::1"))
+	for _, tc := range []struct{ name, typ, addr, field string }{
+		{"same udp", "sudp", "0:0:0:0:0:0:0:1", "bindPort"},
+		{"udp wildcard", "sudp", "::", "bindPort"},
+		{"dual stack wildcard", "sudp", "0.0.0.0", "bindPort"},
+		{"tcp separate", "stcp", "::1", ""},
+		{"udp ipv4 separate", "sudp", "127.0.0.1", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRecord(t, app, "fh_visitors", fields("candidate", tc.typ, tc.addr))
+			err := app.Save(r)
+			if conflictField(err) != tc.field {
+				t.Fatalf("save=%v, want field %q", err, tc.field)
+			}
+			if err == nil {
+				if err := app.Delete(r); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func TestProxySharingMatchesGeneratedOptions(t *testing.T) {
+	app := testutil.NewApp(t)
+	RegisterConflictChecks(app)
+	s := testutil.SaveRecord(t, app, "fh_servers", map[string]any{"serverName": "a", "serverAddr": "1.1.1.1", "serverPort": 7000})
+	for _, typ := range []string{"tcp", "udp", "http", "https", "tcpmux"} {
+		for _, exception := range []string{"load balancer", "HTTP user"} {
+			t.Run(typ+"/"+exception, func(t *testing.T) {
+				fields := map[string]any{
+					"serverId": s.Id, "name": "first", "proxyType": typ, "status": "enabled", "bootStatus": "offline",
+					"localPort": 80, "remotePort": 6000, "customDomains": []string{"shared.example.com"},
+				}
+				if exception == "load balancer" {
+					fields["options"] = map[string]any{"loadBalancer": map[string]any{"group": "g", "groupKey": "k"}}
+				}
+				first := testutil.SaveRecord(t, app, "fh_proxies", fields)
+				fields["name"] = "second"
+				if exception == "HTTP user" {
+					fields["options"] = map[string]any{"routeByHTTPUser": "bob"}
+				}
+				second := newRecord(t, app, "fh_proxies", fields)
+				err := app.Save(second)
+				// Match frpc.proxyOptionKeys, not just upstream capabilities:
+				// HTTPS loadBalancer is not currently exported to the runtime.
+				mayShare := exception == "load balancer" && (typ == "tcp" || typ == "http" || typ == "tcpmux") || exception == "HTTP user" && (typ == "http" || typ == "tcpmux")
+				if mayShare {
+					if err != nil {
+						t.Fatalf("supported sharing rejected: %v", err)
+					}
+					if err := app.Delete(second); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					want := "customDomains"
+					if typ == "tcp" || typ == "udp" {
+						want = "remotePort"
+					}
+					if conflictField(err) != want {
+						t.Fatalf("unsupported sharing save=%v, want %s conflict", err, want)
+					}
+				}
+				if err := app.Delete(first); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
 	}
 }
 

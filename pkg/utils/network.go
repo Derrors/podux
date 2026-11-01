@@ -1,11 +1,14 @@
 package utils
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +32,10 @@ type GeoLocation struct {
 
 // PingHost tests host latency via TCP connection
 func PingHost(addr string, timeout time.Duration) PingResult {
+	return PingHostContext(context.Background(), addr, timeout)
+}
+
+func PingHostContext(ctx context.Context, addr string, timeout time.Duration) PingResult {
 	if addr == "" {
 		return PingResult{
 			Latency:   -1,
@@ -43,7 +50,7 @@ func PingHost(addr string, timeout time.Duration) PingResult {
 	}
 
 	start := time.Now()
-	conn, err := net.DialTimeout("tcp", addr, timeout)
+	conn, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", addr)
 	elapsed := time.Since(start).Milliseconds()
 
 	if err != nil {
@@ -64,8 +71,12 @@ func PingHost(addr string, timeout time.Duration) PingResult {
 
 // GetGeoLocation retrieves IP geolocation information (using free public API)
 func GetGeoLocation(addr string) (*GeoLocation, error) {
+	return GetGeoLocationContext(context.Background(), addr)
+}
+
+func GetGeoLocationContext(ctx context.Context, addr string) (*GeoLocation, error) {
 	// Resolve IP address (resolve domain name if needed)
-	ip, err := resolveAddr(addr)
+	ip, err := resolveAddrContext(ctx, addr)
 	if err != nil {
 		return nil, fmt.Errorf("resolve address failed: %w", err)
 	}
@@ -82,11 +93,15 @@ func GetGeoLocation(addr string) (*GeoLocation, error) {
 	}
 
 	// Query using ip-api.com (free, no key required, 45 requests/min)
-	return getGeoLocationFromAPI(ip)
+	return publicGeo.lookup(ctx, ip)
 }
 
 // resolveAddr resolves address and extracts IP
-func resolveAddr(addr string) (string, error) {
+func resolveAddr(addr string) (string, error) { return resolveAddrContext(context.Background(), addr) }
+func resolveAddrContext(ctx context.Context, addr string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	// Remove port number
 	host := strings.Trim(addr, "[]")
 	if h, _, err := net.SplitHostPort(addr); err == nil {
@@ -99,7 +114,7 @@ func resolveAddr(addr string) (string, error) {
 	}
 
 	// DNS resolution
-	ips, err := net.LookupIP(host)
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
 	if err != nil {
 		return "", err
 	}
@@ -126,26 +141,87 @@ func isPrivateIP(ip string) bool {
 		return false
 	}
 
-	// Private IP ranges
-	privateRanges := []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"127.0.0.0/8",
-	}
+	return parsedIP.IsPrivate() || parsedIP.IsLoopback() || parsedIP.IsLinkLocalUnicast() || !parsedIP.IsGlobalUnicast()
+}
 
-	for _, cidr := range privateRanges {
-		_, subnet, _ := net.ParseCIDR(cidr)
-		if subnet.Contains(parsedIP) {
-			return true
+// A process-wide gate enforces <=45 public requests/minute without burst
+// tokens. Waiting and HTTP are cancellable; the IP-keyed cache deduplicates both
+// concurrent host aliases and repeated failures. No lookup spawns a goroutine.
+const geoRequestSpacing = time.Minute/45 + time.Millisecond
+
+type publicGeoEntry struct {
+	location *GeoLocation
+	err      error
+	expires  time.Time
+}
+type geoAPI struct {
+	once  sync.Once
+	gate  chan struct{}
+	cache map[string]publicGeoEntry
+	next  time.Time
+	fetch func(context.Context, string) (*GeoLocation, error)
+}
+
+var publicGeo = &geoAPI{fetch: getGeoLocationFromAPI}
+
+func (g *geoAPI) lookup(ctx context.Context, ip string) (*GeoLocation, error) {
+	g.once.Do(func() { g.gate = make(chan struct{}, 1); g.cache = make(map[string]publicGeoEntry) })
+	select {
+	case g.gate <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-g.gate }()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if item, ok := g.cache[ip]; ok && time.Now().Before(item.expires) {
+		return cloneGeo(item.location), item.err
+	}
+	if delay := time.Until(g.next); delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
-
-	return false
+	g.next = time.Now().Add(geoRequestSpacing)
+	location, err := g.fetch(ctx, ip)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	ttl := 24 * time.Hour
+	if err != nil {
+		ttl = time.Minute
+	}
+	if len(g.cache) >= 4096 {
+		for key, item := range g.cache {
+			if time.Now().After(item.expires) {
+				delete(g.cache, key)
+			}
+		}
+		if len(g.cache) >= 4096 {
+			for key := range g.cache {
+				delete(g.cache, key)
+				break
+			}
+		}
+	}
+	g.cache[ip] = publicGeoEntry{cloneGeo(location), err, time.Now().Add(ttl)}
+	return location, err
+}
+func cloneGeo(location *GeoLocation) *GeoLocation {
+	if location == nil {
+		return nil
+	}
+	out := *location
+	return &out
 }
 
 // getGeoLocationFromAPI retrieves geolocation information from ip-api.com
-func getGeoLocationFromAPI(ip string) (*GeoLocation, error) {
+func getGeoLocationFromAPI(ctx context.Context, ip string) (*GeoLocation, error) {
 	// ip-api.com API endpoint
 	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=status,country,countryCode,region,regionName,city,isp,lat,lon", ip)
 
@@ -153,7 +229,11 @@ func getGeoLocationFromAPI(ip string) (*GeoLocation, error) {
 		Timeout: 5 * time.Second,
 	}
 
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("API request failed: %w", err)
 	}
@@ -175,7 +255,7 @@ func getGeoLocationFromAPI(ip string) (*GeoLocation, error) {
 		Lon         float64 `json:"lon"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&apiResp); err != nil {
 		return nil, fmt.Errorf("parse API response failed: %w", err)
 	}
 

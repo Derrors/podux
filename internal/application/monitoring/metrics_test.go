@@ -95,6 +95,9 @@ func TestMaxLatestLatencyAndForget(t *testing.T) {
 	app := newTestApp(t)
 	s := NewMetricsService(app)
 
+	for _, id := range []string{"aaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbb", "ccccccccccccccc"} {
+		insertServer(t, app, id)
+	}
 	_ = s.RecordServerLatency("aaaaaaaaaaaaaaa", 30, "")
 	_ = s.RecordServerLatency("bbbbbbbbbbbbbbb", 120, "")
 	_ = s.RecordServerLatency("ccccccccccccccc", -1, "timeout")

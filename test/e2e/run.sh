@@ -5,7 +5,7 @@
 #
 # Needs curl. Uses ports 17000 (frps), 17500 (frps dashboard), 18080 (frps vhost
 # HTTP), 17010 (frps tcpmux), 18090 (Podux), 18099 (webhook catcher), 16080-16090
-# and 17100 on 127.0.0.1. Exits non-zero on the first failed check.
+# and 17100-17101 on 127.0.0.1. Exits non-zero on the first failed check.
 set -u
 : "${PODUX_BIN:?}" "${FRPS_BIN:?}" "${CATCHER_BIN:?}"
 WORK=$(mktemp -d)
@@ -121,13 +121,32 @@ echo "== expiry"
 EXP=$(proxy '"name":"tmp","proxyType":"tcp","localIP":"127.0.0.1","localPort":18090,"remotePort":16089,"expiresAt":"2020-01-01 00:00:00.000Z"' | id_of)
 wait_for "expired proxy disabled" 75 sh -c "curl -s '$B/api/collections/fh_proxies/records/$EXP' -H 'Authorization: $T' | grep -q '\"status\":\"disabled\"'"
 
+echo "== native import and runtime reconciliation"
+check "token-only auth and private visitor import" 'import successful' "$(api POST /api/import/execute -d '{"tomlContent":"serverAddr = \"127.0.0.1\"\nserverPort = 17000\nauth.token = \"tok\"\n[[proxies]]\nname = \"import-private\"\ntype = \"stcp\"\nlocalIP = \"127.0.0.1\"\nlocalPort = 18090\nsecretKey = \"import-key\"\n[[visitors]]\nname = \"import-visitor\"\ntype = \"stcp\"\nserverName = \"import-private\"\nsecretKey = \"import-key\"\nbindAddr = \"127.0.0.1\"\nbindPort = 17101\n","importServer":true,"overwriteServer":true,"proxies":[{"name":"import-private","import":true}],"importVisitors":true}')"
+wait_for "imported private visitor reaches remapped proxy" 25 curl -sf http://127.0.0.1:17101/api/health
+wait_for "existing tunnel survives server config reconcile" 25 curl -sf http://127.0.0.1:16080/api/health
+
+echo "== failed restore is not healthy-process success"
+mkdir -p "$WORK/data/backups"
+printf 'not a zip' > "$WORK/data/backups/invalid.zip"
+RESTORE=$(api POST /api/system/backups/invalid.zip/restore)
+RID=$(printf '%s' "$RESTORE" | sed -n 's/.*"id":"\([a-f0-9]\{64\}\)".*/\1/p')
+[ -n "$RID" ] || fail "invalid backup job not accepted"
+restore_failed() { curl -sf "$B/api/system/backups/restore-status" -H "X-Podux-Restore-ID: $RID" | grep -q '"state":"failed"'; }
+wait_for "invalid backup has explicit failed result" 10 restore_failed
+check "old process still healthy after failed restore" "API is healthy" "$(curl -sf "$B/api/health")"
+
 echo "== backup and restore"
 BK=$(api POST /api/system/backups | sed -n 's/.*"name":"\([^"]*\)".*/\1/p')
 [ -n "$BK" ] || fail "create backup"
 AFTER=$(proxy '"name":"after","proxyType":"udp","localPort":53,"remotePort":16090' | id_of)
-check "restore accepted" "restoring" "$(api POST "/api/system/backups/$BK/restore")"
-sleep 3
-wait_for "podux restarts after restore" 60 curl -sf $B/api/health
+[ -n "$AFTER" ] || fail "create post-backup record"
+check "post-backup record exists before restore" "200" "$(curl -s -o /dev/null -w '%{http_code}' "$B/api/collections/fh_proxies/records/$AFTER" -H "Authorization: $T")"
+RESTORE=$(api POST "/api/system/backups/$BK/restore")
+RID=$(printf '%s' "$RESTORE" | sed -n 's/.*"id":"\([a-f0-9]\{64\}\)".*/\1/p')
+[ -n "$RID" ] || fail "restore job not accepted"
+restored() { curl -sf "$B/api/system/backups/restore-status" -H "X-Podux-Restore-ID: $RID" | grep -q '"state":"succeeded"'; }
+wait_for "restore job confirms replaced data after restart" 90 restored
 login
 check "data restored to the backup" "404" "$(curl -s -o /dev/null -w '%{http_code}' "$B/api/collections/fh_proxies/records/$AFTER" -H "Authorization: $T")"
 

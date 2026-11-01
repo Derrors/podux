@@ -73,4 +73,6 @@ The other way round, a proxy published by native frpc is named by its `name` set
 
 ## Import
 
-When importing `frpc.toml`, STCP/SUDP/XTCP proxies are imported like other proxies, and `[[visitors]]` appear in the preview's Visitors section, where you choose whether to import them and whether to overwrite visitors with the same name. Proxy types that are still unsupported, such as TCPMUX, are skipped with a warning.
+When importing `frpc.toml`, STCP/SUDP/XTCP proxies are imported like other proxies, and `[[visitors]]` appear in the preview's Visitors section, where you choose whether to import them and whether to overwrite visitors with the same name. TCPMUX is also supported; unrecognized types are skipped with a warning.
+
+When a private proxy and a same-user visitor targeting it are actually imported from the same file, Podux maps the visitor's `serverName` to the proxy's generated “name-ID” automatically. References to other users or proxies not imported retain their original target names. An overwrite import clears old fallback settings omitted from the file.

@@ -82,6 +82,12 @@ You can now reach the machine with `ssh -p 6022 user@your-server.com`.
 Upload your existing `frpc.toml` on the **Import** page to preview and import its server, proxies and visitors in one go. Server auth settings, including [OIDC](/en/guide/oidc), are imported too; unknown proxy types are skipped with a warning.
 :::
 
+::: warning Overwriting configuration and active connections
+An overwrite import replaces the selected records' frpc configuration, clearing omitted options such as plugins and visitor fallback settings rather than merging only non-empty fields. It does not directly reset Podux notes, auto-connect preferences or actual runtime status.
+
+Editing or importing changes to a running server's shared address, authentication or transport configuration automatically restarts that server's frpc and briefly interrupts its tunnels. Proxy-only and visitor-only changes still use hot reload.
+:::
+
 ## PocketBase Admin UI (Optional)
 
 Podux includes the PocketBase admin UI (`/_/`) for inspecting the underlying data; everyday use does not need it. It uses a separate superuser account, which you can create either way:

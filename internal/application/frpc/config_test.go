@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"podux/internal/frpconfig"
 	"podux/internal/infrastructure/persistence"
 	"podux/internal/testutil"
 
@@ -71,11 +72,15 @@ func TestGenCommonCfgsDropsOIDCForToken(t *testing.T) {
 	}
 }
 
-func TestSensitiveRegexMasksOIDCSecret(t *testing.T) {
+func TestStructuredRedactorMasksOIDCSecret(t *testing.T) {
 	cfg := v1.ClientCommonConfig{Auth: v1.AuthClientConfig{Method: "oidc", OIDC: v1.AuthOIDCClientConfig{ClientID: "cid", ClientSecret: "oidc-secret"}}}
-	b, _ := json.Marshal(cfg)
-	if masked := string(sensitiveRegex.ReplaceAll(b, []byte(`"${1}":"***"`))); strings.Contains(masked, "oidc-secret") || !strings.Contains(masked, "cid") {
-		t.Fatalf("masked config: %s", masked)
+	plain, err := frpconfig.Plain(cfg, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(plain)
+	if strings.Contains(string(b), "oidc-secret") || !strings.Contains(string(b), "cid") {
+		t.Fatal("structured redaction did not preserve only non-sensitive fields")
 	}
 }
 

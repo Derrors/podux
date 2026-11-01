@@ -2,7 +2,7 @@ import { DashboardView } from "./DashboardPage.view";
 import { useDashboard } from "./useDashboard";
 
 export function DashboardPage() {
-  const { stats, topology } = useDashboard();
+  const dashboard = useDashboard();
 
-  return <DashboardView stats={stats} topology={topology} />;
+  return <DashboardView {...dashboard} />;
 }

@@ -22,9 +22,11 @@ import (
 const ProbeInterval = time.Minute
 
 const (
-	probeTimeout     = 8 * time.Second
-	probeConcurrency = 4
-	probeMinSpacing  = 250 * time.Millisecond
+	probeTimeout           = 8 * time.Second
+	probeConcurrency       = 4
+	probeMinSpacing        = 250 * time.Millisecond
+	probeServerConcurrency = 8
+	probeGlobalConcurrency = 16
 )
 
 // frpsNotFoundMarker is in frps's own 404 page, served when no proxy matches a request.
@@ -59,6 +61,7 @@ type ProbeService struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	round    chan struct{} // coalesces concurrent ProbeAll calls
+	slots    chan struct{} // process-wide in-flight probes
 
 	// observeMu orders completed batches against opt-out hooks without holding
 	// mu while calling the observer (which may read Results).
@@ -71,7 +74,7 @@ func NewProbeService(app core.App, frps *FrpsService) *ProbeService {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &ProbeService{
 		app: app, frps: frps, results: map[string]ProbeResult{},
-		ctx: ctx, cancel: cancel, round: make(chan struct{}, 1),
+		ctx: ctx, cancel: cancel, round: make(chan struct{}, 1), slots: make(chan struct{}, probeGlobalConcurrency),
 		invalidated: map[string]bool{}, active: map[string]context.CancelFunc{},
 	}
 }
@@ -159,31 +162,45 @@ func (s *ProbeService) ProbeAll(ctx context.Context) {
 	defer stopCancel()
 	defer cancel()
 
-	servers, err := s.app.FindAllRecords("fh_servers", dbx.HashExp{"bootStatus": "running"})
-	if err != nil {
-		s.app.Logger().Warn("Proxy probe: failed to list servers", "error", err)
-		return
-	}
 	seen := map[string]bool{}
+	var seenMu sync.Mutex
 	var wg sync.WaitGroup
-	for _, srv := range servers {
-		if ctx.Err() != nil {
-			break
-		}
-		targets := s.targets(ctx, srv)
-		for _, t := range targets {
-			seen[t.id] = true
-		}
-		// Each server has its own pacing and concurrency limit; a slow
-		// tunnel does not hold up probes of another server.
+	jobs := make(chan *core.Record, serverPageSize)
+	for range probeServerConcurrency {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			s.probeServer(ctx, srv, targets)
+			for srv := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				// Dashboard preparation belongs to the bounded worker, not the
+				// serial listing path: one slow dashboard cannot block all peers.
+				targets := s.targets(ctx, srv)
+				seenMu.Lock()
+				for _, target := range targets {
+					seen[target.id] = true
+				}
+				seenMu.Unlock()
+				s.probeServer(ctx, srv, targets)
+			}
 		}()
 	}
+	err := eachServer(ctx, s.app, func(srv *core.Record) {
+		if srv.GetString("bootStatus") != "running" {
+			return
+		}
+		select {
+		case jobs <- srv:
+		case <-ctx.Done():
+		}
+	})
+	close(jobs)
 	wg.Wait()
-	if ctx.Err() != nil {
+	if err != nil && ctx.Err() == nil {
+		s.app.Logger().Warn("Proxy probe: failed to list servers", "error", err)
+	}
+	if ctx.Err() != nil || err != nil {
 		return // An interrupted round must not discard previous results.
 	}
 
@@ -209,7 +226,7 @@ func (s *ProbeService) probeServer(ctx context.Context, srv *core.Record, target
 		s.active[t.id] = cancel
 		s.mu.Unlock()
 
-		err := probe(probeCtx, t)
+		err := s.runProbe(probeCtx, t)
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		defer cancel()
@@ -240,6 +257,19 @@ func (s *ProbeService) probeServer(ctx context.Context, srv *core.Record, target
 		s.mu.Unlock()
 		s.observer(srv.Id, srv.GetString("serverName"), filtered)
 	}
+}
+
+func (s *ProbeService) runProbe(ctx context.Context, target probeTarget) error {
+	select {
+	case s.slots <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-s.slots }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return probe(ctx, target)
 }
 
 // probeTargets spreads starts over the target interval with bounded in-flight
@@ -294,7 +324,19 @@ func (s *ProbeService) targets(ctx context.Context, srv *core.Record) []probeTar
 
 	// frps's vhost ports and subdomain host come from its dashboard, if configured.
 	httpPort, httpsPort, subdomainHost := 80, 443, ""
-	if stats, _ := s.frps.ServerStats(ctx, srv.Id); stats != nil && stats.Info != nil {
+	portsReady := true
+	var cfg DashboardConfig
+	_ = srv.UnmarshalJSONField("dashboard", &cfg)
+	var stats *ServerStats
+	if s.frps != nil {
+		prepareCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+		stats, _ = s.frps.ReadyStats(prepareCtx, srv.Id)
+		cancel()
+	}
+	if cfg.Configured() && (stats == nil || stats.Info == nil) {
+		portsReady = false
+	}
+	if stats != nil && stats.Info != nil {
 		if stats.Info.VhostHTTPPort > 0 {
 			httpPort = stats.Info.VhostHTTPPort
 		}
@@ -316,6 +358,9 @@ func (s *ProbeService) targets(ctx context.Context, srv *core.Record) []probeTar
 			}
 			t.endpoint = net.JoinHostPort(addr, strconv.Itoa(port))
 		case "http", "https":
+			if !portsReady {
+				continue
+			} // unknown configured ports are not 80/443
 			t.host = probeHost(p.GetStringSlice("customDomains"), p.GetString("subdomain"), subdomainHost)
 			if t.host == "" {
 				continue

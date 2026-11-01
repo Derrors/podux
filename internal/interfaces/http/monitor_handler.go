@@ -9,6 +9,7 @@ import (
 	"podux/internal/application/apikey"
 	"podux/internal/application/monitoring"
 
+	"ganigeorgiev.com/pocketbase/dbx"
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
@@ -43,6 +44,17 @@ func (h *MonitorHandler) RegisterHandlers(e *core.ServeEvent) {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
 
+		var allowed map[string]bool
+		if serverID != "" {
+			var proxyIDs []string
+			if err := h.app.DB().Select("id").From("fh_proxies").Where(dbx.HashExp{"serverId": serverID}).WithContext(e.Request.Context()).Column(&proxyIDs); err != nil {
+				return e.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+			allowed = make(map[string]bool, len(proxyIDs))
+			for _, id := range proxyIDs {
+				allowed[id] = true
+			}
+		}
 		out := map[string]*proxyStatus{}
 		get := func(id string) *proxyStatus {
 			if out[id] == nil {
@@ -51,6 +63,7 @@ func (h *MonitorHandler) RegisterHandlers(e *core.ServeEvent) {
 			return out[id]
 		}
 		dashboards := map[string]string{} // server ID -> error, for servers with a dashboard
+		refresh := map[string]any{}
 		// server ID -> frps subdomainHost, so lists can show <subdomain>.<subdomainHost>
 		subdomainHosts := map[string]string{}
 		for _, id := range ids {
@@ -59,17 +72,24 @@ func (h *MonitorHandler) RegisterHandlers(e *core.ServeEvent) {
 				continue
 			}
 			dashboards[id] = stats.Error
+			refresh[id] = map[string]any{"fetched": stats.Fetched, "lastAttempt": stats.LastAttempt, "refreshState": stats.RefreshState}
 			if stats.Info != nil && stats.Info.SubdomainHost != "" {
 				subdomainHosts[id] = stats.Info.SubdomainHost
 			}
 			for pid, t := range stats.Proxies {
+				if allowed != nil && !allowed[pid] {
+					continue
+				}
 				get(pid).Traffic = &t
 			}
 		}
 		for pid, r := range h.probe.Results() {
+			if allowed != nil && !allowed[pid] {
+				continue
+			}
 			get(pid).Probe = &r
 		}
-		return e.JSON(http.StatusOK, map[string]any{"proxies": out, "dashboards": dashboards, "subdomainHosts": subdomainHosts})
+		return e.JSON(http.StatusOK, map[string]any{"proxies": out, "dashboards": dashboards, "subdomainHosts": subdomainHosts, "refresh": refresh})
 	}))
 
 	// frps info and today's totals for one server; empty when no dashboard is configured.
@@ -85,7 +105,7 @@ func (h *MonitorHandler) RegisterHandlers(e *core.ServeEvent) {
 		if stats == nil {
 			return e.JSON(http.StatusOK, map[string]any{"configured": false})
 		}
-		return e.JSON(http.StatusOK, map[string]any{"configured": true, "info": stats.Info, "error": stats.Error})
+		return e.JSON(http.StatusOK, map[string]any{"configured": true, "info": stats.Info, "error": stats.Error, "fetched": stats.Fetched, "lastAttempt": stats.LastAttempt, "refreshState": stats.RefreshState})
 	}))
 
 	// Check a dashboard address and login from the server form before saving.

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"podux/internal/application/apikey"
 	"podux/internal/application/backup"
@@ -34,7 +35,9 @@ func newTestRouter(t *testing.T) (core.App, http.Handler) {
 	serverRepo := persistence.NewServerRepository(app)
 	proxyRepo := persistence.NewProxyRepository(app)
 	metricsService := monitoring.NewMetricsService(app)
-	dashboardService := dashboard.NewService(app, server.NewService(app, serverRepo), proxy.NewService(app, proxyRepo), metricsService, monitoring.NewFrpsService(app))
+	dashboardFrps := monitoring.NewFrpsService(app)
+	t.Cleanup(dashboardFrps.Stop)
+	dashboardService := dashboard.NewService(app, server.NewService(app, serverRepo), proxy.NewService(app, proxyRepo), metricsService, dashboardFrps)
 
 	r, err := apis.NewRouter(app)
 	if err != nil {
@@ -52,6 +55,7 @@ func newTestRouter(t *testing.T) (core.App, http.Handler) {
 	NewProxyHandler(app).RegisterHandlers(e)
 	NewBackupHandler(app, backup.NewService(app)).RegisterHandlers(e)
 	frps := monitoring.NewFrpsService(app)
+	t.Cleanup(frps.Stop)
 	probes := monitoring.NewProbeService(app, frps)
 	probes.RegisterProxyHooks(nil)
 	t.Cleanup(probes.Stop)
@@ -425,13 +429,20 @@ func TestProxyStatusReportsSubdomainHost(t *testing.T) {
 	})
 	testutil.SaveRecord(t, app, "fh_servers", map[string]any{"serverName": "plain", "serverAddr": "2.2.2.2", "serverPort": 7000})
 
-	rec := do(t, h, http.MethodGet, "/api/proxies/status", token, "")
-	var out struct{ SubdomainHosts map[string]string }
-	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &out) != nil {
-		t.Fatalf("status: %d %s", rec.Code, rec.Body)
-	}
-	// Only servers whose dashboard reports a subdomainHost are listed.
-	if len(out.SubdomainHosts) != 1 || out.SubdomainHosts[s.Id] != "frp.example.com" {
-		t.Errorf("subdomainHosts = %v", out.SubdomainHosts)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		rec := do(t, h, http.MethodGet, "/api/proxies/status", token, "")
+		var out struct{ SubdomainHosts map[string]string }
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &out) != nil {
+			t.Fatalf("status: %d %s", rec.Code, rec.Body)
+		}
+		// A cold read queues refresh rather than holding the HTTP request open.
+		if len(out.SubdomainHosts) == 1 && out.SubdomainHosts[s.Id] == "frp.example.com" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("subdomainHosts = %v", out.SubdomainHosts)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

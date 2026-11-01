@@ -2,21 +2,15 @@ package frpc
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
-	"strings"
+	"podux/internal/frpconfig"
 
 	v1 "github.com/fatedier/frp/pkg/config/v1"
 	"github.com/pelletier/go-toml/v2"
 )
 
 // RedactedValue replaces secrets in an export made without them.
-const RedactedValue = "<redacted>"
-
-// secretKeys are config keys whose values are credentials; matched case-insensitively.
-var secretKeys = map[string]bool{
-	"token": true, "password": true, "secretkey": true, "clientsecret": true, "httppassword": true,
-}
+const RedactedValue = frpconfig.RedactedValue
 
 // Exported TLS files, relative to the exported frpc.toml.
 const (
@@ -65,7 +59,11 @@ func (fs *Service) ExportToml(serverID string, includeSecrets bool) ([]byte, err
 		files = append(files, exportOIDCCAFile)
 	}
 
-	files = append(files, exportPluginCerts(proxies)...)
+	pluginCerts, err := fs.exportPluginCerts(serverID, proxies)
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, pluginCerts...)
 
 	var out bytes.Buffer
 	out.WriteString("# frpc configuration exported from Podux / 由 Podux 导出的 frpc 配置\n")
@@ -117,12 +115,8 @@ func toPlain(v any, includeSecrets bool) (any, error) {
 	if list, ok := v.([]v1.VisitorConfigurer); ok && len(list) == 0 {
 		return nil, nil
 	}
-	b, err := json.Marshal(v)
+	plain, err := frpconfig.Plain(v, includeSecrets)
 	if err != nil {
-		return nil, err
-	}
-	var plain any
-	if err := json.Unmarshal(b, &plain); err != nil {
 		return nil, err
 	}
 	return prune(plain, includeSecrets), nil
@@ -135,12 +129,6 @@ func prune(v any, includeSecrets bool) any {
 	switch t := v.(type) {
 	case map[string]any:
 		for k, val := range t {
-			if !includeSecrets && secretKeys[strings.ToLower(k)] {
-				if s, ok := val.(string); ok && s != "" {
-					t[k] = RedactedValue
-					continue
-				}
-			}
 			p := prune(val, includeSecrets)
 			// A health check without a type is off; frp still marshals its intervalSeconds.
 			if hc, ok := p.(map[string]any); ok && k == "healthCheck" && hc["type"] == nil {

@@ -37,6 +37,14 @@
     "previousPage": "上一页",
     "pagination": "分页"
   },
+  "errorBoundary": {
+    "title": "页面暂时无法显示",
+    "description": "页面渲染遇到意外错误。请重试，若问题持续，可刷新应用。",
+    "chunkDescription": "部分应用资源未能加载，可能是版本升级或网络中断所致。请检查网络后刷新，以获取最新版本。",
+    "unsaved": "重试或刷新可能丢失尚未保存的修改，已保存的配置不受影响。",
+    "retry": "重试",
+    "reload": "刷新应用"
+  },
   "nav": {
     "dashboard": "仪表板",
     "servers": "服务器",
@@ -108,7 +116,19 @@
     "topologyHandledByPlugin": "由插件处理",
     "trafficSplit": "入站 {{in}} · 出站 {{out}}",
     "topologyFullscreen": "全屏查看",
-    "topologyFullscreenHint": "可拖动画布、滚轮或双指缩放查看细节"
+    "topologyFullscreenHint": "可拖动画布、滚轮或双指缩放查看细节",
+    "topologyLoadFailed": "拓扑加载失败；如有先前数据，将继续显示。",
+    "distributionShare": "占比",
+    "topologyServer": "服务器",
+    "topologyExpand": "展开连接",
+    "topologyCollapse": "折叠连接",
+    "topologyGraph": "图形视图",
+    "topologyTable": "表格视图",
+    "topologyCount": "共 {{count}} 个连接，每页最多 10 个",
+    "topologyLegend": "绿色实线表示活跃连接，灰色虚线表示未活跃连接；完整名称与地址可在表格中查看。",
+    "topologyZoomIn": "放大",
+    "topologyZoomOut": "缩小",
+    "topologyFitView": "适应视口"
   },
   "server": {
     "title": "服务器",
@@ -863,7 +883,8 @@
     "restoring": "正在恢复，Podux 重启中…",
     "restored": "恢复完成，即将刷新页面",
     "restoreFailed": "恢复备份失败",
-    "restoreTimeout": "Podux 没有按时重启，请查看容器或服务日志"
+    "restoreTimeout": "等待恢复结果超时，尚未确认成功；请查看服务日志，勿重复提交恢复",
+    "restoreCheckLogs": "恢复未完成，请查看容器或服务日志。服务健康不代表数据已恢复。"
   },
   "apiKeys": {
     "tab": "API",

@@ -6,8 +6,6 @@ import (
 	"podux/internal/application/monitoring"
 	proxyapp "podux/internal/application/proxy"
 	serverapp "podux/internal/application/server"
-	proxydomain "podux/internal/domain/proxy"
-	serverdomain "podux/internal/domain/server"
 	"time"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
@@ -88,37 +86,33 @@ func NewService(app core.App, serverService *serverapp.Service, proxyService *pr
 }
 
 func (s *Service) GetStats() (*DashboardStats, error) {
-	runningCount, err := s.serverService.GetServerCountByStatus(serverdomain.ServerStatusRunning)
-	if err != nil {
+	var servers struct {
+		Running int64 `db:"running"`
+		Stopped int64 `db:"stopped"`
+	}
+	if err := s.app.DB().NewQuery(`SELECT COALESCE(SUM(bootStatus='running'),0) AS running, COALESCE(SUM(bootStatus='stopped'),0) AS stopped FROM fh_servers`).One(&servers); err != nil {
 		return nil, err
 	}
-
-	stoppedCount, err := s.serverService.GetServerCountByStatus(serverdomain.ServerStatusStopped)
-	if err != nil {
+	var proxies []struct {
+		Type     string `db:"proxyType"`
+		Total    int64  `db:"total"`
+		Enabled  int64  `db:"enabled"`
+		Disabled int64  `db:"disabled"`
+		Online   int64  `db:"online"`
+	}
+	if err := s.app.DB().NewQuery(`SELECT proxyType, COUNT(*) AS total, SUM(status='enabled') AS enabled, SUM(status='disabled') AS disabled, SUM(bootStatus='online') AS online FROM fh_proxies GROUP BY proxyType`).All(&proxies); err != nil {
 		return nil, err
 	}
-
-	proxiesEnabledCount, err := s.proxyService.GetProxyCountByStatus(proxydomain.ProxyStatusEnabled)
-	if err != nil {
-		return nil, err
-	}
-
-	proxiesDisabledCount, err := s.proxyService.GetProxyCountByStatus(proxydomain.ProxyStatusDisabled)
-	if err != nil {
-		return nil, err
-	}
-
-	proxiesOnlineCount, err := s.proxyService.GetProxyCountByBootStatus(proxydomain.ProxyBootStatusOnline)
-	if err != nil {
-		return nil, err
+	var proxiesEnabledCount, proxiesDisabledCount, proxiesOnlineCount int64
+	proxyTypeCounts := make(map[string]int64, len(proxies))
+	for _, p := range proxies {
+		proxiesEnabledCount += p.Enabled
+		proxiesDisabledCount += p.Disabled
+		proxiesOnlineCount += p.Online
+		proxyTypeCounts[p.Type] = p.Total
 	}
 
 	maxLatency, err := s.metrics.MaxLatestLatency()
-	if err != nil {
-		return nil, err
-	}
-
-	proxyTypeCounts, err := s.proxyService.GetProxyCountsByType()
 	if err != nil {
 		return nil, err
 	}
@@ -134,8 +128,8 @@ func (s *Service) GetStats() (*DashboardStats, error) {
 	stats := &DashboardStats{
 		VisitorsTotal:        visitors.Total,
 		VisitorsEnabled:      visitors.Enabled,
-		RunningCount:         runningCount,
-		StoppedCount:         stoppedCount,
+		RunningCount:         servers.Running,
+		StoppedCount:         servers.Stopped,
 		ProxiesEnabledCount:  proxiesEnabledCount,
 		ProxiesDisabledCount: proxiesDisabledCount,
 		ProxiesOnlineCount:   proxiesOnlineCount,

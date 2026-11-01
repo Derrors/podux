@@ -56,7 +56,7 @@ type tomlTransportConfig struct {
 
 type tomlTLSConfig struct {
 	Enable                    *bool  `toml:"enable"`
-	DisableCustomTLSFirstByte bool   `toml:"disableCustomTLSFirstByte"`
+	DisableCustomTLSFirstByte *bool  `toml:"disableCustomTLSFirstByte"`
 	ServerName                string `toml:"serverName"`
 	CertFile                  string `toml:"certFile"`
 	KeyFile                   string `toml:"keyFile"`
@@ -243,10 +243,10 @@ func (s *Service) ParseToml(req *ParseTomlRequest) (*ImportPreviewResponse, erro
 		return nil, fmt.Errorf("TOML 解析失败: %w", err)
 	}
 
-	serverPort := cfg.ServerPort
-	if serverPort == 0 {
-		serverPort = 7000
+	if err := normalizeImportedCommon(&cfg); err != nil {
+		return nil, err
 	}
+	serverPort := cfg.ServerPort
 
 	// Check if server already exists (by addr + port)
 	var existingServerId string
@@ -389,10 +389,10 @@ func (s *Service) ExecuteImport(req *ExecuteImportRequest) (*ImportResult, error
 		return nil, fmt.Errorf("TOML 解析失败: %w", err)
 	}
 
-	serverPort := cfg.ServerPort
-	if serverPort == 0 {
-		serverPort = 7000
+	if err := normalizeImportedCommon(&cfg); err != nil {
+		return nil, err
 	}
+	serverPort := cfg.ServerPort
 
 	result := &ImportResult{}
 
@@ -404,10 +404,11 @@ func (s *Service) ExecuteImport(req *ExecuteImportRequest) (*ImportResult, error
 		if serverId == "" {
 			return nil
 		}
-		if err := s.handleProxyImport(txApp, &cfg, serverId, req.Proxies, result); err != nil {
+		importedProxies := map[string]string{}
+		if err := s.handleProxyImport(txApp, &cfg, serverId, req.Proxies, result, importedProxies); err != nil {
 			return err
 		}
-		return s.handleVisitorImport(txApp, &cfg, serverId, req, result)
+		return s.handleVisitorImport(txApp, &cfg, serverId, req, result, importedProxies)
 	})
 
 	if err != nil {
@@ -495,20 +496,20 @@ func (s *Service) handleServerImport(
 		return existingServerRow.Id, nil
 	} else {
 		serverRecord = core.NewRecord(serversCollection)
+		serverRecord.Set("serverVersion", "built-in")
+		serverRecord.Set("bootStatus", "stopped")
+		serverRecord.Set("autoConnection", false)
 	}
 
+	serverRecord.IgnoreUnchangedFields(true)
 	serverRecord.Set("serverName", serverName)
 	serverRecord.Set("serverAddr", cfg.ServerAddr)
 	serverRecord.Set("serverPort", serverPort)
 	serverRecord.Set("user", cfg.User)
-	serverRecord.Set("serverVersion", "built-in")
 	serverRecord.Set("auth", string(authJSON))
 	serverRecord.Set("log", string(logJSON))
 	serverRecord.Set("transport", string(transportJSON))
 	serverRecord.Set("metadatas", string(metadatasJSON))
-	serverRecord.Set("bootStatus", "stopped")
-	serverRecord.Set("autoConnection", false)
-	serverRecord.Set("description", "")
 
 	if err := txApp.Save(serverRecord); err != nil {
 		return "", fmt.Errorf("保存服务器失败: %w", err)
@@ -525,6 +526,7 @@ func (s *Service) handleProxyImport(
 	serverId string,
 	proxyOpts []ProxyImportOption,
 	result *ImportResult,
+	imported map[string]string,
 ) error {
 	proxyOptMap := make(map[string]ProxyImportOption, len(proxyOpts))
 	for _, opt := range proxyOpts {
@@ -544,6 +546,9 @@ func (s *Service) handleProxyImport(
 			continue
 		}
 
+		if err := validateProxy(p); err != nil {
+			return err
+		}
 		var existingProxyRow struct {
 			Id string `db:"id"`
 		}
@@ -567,6 +572,8 @@ func (s *Service) handleProxyImport(
 			continue
 		} else {
 			proxyRecord = core.NewRecord(proxiesCollection)
+			proxyRecord.Set("status", "enabled")
+			proxyRecord.Set("bootStatus", "offline")
 		}
 
 		customDomains := p.CustomDomains
@@ -581,6 +588,7 @@ func (s *Service) handleProxyImport(
 		}
 		proxyTransportJSON, _ := json.Marshal(proxyTransport)
 
+		proxyRecord.IgnoreUnchangedFields(true)
 		proxyRecord.Set("name", p.Name)
 		proxyRecord.Set("proxyType", proxyType)
 		proxyRecord.Set("serverId", serverId)
@@ -594,15 +602,15 @@ func (s *Service) handleProxyImport(
 		proxyRecord.Set("allowUsers", p.AllowUsers)
 		proxyRecord.Set("healthCheck", p.HealthCheck)
 		proxyRecord.Set("options", p.options())
-		if len(p.Plugin) > 0 {
-			proxyRecord.Set("plugin", p.Plugin)
-		}
-		proxyRecord.Set("status", "enabled")
-		proxyRecord.Set("bootStatus", "offline")
-		proxyRecord.Set("description", "")
+		// A native overwrite replaces all native fields, including omitted plugins;
+		// status, probe switches, expiry and descriptions belong to Podux and survive.
+		proxyRecord.Set("plugin", p.Plugin)
 
 		if err := txApp.Save(proxyRecord); err != nil {
 			return fmt.Errorf("保存代理 %s 失败: %w", p.Name, err)
+		}
+		if proxyType == "stcp" || proxyType == "sudp" || proxyType == "xtcp" {
+			imported[p.Name] = proxyRecord.GetString("name") + "-" + proxyRecord.Id
 		}
 		result.ProxiesImported++
 	}
@@ -617,6 +625,7 @@ func (s *Service) handleVisitorImport(
 	serverId string,
 	req *ExecuteImportRequest,
 	result *ImportResult,
+	importedProxies map[string]string,
 ) error {
 	if !req.ImportVisitors {
 		result.VisitorsSkipped += len(cfg.Visitors)
@@ -627,11 +636,18 @@ func (s *Service) handleVisitorImport(
 		return fmt.Errorf("找不到访问端集合: %w", err)
 	}
 
+	server, err := txApp.FindRecordById("fh_servers", serverId)
+	if err != nil {
+		return err
+	}
 	saved := map[string]*core.Record{} // TOML visitor name -> saved record
 	for _, v := range cfg.Visitors {
 		if !visitorTypeOk(v) {
 			result.VisitorsSkipped++
 			continue
+		}
+		if err := validateVisitor(v); err != nil {
+			return err
 		}
 		var record *core.Record
 		if existingID := s.findVisitorID(txApp, serverId, v.Name); existingID != "" {
@@ -652,16 +668,36 @@ func (s *Service) handleVisitorImport(
 		if transport == nil {
 			transport = map[string]interface{}{}
 		}
+		record.IgnoreUnchangedFields(true)
 		record.Set("name", v.Name)
 		record.Set("visitorType", v.Type)
 		record.Set("serverId", serverId)
-		record.Set("serverName", v.ServerName)
-		record.Set("serverUser", v.ServerUser)
+		target, user := v.ServerName, v.ServerUser
+		// Empty serverUser inherits the source file's common user. Only a private
+		// proxy actually imported by this transaction is eligible for remapping.
+		effectiveUser := user
+		if effectiveUser == "" {
+			effectiveUser = cfg.User
+		}
+		if runtimeName, ok := importedProxies[target]; ok && effectiveUser == cfg.User {
+			target, user = runtimeName, server.GetString("user")
+		} else if user == "" && cfg.User != server.GetString("user") {
+			// Preserve external/source-user targets when importing into an existing
+			// server with a different common user (without overwriting that server).
+			user = cfg.User
+			if user == "" {
+				return fmt.Errorf("cannot preserve an unqualified external visitor target with a different server user")
+			}
+		}
+		record.Set("serverName", target)
+		record.Set("serverUser", user)
 		record.Set("secretKey", v.SecretKey)
 		record.Set("bindAddr", v.BindAddr)
 		record.Set("bindPort", v.BindPort)
 		record.Set("keepTunnelOpen", v.KeepTunnelOpen)
 		record.Set("transport", transport)
+		record.Set("fallbackTo", "")
+		record.Set("fallbackTimeoutMs", 0)
 
 		if err := txApp.Save(record); err != nil {
 			return fmt.Errorf("保存访问端 %s 失败: %w", v.Name, err)
@@ -673,10 +709,19 @@ func (s *Service) handleVisitorImport(
 	// fallbackTo names a visitor in the TOML; Podux stores the visitor's record ID.
 	for _, v := range cfg.Visitors {
 		record, fb := saved[v.Name], saved[v.FallbackTo]
-		if record == nil || fb == nil || v.FallbackTo == v.Name {
+		if record == nil || v.Type != "xtcp" || v.FallbackTo == "" || v.FallbackTo == v.Name {
 			continue
 		}
-		record.Set("fallbackTo", fb.Id)
+		fbID := ""
+		if fb != nil {
+			fbID = fb.Id
+		} else {
+			fbID = s.findVisitorID(txApp, serverId, v.FallbackTo)
+		}
+		if fbID == "" {
+			continue
+		}
+		record.Set("fallbackTo", fbID)
 		record.Set("fallbackTimeoutMs", v.FallbackTimeoutMs)
 		if err := txApp.Save(record); err != nil {
 			return fmt.Errorf("保存访问端 %s 失败: %w", v.Name, err)
@@ -711,8 +756,12 @@ func buildAuthMap(a tomlAuthConfig) (map[string]interface{}, []string) {
 		ca = ""
 		warnings = append(warnings, WarningTLSFilePathIgnored)
 	}
+	method := a.Method
+	if method == "" {
+		method = "token"
+	}
 	m := map[string]interface{}{
-		"method":                 a.Method,
+		"method":                 method,
 		"token":                  a.Token,
 		"oidcClientId":           a.OIDC.ClientID,
 		"oidcClientSecret":       a.OIDC.ClientSecret,
@@ -755,7 +804,7 @@ func buildTransportMap(t tomlTransportConfig) (map[string]interface{}, []string)
 		"proxyURL": t.ProxyURL,
 		"tls": map[string]interface{}{
 			"enable":                    tlsEnable,
-			"disableCustomTLSFirstByte": t.TLS.DisableCustomTLSFirstByte,
+			"disableCustomTLSFirstByte": t.TLS.DisableCustomTLSFirstByte == nil || *t.TLS.DisableCustomTLSFirstByte,
 			"serverName":                t.TLS.ServerName,
 			"certFile":                  pemOnly(t.TLS.CertFile),
 			"keyFile":                   pemOnly(t.TLS.KeyFile),

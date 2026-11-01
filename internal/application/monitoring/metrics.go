@@ -1,7 +1,9 @@
 package monitoring
 
 import (
-	"fmt"
+	"context"
+	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -10,405 +12,278 @@ import (
 )
 
 const MetricKeyFrpsDelay = "frps_delay"
-
-// MetricsService handles writing latency data to fh_metrics_targets and fh_metrics_raw.
-type MetricsService struct {
-	app core.App
-
-	// targetCache maps serverID -> fh_metrics_targets record ID
-	targetCache     map[string]string
-	targetCacheLock sync.RWMutex
-
-	// latest holds the most recent probe result per server, including failures,
-	// which are not written to fh_metrics_raw.
-	latest     map[string]*NetworkStatus
-	latestLock sync.RWMutex
-	// forgotten holds deleted servers (guarded by latestLock): a probe that was already
-	// running when the server was deleted must not bring it back into latest.
-	forgotten map[string]struct{}
-}
-
-// latestFallbackWindow bounds the DB lookup used before a server has been probed
-// since startup; older measurements are too stale to show.
+const metricTimeFormat = "2006-01-02 15:04:05.000Z"
 const latestFallbackWindow = 10 * time.Minute
 
-// NewMetricsService creates a new MetricsService.
+type MetricsService struct {
+	app             core.App
+	targetCache     map[string]string
+	targetCacheLock sync.RWMutex
+	latest          map[string]*NetworkStatus
+	latestLock      sync.RWMutex
+	forgotten       map[string]struct{}
+	checked         map[string]bool
+	endpoints       map[string]string
+	generation      map[string]uint64
+	fallbackMu      sync.Mutex
+	aggregateMu     sync.Mutex
+}
+
 func NewMetricsService(app core.App) *MetricsService {
-	return &MetricsService{
-		app:         app,
-		targetCache: make(map[string]string),
-		latest:      make(map[string]*NetworkStatus),
-		forgotten:   make(map[string]struct{}),
-	}
+	return &MetricsService{app: app, targetCache: map[string]string{}, latest: map[string]*NetworkStatus{}, forgotten: map[string]struct{}{}, checked: map[string]bool{}, endpoints: map[string]string{}, generation: map[string]uint64{}}
 }
 
-// RecordServerLatency records a probe result for a server.
-// It automatically finds or creates the corresponding fh_metrics_targets record.
-// Unreachable results (negative latency) only update the latest status, so they
-// don't skew the stored latency series.
+// RegisterHooks prevents pre-edit measurements from being shown, including after
+// restart: latencySince on the target is a persistent lower bound for fallback.
+func (s *MetricsService) RegisterHooks() {
+	s.app.OnRecordAfterUpdateSuccess("fh_servers").BindFunc(func(e *core.RecordEvent) error {
+		if serverEndpoint(e.Record) != serverEndpoint(e.Record.Original()) {
+			s.latestLock.Lock()
+			s.generation[e.Record.Id]++
+			delete(s.latest, e.Record.Id)
+			s.checked[e.Record.Id] = true
+			s.endpoints[e.Record.Id] = serverEndpoint(e.Record)
+			s.latestLock.Unlock()
+		}
+		return e.Next()
+	})
+	// Persist the boundary in the same transaction as the server edit. This avoids
+	// a crash between changing the endpoint and invalidating its historical data.
+	s.app.OnRecordUpdate("fh_servers").BindFunc(func(e *core.RecordEvent) error {
+		if serverEndpoint(e.Record) == serverEndpoint(e.Record.Original()) {
+			return e.Next()
+		}
+		return e.App.RunInTransaction(func(tx core.App) error {
+			originalApp := e.App
+			e.App = tx
+			defer func() { e.App = originalApp }()
+			if err := e.Next(); err != nil {
+				return err
+			}
+			_, err := tx.DB().Update("fh_metrics_targets", dbx.Params{"latencySince": time.Now().UTC().Format(metricTimeFormat)}, dbx.HashExp{"serverId": e.Record.Id, "proxyId": ""}).Execute()
+			return err
+		})
+	})
+	s.app.OnRecordAfterDeleteSuccess("fh_servers").BindFunc(func(e *core.RecordEvent) error { s.ForgetServer(e.Record.Id); return e.Next() })
+}
+
+type latencySample struct {
+	id, name, endpoint, err string
+	running                 bool
+	latency                 int64
+	at                      time.Time
+	generation              uint64
+}
+
+func (s *MetricsService) beginLatency(r *core.Record) latencySample {
+	s.latestLock.RLock()
+	generation := s.generation[r.Id]
+	s.latestLock.RUnlock()
+	return latencySample{id: r.Id, name: r.GetString("serverName"), endpoint: serverEndpoint(r), running: r.GetString("bootStatus") == "running", generation: generation}
+}
 func (s *MetricsService) RecordServerLatency(serverID string, latencyMs int64, probeErr string) error {
-	s.latestLock.Lock()
-	if _, gone := s.forgotten[serverID]; gone {
-		s.latestLock.Unlock()
-		return nil
-	}
-	s.latest[serverID] = &NetworkStatus{
-		Latency:       latencyMs,
-		Reachable:     latencyMs >= 0,
-		LastCheckTime: time.Now().UTC(),
-		Error:         probeErr,
-	}
-	s.latestLock.Unlock()
-
-	if latencyMs < 0 {
-		return nil
-	}
-
-	targetID, err := s.getOrCreateServerTarget(serverID)
+	r, err := s.app.FindRecordById("fh_servers", serverID)
 	if err != nil {
-		return fmt.Errorf("get/create metrics target: %w", err)
+		return err
 	}
-
-	return s.recordMetric(targetID, MetricKeyFrpsDelay, float64(latencyMs))
+	sample := s.beginLatency(r)
+	sample.latency = latencyMs
+	sample.err = probeErr
+	sample.at = time.Now().UTC()
+	_, err = s.recordLatencyBatch(context.Background(), []latencySample{sample})
+	return err
 }
 
-// getOrCreateServerTarget returns the fh_metrics_targets record ID for a server,
-// creating one if it does not exist. Results are cached in memory.
-func (s *MetricsService) getOrCreateServerTarget(serverID string) (string, error) {
-	s.targetCacheLock.RLock()
-	if id, ok := s.targetCache[serverID]; ok {
-		s.targetCacheLock.RUnlock()
-		return id, nil
+// A whole batch uses one writer transaction. Inserts are internal, validated
+// measurements, not API writes; avoiding Record.Save per sample removes relation
+// validation queries and per-row transactions. Endpoint checks fence late probes.
+func (s *MetricsService) recordLatencyBatch(ctx context.Context, samples []latencySample) ([]latencySample, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
-	s.targetCacheLock.RUnlock()
-
-	// Acquire write lock for the entire find-or-create to prevent duplicate records
-	// when multiple goroutines encounter a cache miss simultaneously.
-	s.targetCacheLock.Lock()
-	defer s.targetCacheLock.Unlock()
-
-	// Re-check under write lock (another goroutine may have just created it).
-	if id, ok := s.targetCache[serverID]; ok {
-		return id, nil
-	}
-
-	records, err := s.app.FindRecordsByFilter(
-		"fh_metrics_targets",
-		"serverId = {:serverId} && proxyId = ''",
-		"",
-		1,
-		0,
-		map[string]any{"serverId": serverID},
-	)
-	if err != nil {
-		return "", fmt.Errorf("query metrics target: %w", err)
-	}
-
-	var targetID string
-	if len(records) > 0 {
-		targetID = records[0].Id
-	} else {
-		collection, err := s.app.FindCollectionByNameOrId("fh_metrics_targets")
-		if err != nil {
-			return "", fmt.Errorf("find collection fh_metrics_targets: %w", err)
+	accepted := make([]latencySample, 0, len(samples))
+	err := s.app.RunInTransaction(func(tx core.App) error {
+		for _, sample := range samples {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			s.latestLock.RLock()
+			_, gone := s.forgotten[sample.id]
+			valid := !gone && s.generation[sample.id] == sample.generation
+			s.latestLock.RUnlock()
+			if !valid {
+				continue
+			}
+			r, err := tx.FindRecordById("fh_servers", sample.id)
+			if err != nil || serverEndpoint(r) != sample.endpoint {
+				continue
+			}
+			if sample.latency >= 0 {
+				target, err := ensureServerTarget(tx, sample.id)
+				if err != nil {
+					return err
+				}
+				_, err = tx.DB().NewQuery(`INSERT INTO fh_metrics_raw (id,targetId,metricKey,t,val) VALUES (lower(hex(randomblob(7))) || '0',{:target},{:key},{:t},{:val})`).Bind(dbx.Params{"target": target, "key": MetricKeyFrpsDelay, "t": time.Now().UTC().Format(metricTimeFormat), "val": sample.latency}).WithContext(ctx).Execute()
+				if err != nil {
+					return err
+				}
+			}
+			accepted = append(accepted, sample)
 		}
-		record := core.NewRecord(collection)
-		record.Set("serverId", serverID)
-		if err := s.app.Save(record); err != nil {
-			return "", fmt.Errorf("save metrics target: %w", err)
-		}
-		targetID = record.Id
-	}
-
-	s.targetCache[serverID] = targetID
-	return targetID, nil
-}
-
-// GetLatestLatencyBatch returns the most recent probe result for every server.
-// The returned map key is the server ID. Servers not probed since startup fall back
-// to their latest stored measurement from the last few minutes.
-func (s *MetricsService) GetLatestLatencyBatch() (map[string]*NetworkStatus, error) {
-	type row struct {
-		ServerID string  `db:"serverId"`
-		Val      float64 `db:"val"`
-		T        string  `db:"t"`
-	}
-
-	since := time.Now().UTC().Add(-latestFallbackWindow).Format("2006-01-02 15:04:05.000Z")
-
-	// SQLite returns the row holding MAX(r.t) for bare columns in the group.
-	var rows []row
-	err := s.app.DB().
-		NewQuery(`
-			SELECT t.serverId, r.val, MAX(r.t) AS t
-			FROM fh_metrics_raw r
-			INNER JOIN fh_metrics_targets t ON r.targetId = t.id
-			WHERE r.metricKey = {:key}
-			  AND r.t >= {:since}
-			GROUP BY r.targetId
-		`).
-		Bind(dbx.Params{"key": MetricKeyFrpsDelay, "since": since}).
-		All(&rows)
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	result := make(map[string]*NetworkStatus, len(rows))
-	for _, row := range rows {
-		latency := int64(row.Val)
-		t, _ := time.Parse("2006-01-02 15:04:05.000Z", row.T)
-		result[row.ServerID] = &NetworkStatus{
-			Latency:       latency,
-			Reachable:     latency >= 0,
-			LastCheckTime: t,
+	s.latestLock.Lock()
+	defer s.latestLock.Unlock()
+	published := accepted[:0]
+	for _, sample := range accepted {
+		if _, gone := s.forgotten[sample.id]; gone || s.generation[sample.id] != sample.generation {
+			continue
 		}
+		if previous := s.latest[sample.id]; previous != nil && previous.LastCheckTime.After(sample.at) {
+			continue
+		}
+		s.latest[sample.id] = &NetworkStatus{Latency: sample.latency, Reachable: sample.latency >= 0, LastCheckTime: sample.at, Error: sample.err}
+		s.checked[sample.id] = true
+		s.endpoints[sample.id] = sample.endpoint
+		published = append(published, sample)
 	}
-
-	s.latestLock.RLock()
-	for serverID, status := range s.latest {
-		copied := *status
-		result[serverID] = &copied
+	return published, nil
+}
+func ensureServerTarget(app core.App, id string) (string, error) {
+	_, err := app.DB().NewQuery(`INSERT INTO fh_metrics_targets (id,serverId,proxyId) VALUES (lower(hex(randomblob(7))) || '0',{:id},'') ON CONFLICT(serverId,proxyId) DO NOTHING`).Bind(dbx.Params{"id": id}).Execute()
+	if err != nil {
+		return "", err
 	}
-	s.latestLock.RUnlock()
-
-	return result, nil
+	var target string
+	err = app.DB().Select("id").From("fh_metrics_targets").Where(dbx.HashExp{"serverId": id, "proxyId": ""}).Row(&target)
+	return target, err
+}
+func (s *MetricsService) getOrCreateServerTarget(serverID string) (string, error) {
+	s.targetCacheLock.Lock()
+	defer s.targetCacheLock.Unlock()
+	if id := s.targetCache[serverID]; id != "" {
+		return id, nil
+	}
+	id, err := ensureServerTarget(s.app, serverID)
+	if err == nil {
+		s.targetCache[serverID] = id
+	}
+	return id, err
 }
 
-// MaxLatestLatency returns the highest latest latency among reachable servers,
-// or 0 when none has been measured recently.
+// GetLatestLatencyBatch reads memory first. Only never-checked live servers use
+// indexed LIMIT 1 lookups; an empty result is negatively cached until a probe.
+// Inventory is small and authoritative, so deletes/address changes are respected
+// even without hooks. Stale memory never revives an older database measurement.
+func (s *MetricsService) GetLatestLatencyBatch() (map[string]*NetworkStatus, error) {
+	s.fallbackMu.Lock()
+	defer s.fallbackMu.Unlock()
+	var servers []struct {
+		ID   string `db:"id"`
+		Addr string `db:"serverAddr"`
+		Port int    `db:"serverPort"`
+	}
+	if err := s.app.DB().Select("id", "serverAddr", "serverPort").From("fh_servers").All(&servers); err != nil {
+		return nil, err
+	}
+	live := make(map[string]bool, len(servers))
+	missing := []any{}
+	generations := map[string]uint64{}
+	s.latestLock.Lock()
+	for _, server := range servers {
+		live[server.ID] = true
+		endpoint := net.JoinHostPort(server.Addr, strconv.Itoa(server.Port))
+		if old, ok := s.endpoints[server.ID]; ok && old != endpoint {
+			delete(s.latest, server.ID)
+			s.checked[server.ID] = true
+			s.generation[server.ID]++
+		}
+		s.endpoints[server.ID] = endpoint
+		if !s.checked[server.ID] {
+			if _, gone := s.forgotten[server.ID]; !gone {
+				missing = append(missing, server.ID)
+				generations[server.ID] = s.generation[server.ID]
+			}
+		}
+	}
+	for id := range s.latest {
+		if !live[id] {
+			delete(s.latest, id)
+		}
+	}
+	s.latestLock.Unlock()
+	since := time.Now().UTC().Add(-latestFallbackWindow)
+	for len(missing) > 0 {
+		n := min(128, len(missing))
+		ids := missing[:n]
+		missing = missing[n:]
+		var rows []struct {
+			ServerID string  `db:"serverId"`
+			Val      float64 `db:"val"`
+			T        string  `db:"t"`
+		}
+		// Correlated lookup performs a bounded descending index seek for each missing
+		// server rather than GROUP BY scanning every server's recent raw samples.
+		q := s.app.DB().Select("m.serverId", "r.val", "r.t").From("fh_metrics_targets m").InnerJoin("fh_metrics_raw r", dbx.NewExp(`r.id = (SELECT x.id FROM fh_metrics_raw x WHERE x.targetId=m.id AND x.metricKey={:key} AND x.t >= {:since} AND x.t >= COALESCE(m.latencySince,'') ORDER BY x.t DESC LIMIT 1)`, dbx.Params{"key": MetricKeyFrpsDelay, "since": since.Format(metricTimeFormat)})).Where(dbx.And(dbx.In("m.serverId", ids...), dbx.HashExp{"m.proxyId": ""}))
+		if err := q.All(&rows); err != nil {
+			return nil, err
+		}
+		s.latestLock.Lock()
+		for _, id := range ids {
+			s.checked[id.(string)] = true
+		}
+		for _, r := range rows {
+			if _, gone := s.forgotten[r.ServerID]; gone {
+				continue
+			}
+			// A live probe or hook always wins over this fallback query.
+			if s.latest[r.ServerID] != nil || s.generation[r.ServerID] != generations[r.ServerID] {
+				continue
+			}
+			at, err := time.Parse(metricTimeFormat, r.T)
+			if err != nil {
+				continue
+			}
+			s.latest[r.ServerID] = &NetworkStatus{Latency: int64(r.Val), Reachable: true, LastCheckTime: at}
+		}
+		s.latestLock.Unlock()
+	}
+	out := make(map[string]*NetworkStatus, len(servers))
+	s.latestLock.RLock()
+	defer s.latestLock.RUnlock()
+	for id, status := range s.latest {
+		if live[id] && !status.LastCheckTime.Before(since) {
+			copy := *status
+			out[id] = &copy
+		}
+	}
+	return out, nil
+}
 func (s *MetricsService) MaxLatestLatency() (int64, error) {
 	latest, err := s.GetLatestLatencyBatch()
 	if err != nil {
 		return 0, err
 	}
-	var maxLatency int64
-	for _, st := range latest {
-		if st.Reachable && st.Latency > maxLatency {
-			maxLatency = st.Latency
+	var maximum int64
+	for _, status := range latest {
+		if status.Reachable {
+			maximum = max(maximum, status.Latency)
 		}
 	}
-	return maxLatency, nil
+	return maximum, nil
 }
-
-// ForgetServer drops cached state for a deleted server and ignores its later probe results.
-func (s *MetricsService) ForgetServer(serverID string) {
+func (s *MetricsService) ForgetServer(id string) {
 	s.targetCacheLock.Lock()
-	delete(s.targetCache, serverID)
+	delete(s.targetCache, id)
 	s.targetCacheLock.Unlock()
 	s.latestLock.Lock()
-	delete(s.latest, serverID)
-	s.forgotten[serverID] = struct{}{}
-	s.latestLock.Unlock()
-}
-
-// AggregateHourly aggregates the previous full hour from fh_metrics_raw into fh_metrics_hourly.
-// It is idempotent — re-running for the same hour updates existing records.
-func (s *MetricsService) AggregateHourly() error {
-	now := time.Now().UTC()
-	to := now.Truncate(time.Hour)
-	from := to.Add(-time.Hour)
-	s.app.Logger().Info("Aggregating hourly metrics", "from", from, "to", to)
-
-	type row struct {
-		TargetID  string  `db:"targetId"`
-		MetricKey string  `db:"metricKey"`
-		ValAvg    float64 `db:"valAvg"`
-		ValMax    float64 `db:"valMax"`
-		ValMin    float64 `db:"valMin"`
-	}
-
-	var rows []row
-	err := s.app.DB().
-		NewQuery(`
-			SELECT targetId, metricKey,
-			       AVG(val) AS valAvg, MAX(val) AS valMax, MIN(val) AS valMin
-			FROM fh_metrics_raw
-			WHERE t >= {:from} AND t < {:to}
-			GROUP BY targetId, metricKey
-		`).
-		Bind(dbx.Params{
-			"from": from.Format("2006-01-02 15:04:05.000Z"),
-			"to":   to.Format("2006-01-02 15:04:05.000Z"),
-		}).
-		All(&rows)
-	if err != nil {
-		return fmt.Errorf("query raw for hourly agg: %w", err)
-	}
-
-	tStr := from.Format("2006-01-02 15:04:05.000Z")
-	for _, r := range rows {
-		if err := s.upsertHourly(r.TargetID, r.MetricKey, tStr, r.ValAvg, r.ValMax, r.ValMin); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *MetricsService) upsertHourly(targetID, metricKey, t string, avg, max, min float64) error {
-	existing, err := s.app.FindRecordsByFilter(
-		"fh_metrics_hourly",
-		"targetId = {:targetId} && metricKey = {:metricKey} && t = {:t}",
-		"", 1, 0,
-		map[string]any{"targetId": targetID, "metricKey": metricKey, "t": t},
-	)
-	if err != nil {
-		return fmt.Errorf("query hourly record: %w", err)
-	}
-
-	var record *core.Record
-	if len(existing) > 0 {
-		record = existing[0]
-	} else {
-		col, err := s.app.FindCollectionByNameOrId("fh_metrics_hourly")
-		if err != nil {
-			return fmt.Errorf("find collection fh_metrics_hourly: %w", err)
-		}
-		record = core.NewRecord(col)
-		record.Set("targetId", targetID)
-		record.Set("metricKey", metricKey)
-		record.Set("t", t)
-	}
-	record.Set("valAvg", avg)
-	record.Set("valMax", max)
-	record.Set("valMin", min)
-	if err := s.app.Save(record); err != nil {
-		return fmt.Errorf("save hourly record: %w", err)
-	}
-	return nil
-}
-
-// AggregateDaily aggregates yesterday's hourly data into fh_metrics_daily.
-func (s *MetricsService) AggregateDaily() error {
-	now := time.Now().UTC()
-	to := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	from := to.AddDate(0, 0, -1)
-	s.app.Logger().Info("Aggregating daily metrics", "from", from, "to", to)
-
-	type row struct {
-		TargetID  string  `db:"targetId"`
-		MetricKey string  `db:"metricKey"`
-		ValAvg    float64 `db:"valAvg"`
-		ValMax    float64 `db:"valMax"`
-		ValMin    float64 `db:"valMin"`
-	}
-
-	var rows []row
-	err := s.app.DB().
-		NewQuery(`
-			SELECT targetId, metricKey, AVG(valAvg) AS valAvg, MAX(valMax) AS valMax, MIN(valMin) AS valMin
-			FROM fh_metrics_hourly
-			WHERE t >= {:from} AND t < {:to}
-			GROUP BY targetId, metricKey
-		`).
-		Bind(dbx.Params{
-			"from": from.Format("2006-01-02 15:04:05.000Z"),
-			"to":   to.Format("2006-01-02 15:04:05.000Z"),
-		}).
-		All(&rows)
-	if err != nil {
-		return fmt.Errorf("query hourly for daily agg: %w", err)
-	}
-
-	tStr := from.Format("2006-01-02 15:04:05.000Z")
-	for _, r := range rows {
-		if err := s.upsertDaily(r.TargetID, r.MetricKey, tStr, r.ValAvg, r.ValMax, r.ValMin); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *MetricsService) upsertDaily(targetID, metricKey, t string, avg, max, min float64) error {
-	existing, err := s.app.FindRecordsByFilter(
-		"fh_metrics_daily",
-		"targetId = {:targetId} && metricKey = {:metricKey} && t = {:t}",
-		"", 1, 0,
-		map[string]any{"targetId": targetID, "metricKey": metricKey, "t": t},
-	)
-	if err != nil {
-		return fmt.Errorf("query daily record: %w", err)
-	}
-
-	var record *core.Record
-	if len(existing) > 0 {
-		record = existing[0]
-	} else {
-		col, err := s.app.FindCollectionByNameOrId("fh_metrics_daily")
-		if err != nil {
-			return fmt.Errorf("find collection fh_metrics_daily: %w", err)
-		}
-		record = core.NewRecord(col)
-		record.Set("targetId", targetID)
-		record.Set("metricKey", metricKey)
-		record.Set("t", t)
-	}
-	record.Set("valAvg", avg)
-	record.Set("valMax", max)
-	record.Set("valMin", min)
-	if err := s.app.Save(record); err != nil {
-		return fmt.Errorf("save daily record: %w", err)
-	}
-	return nil
-}
-
-// PurgeOldRaw deletes fh_metrics_raw records older than 7 days.
-func (s *MetricsService) PurgeOldRaw() error {
-	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour).Format("2006-01-02 15:04:05.000Z")
-	result, err := s.app.DB().
-		Delete("fh_metrics_raw", dbx.NewExp("t < {:cutoff}", dbx.Params{"cutoff": cutoff})).
-		Execute()
-	if err != nil {
-		return fmt.Errorf("purge old raw metrics: %w", err)
-	}
-	affected, _ := result.RowsAffected()
-	s.app.Logger().Info("Purged old raw metrics", "deleted", affected)
-	return nil
-}
-
-// PurgeOldHourly deletes fh_metrics_hourly records older than 30 days.
-func (s *MetricsService) PurgeOldHourly() error {
-	cutoff := time.Now().UTC().Add(-30 * 24 * time.Hour).Format("2006-01-02 15:04:05.000Z")
-	result, err := s.app.DB().
-		Delete("fh_metrics_hourly", dbx.NewExp("t < {:cutoff}", dbx.Params{"cutoff": cutoff})).
-		Execute()
-	if err != nil {
-		return fmt.Errorf("purge old hourly metrics: %w", err)
-	}
-	affected, _ := result.RowsAffected()
-	s.app.Logger().Info("Purged old hourly metrics", "deleted", affected)
-	return nil
-}
-
-// PurgeOldDaily deletes fh_metrics_daily records older than 365 days.
-func (s *MetricsService) PurgeOldDaily() error {
-	cutoff := time.Now().UTC().AddDate(-1, 0, 0).Format("2006-01-02 15:04:05.000Z")
-	result, err := s.app.DB().
-		Delete("fh_metrics_daily", dbx.NewExp("t < {:cutoff}", dbx.Params{"cutoff": cutoff})).
-		Execute()
-	if err != nil {
-		return fmt.Errorf("purge old daily metrics: %w", err)
-	}
-	affected, _ := result.RowsAffected()
-	s.app.Logger().Info("Purged old daily metrics", "deleted", affected)
-	return nil
-}
-
-// recordMetric writes a single data point to fh_metrics_raw.
-func (s *MetricsService) recordMetric(targetID, metricKey string, value float64) error {
-	collection, err := s.app.FindCollectionByNameOrId("fh_metrics_raw")
-	if err != nil {
-		return fmt.Errorf("find collection fh_metrics_raw: %w", err)
-	}
-
-	record := core.NewRecord(collection)
-	record.Set("targetId", targetID)
-	record.Set("metricKey", metricKey)
-	record.Set("t", time.Now().UTC().Format("2006-01-02 15:04:05.000Z"))
-	record.Set("val", value)
-
-	if err := s.app.Save(record); err != nil {
-		return fmt.Errorf("save metric record: %w", err)
-	}
-
-	return nil
+	defer s.latestLock.Unlock()
+	delete(s.latest, id)
+	delete(s.endpoints, id)
+	delete(s.checked, id)
+	s.forgotten[id] = struct{}{}
+	s.generation[id]++
 }

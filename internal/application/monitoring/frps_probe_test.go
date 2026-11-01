@@ -47,6 +47,7 @@ func TestFrpsStats(t *testing.T) {
 	dash := fakeDashboard(t, "home.ssh-"+proxy.Id)
 	defer dash.Close()
 	s := NewFrpsService(app)
+	defer s.Stop()
 
 	if stats, err := s.ServerStats(context.Background(), server.Id); err != nil || stats != nil {
 		t.Fatalf("no dashboard configured: %+v %v", stats, err)
@@ -64,7 +65,7 @@ func TestFrpsStats(t *testing.T) {
 	if err := app.Save(server); err != nil {
 		t.Fatal(err)
 	}
-	stats, err := s.ServerStats(context.Background(), server.Id)
+	stats, err := s.ReadyStats(context.Background(), server.Id)
 	if err != nil || stats.Error != "" || stats.Info.VhostHTTPPort != 8080 {
 		t.Fatalf("stats = %+v, %v", stats, err)
 	}

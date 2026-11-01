@@ -1,12 +1,10 @@
 package httphandler
 
 import (
-	"context"
 	"errors"
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"podux/internal/application/backup"
 	"podux/pkg/buildinfo"
@@ -29,8 +27,10 @@ func NewBackupHandler(app core.App, service *backup.Service) *BackupHandler {
 
 func backupError(e *core.RequestEvent, err error) error {
 	switch {
-	case errors.Is(err, backup.ErrInvalidName), errors.Is(err, backup.ErrExists):
+	case errors.Is(err, backup.ErrInvalidName), errors.Is(err, backup.ErrExists), errors.Is(err, backup.ErrInvalidArchive):
 		return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	case errors.Is(err, backup.ErrBusy):
+		return e.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
 	case errors.Is(err, backup.ErrNotFound):
 		return e.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
 	default:
@@ -67,10 +67,11 @@ func (h *BackupHandler) RegisterHandlers(e *core.ServeEvent) {
 	}))
 
 	e.Router.POST("/api/system/backups/upload", requireAuth(func(e *core.RequestEvent) error {
-		_, fh, err := e.Request.FormFile("file")
+		file, fh, err := e.Request.FormFile("file")
 		if err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "missing backup file"})
 		}
+		defer file.Close()
 		name, err := h.service.Upload(fh)
 		if err != nil {
 			return backupError(e, err)
@@ -100,20 +101,23 @@ func (h *BackupHandler) RegisterHandlers(e *core.ServeEvent) {
 		return e.NoContent(http.StatusNoContent)
 	}))
 
-	// Restore answers first, then replaces the data and restarts Podux in the background.
-	e.Router.POST("/api/system/backups/{name}/restore", requireAuth(func(e *core.RequestEvent) error {
-		name := e.Request.PathValue("name")
-		if !h.service.Exists(name) {
-			return backupError(e, backup.ErrNotFound)
+	// Status uses a single-operation capability instead of the login session,
+	// which may no longer exist in the restored DB. No capability in the URL.
+	e.Router.GET("/api/system/backups/restore-status", func(e *core.RequestEvent) error {
+		e.Response.Header().Set("Cache-Control", "no-store")
+		job, err := h.service.RestoreStatus(e.Request.Header.Get("X-Podux-Restore-ID"))
+		if err != nil {
+			return backupError(e, err)
 		}
-		go func() {
-			time.Sleep(500 * time.Millisecond) // let the response reach the client
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-			defer cancel()
-			if err := h.service.Restore(ctx, name); err != nil {
-				h.app.Logger().Error("Failed to restore backup", "name", name, "error", err)
-			}
-		}()
-		return e.JSON(http.StatusAccepted, map[string]string{"message": "restoring; Podux restarts when done"})
+		return e.JSON(http.StatusOK, job)
+	})
+
+	e.Router.POST("/api/system/backups/{name}/restore", requireAuth(func(e *core.RequestEvent) error {
+		job, err := h.service.StartRestore(e.Request.PathValue("name"))
+		if err != nil {
+			return backupError(e, err)
+		}
+		e.Response.Header().Set("Cache-Control", "no-store")
+		return e.JSON(http.StatusAccepted, job)
 	}))
 }

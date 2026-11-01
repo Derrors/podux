@@ -17,6 +17,7 @@ import (
 	proxydomain "podux/internal/domain/proxy"
 	serverdomain "podux/internal/domain/server"
 	visitordomain "podux/internal/domain/visitor"
+	"podux/internal/frpconfig"
 
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 	"github.com/fatedier/frp/client"
@@ -26,7 +27,6 @@ import (
 )
 
 var validServerID = regexp.MustCompile(`^[a-z0-9]{15}$`)
-var sensitiveRegex = regexp.MustCompile(`"(?i)(token|password|sk|pwd|secretkey|clientsecret|httpuser|httppwd|oidctoken|oidcclientsecret)":"(?:[^"\\]|\\.)*"`)
 
 // ErrAlreadyRunning is returned when launching a server that is already running or starting.
 var ErrAlreadyRunning = errors.New("frpc is already running for this server")
@@ -54,8 +54,12 @@ type instance struct {
 	// stopRequested is set by TerminateFrpc while the instance is still starting
 	// (cancel is nil); LaunchFrpc then gives up instead of running frpc.
 	stopRequested bool
-	// reloadMu orders reloads so an older proxy snapshot never replaces a newer one.
-	reloadMu sync.Mutex
+	// reloadMu orders snapshots, config updates and final cleanup.
+	reloadMu         sync.Mutex
+	sourceHash       [32]byte
+	certFiles        map[string]bool
+	restartRequested bool
+	exiting          bool
 }
 
 type Service struct {
@@ -69,6 +73,10 @@ type Service struct {
 	observer    StatusObserver
 	// reloadTimers holds pending RequestReload calls per server (guarded by mu).
 	reloadTimers map[string]*time.Timer
+	ctx          context.Context
+	cancel       context.CancelFunc
+	closing      bool
+	hooksOnce    sync.Once
 }
 
 // reloadDelay batches the reloads of quick successive changes, e.g. a batch edit.
@@ -79,21 +87,28 @@ const reloadDelay = 300 * time.Millisecond
 func (fs *Service) RequestReload(serverID string) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	if t := fs.reloadTimers[serverID]; t != nil {
-		t.Reset(reloadDelay)
+	inst := fs.instances[serverID]
+	if fs.closing || inst == nil || inst.stopRequested || inst.exiting {
 		return
 	}
-	fs.reloadTimers[serverID] = time.AfterFunc(reloadDelay, func() {
+	if t := fs.reloadTimers[serverID]; t != nil {
+		t.Stop()
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(reloadDelay, func() {
 		fs.mu.Lock()
-		delete(fs.reloadTimers, serverID)
-		fs.mu.Unlock()
-		if !fs.IsServerRunning(serverID) {
+		if fs.reloadTimers[serverID] != timer || fs.instances[serverID] != inst {
+			fs.mu.Unlock()
 			return
 		}
-		if err := fs.ReloadFrpc(&serverID); err != nil {
-			fs.app.Logger().Error("Failed to reload frpc", "error", err, "serverId", serverID)
+		delete(fs.reloadTimers, serverID)
+		fs.mu.Unlock()
+		if err := fs.ReconcileServer(serverID); err != nil {
+			// Never log full configuration or potentially credential-bearing frp errors.
+			fs.app.Logger().Error("Failed to apply frpc configuration; restart required", "serverId", serverID)
 		}
 	})
+	fs.reloadTimers[serverID] = timer
 }
 
 // StatusObserver is told about proxy status checks and frpc stopping, e.g. to send alerts.
@@ -119,59 +134,15 @@ func (fs *Service) serverName(id string) string {
 }
 
 func NewService(app core.App, serverRepo serverdomain.Repository, proxyRepo proxydomain.Repository, visitorRepo visitordomain.Repository) *Service {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{
+		ctx: ctx, cancel: cancel,
 		visitorRepo:  visitorRepo,
 		app:          app,
 		instances:    make(map[string]*instance),
 		reloadTimers: make(map[string]*time.Timer),
 		serverRepo:   serverRepo,
 		proxyRepo:    proxyRepo,
-	}
-}
-
-// storedOIDC is the flat OIDC part of fh_servers.auth as saved by the server form.
-type storedOIDC struct {
-	ClientID         string            `json:"oidcClientId"`
-	ClientSecret     string            `json:"oidcClientSecret"`
-	Audience         string            `json:"oidcAudience"`
-	Scope            string            `json:"oidcScope"`
-	TokenEndpoint    string            `json:"oidcTokenEndpoint"`
-	AdditionalParams map[string]string `json:"oidcAdditionalParams"`
-	// TrustedCa holds the PEM contents of a CA for the token endpoint, like the TLS fields.
-	TrustedCa          string `json:"oidcTrustedCa"`
-	InsecureSkipVerify bool   `json:"oidcInsecureSkipVerify"`
-}
-
-func (o storedOIDC) applyTo(cfg *v1.AuthOIDCClientConfig) {
-	if o.ClientID != "" {
-		cfg.ClientID = o.ClientID
-	}
-	if o.ClientSecret != "" {
-		cfg.ClientSecret = o.ClientSecret
-	}
-	if o.Audience != "" {
-		cfg.Audience = o.Audience
-	}
-	if o.Scope != "" {
-		cfg.Scope = o.Scope
-	}
-	if o.TokenEndpoint != "" {
-		cfg.TokenEndpointURL = o.TokenEndpoint
-	}
-	for k, v := range o.AdditionalParams {
-		if k == "" {
-			continue
-		}
-		if cfg.AdditionalEndpointParams == nil {
-			cfg.AdditionalEndpointParams = map[string]string{}
-		}
-		cfg.AdditionalEndpointParams[k] = v
-	}
-	if o.TrustedCa != "" {
-		cfg.TrustedCaFile = o.TrustedCa
-	}
-	if o.InsecureSkipVerify {
-		cfg.InsecureSkipVerify = true
 	}
 }
 
@@ -191,56 +162,8 @@ func (fs *Service) genCommonCfgs(id *string) (*v1.ClientCommonConfig, error) {
 		return nil, err
 	}
 
-	// all servers share one log file (see logs.go)
-	cfg.Log.To = sharedLogPath(fs.app.DataDir())
-
-	// frp enables TLS when the field is omitted
-	if cfg.Transport.TLS.Enable == nil || *cfg.Transport.TLS.Enable {
-		certsDir := filepath.Join(fs.getFrpMainPath(id), "certs")
-		hasCert := cfg.Transport.TLS.CertFile != "" && cfg.Transport.TLS.KeyFile != ""
-		hasCa := cfg.Transport.TLS.TrustedCaFile != ""
-
-		if hasCert || hasCa {
-			if err := os.MkdirAll(certsDir, 0700); err != nil {
-				return nil, err
-			}
-		}
-		if hasCert {
-			tlsCertFile := filepath.Join(certsDir, "cert.pem")
-			tlsKeyFile := filepath.Join(certsDir, "key.pem")
-			if err := os.WriteFile(tlsCertFile, []byte(cfg.Transport.TLS.CertFile), 0644); err != nil {
-				return nil, err
-			}
-			if err := os.WriteFile(tlsKeyFile, []byte(cfg.Transport.TLS.KeyFile), 0600); err != nil {
-				return nil, err
-			}
-			cfg.Transport.TLS.CertFile = tlsCertFile
-			cfg.Transport.TLS.KeyFile = tlsKeyFile
-		} else {
-			cfg.Transport.TLS.CertFile = ""
-			cfg.Transport.TLS.KeyFile = ""
-		}
-		if hasCa {
-			tlsTrustedCaFile := filepath.Join(certsDir, "ca.pem")
-			if err := os.WriteFile(tlsTrustedCaFile, []byte(cfg.Transport.TLS.TrustedCaFile), 0644); err != nil {
-				return nil, err
-			}
-			cfg.Transport.TLS.TrustedCaFile = tlsTrustedCaFile
-		} else {
-			cfg.Transport.TLS.TrustedCaFile = ""
-		}
-	}
-
-	if ca := cfg.Auth.OIDC.TrustedCaFile; ca != "" {
-		certsDir := filepath.Join(fs.getFrpMainPath(id), "certs")
-		if err := os.MkdirAll(certsDir, 0700); err != nil {
-			return nil, err
-		}
-		caFile := filepath.Join(certsDir, "oidc-ca.pem")
-		if err := os.WriteFile(caFile, []byte(ca), 0644); err != nil {
-			return nil, err
-		}
-		cfg.Auth.OIDC.TrustedCaFile = caFile
+	if err := fs.materializeCommon(*id, cfg); err != nil {
+		return nil, err
 	}
 	return cfg, nil
 }
@@ -251,58 +174,11 @@ func (fs *Service) buildCommonCfg(id *string) (*v1.ClientCommonConfig, error) {
 	if !validServerID.MatchString(*id) {
 		return nil, errors.New("invalid server id")
 	}
-	cfg := &v1.ClientCommonConfig{}
-
 	record, err := fs.app.FindRecordById("fh_servers", *id)
 	if err != nil {
 		return nil, err
 	}
-	// basic config
-	cfg.ServerAddr = record.GetString("serverAddr")
-	cfg.ServerPort = record.GetInt("serverPort")
-	cfg.User = record.GetString("user")
-
-	var logConfig v1.LogConfig
-	if err := unmarshalField(record.GetString("log"), &logConfig); err != nil {
-		return nil, fmt.Errorf("parse log config: %w", err)
-	}
-	cfg.Log = logConfig
-
-	// auth config
-	var authConfig v1.AuthClientConfig
-	if err := unmarshalField(record.GetString("auth"), &authConfig); err != nil {
-		return nil, fmt.Errorf("parse auth config: %w", err)
-	}
-	// The server form stores OIDC settings as flat keys; frp expects them under "oidc".
-	var oidc storedOIDC
-	if err := unmarshalField(record.GetString("auth"), &oidc); err != nil {
-		return nil, fmt.Errorf("parse auth config: %w", err)
-	}
-	oidc.applyTo(&authConfig.OIDC)
-	// The form keeps the fields of the other method; send frp only the chosen one's.
-	if authConfig.Method == v1.AuthMethodOIDC {
-		authConfig.Token = ""
-	} else {
-		authConfig.OIDC = v1.AuthOIDCClientConfig{}
-	}
-	if authConfig.Method != "none" && authConfig.Method != "" {
-		cfg.Auth = authConfig
-	}
-
-	// transport config
-	var transportConfig v1.ClientTransportConfig
-	if err := unmarshalField(record.GetString("transport"), &transportConfig); err != nil {
-		return nil, fmt.Errorf("parse transport config: %w", err)
-	}
-	cfg.Transport = transportConfig
-
-	// metadata config
-	var metadataConfig map[string]string
-	if err := unmarshalField(record.GetString("metadatas"), &metadataConfig); err != nil {
-		return nil, fmt.Errorf("parse metadatas: %w", err)
-	}
-	cfg.Metadatas = metadataConfig
-	return cfg, nil
+	return frpconfig.Common(record)
 }
 
 // proxyOptionKeys are the frp proxy keys fh_proxies.options may set, per proxy type.
@@ -406,6 +282,9 @@ func (fs *Service) genProxyCfgs(serverId *string) ([]v1.ProxyConfigurer, error) 
 		if err := json.Unmarshal(jsonData, cfg); err != nil {
 			return nil, fmt.Errorf("proxy %s: %w", proxyMap.Name, err)
 		}
+		if err := frpconfig.Proxy(cfg); err != nil {
+			return nil, fmt.Errorf("invalid proxy %s configuration: %w", proxyMap.Id, err)
+		}
 		proxyCfgs = append(proxyCfgs, cfg)
 	}
 
@@ -469,6 +348,9 @@ func (fs *Service) genVisitorCfgs(serverId *string) ([]v1.VisitorConfigurer, err
 		if err := json.Unmarshal(jsonData, cfg); err != nil {
 			return nil, fmt.Errorf("visitor %s: %w", v.Name, err)
 		}
+		if err := frpconfig.Visitor(cfg); err != nil {
+			return nil, fmt.Errorf("invalid visitor %s configuration: %w", v.Id, err)
+		}
 		cfgs = append(cfgs, cfg)
 	}
 	return cfgs, nil
@@ -477,112 +359,102 @@ func (fs *Service) genVisitorCfgs(serverId *string) ([]v1.VisitorConfigurer, err
 // LaunchFrpc starts frpc for a server. It returns ErrAlreadyRunning if the
 // server is already running or another launch is in progress.
 func (fs *Service) LaunchFrpc(serverId *string) error {
+	if serverId == nil || !validServerID.MatchString(*serverId) {
+		return errors.New("invalid server id")
+	}
 	id := *serverId
-	fs.app.Logger().Info("Launch frpc", "id", id)
-
-	// Reserve the slot first so concurrent launches of the same server fail fast.
 	inst := &instance{stopped: make(chan struct{})}
 	fs.mu.Lock()
+	if fs.closing {
+		fs.mu.Unlock()
+		return ErrLaunchCancelled
+	}
 	if _, exists := fs.instances[id]; exists {
 		fs.mu.Unlock()
 		return ErrAlreadyRunning
 	}
 	fs.instances[id] = inst
 	fs.mu.Unlock()
+	return fs.startReserved(id, inst)
+}
 
-	svr, cfg, err := fs.newClient(&id)
+func (fs *Service) startReserved(id string, inst *instance) error {
+	svr, cfg, hash, certFiles, err := fs.newClient(&id)
 	if err != nil {
-		fs.mu.Lock()
-		delete(fs.instances, id)
-		fs.mu.Unlock()
-		close(inst.stopped)
+		fs.destroying(id, inst)
 		return err
 	}
-
-	ctx, cancel := context.WithCancel(xlog.NewContext(context.Background(), newServerLogger(id)))
+	ctx, cancel := context.WithCancel(xlog.NewContext(fs.ctx, newServerLogger(id)))
 	fs.mu.Lock()
-	if inst.stopRequested {
-		delete(fs.instances, id)
+	if inst.stopRequested || fs.closing {
 		fs.mu.Unlock()
 		cancel()
 		svr.Close()
-		close(inst.stopped)
-		fs.app.Logger().Info("Frpc launch cancelled", "id", id)
+		fs.destroying(id, inst)
 		return ErrLaunchCancelled
 	}
-	inst.svr = svr
-	inst.common = cfg
-	inst.cancel = cancel
+	inst.svr, inst.common, inst.cancel = svr, cfg, cancel
+	inst.sourceHash, inst.certFiles = hash, certFiles
 	inst.graceful = cfg.Transport.Protocol == "kcp" || cfg.Transport.Protocol == "quic"
-	fs.serverRepo.UpdateBootStatus(id, serverdomain.ServerStatusRunning)
 	fs.mu.Unlock()
 
+	// No database write happens under fs.mu: repository/PB callbacks may reenter us.
+	if err := fs.serverRepo.UpdateBootStatus(id, serverdomain.ServerStatusRunning); err != nil {
+		cancel()
+		svr.Close()
+		fs.destroying(id, inst)
+		return err
+	}
+	// Always reconcile after publishing svr. A hook/timer may have fired while
+	// newClient held the startup snapshot and svr was still nil.
+	if err := fs.ReconcileServer(id); err != nil {
+		cancel()
+		svr.Close()
+		fs.destroying(id, inst)
+		return err
+	}
 	done := make(chan error, 1)
-	go func() {
-		fs.app.Logger().Info("Frpc service starting execution", "id", id)
-		err := svr.Run(ctx)
-		if err != nil {
-			fs.app.Logger().Error("Frpc service exited with error", "id", id, "error", err)
-		} else {
-			fs.app.Logger().Info("Frpc service exited normally", "id", id)
-		}
-		done <- err
-	}()
-
+	go func() { done <- svr.Run(ctx) }()
 	go fs.monitorServiceStatus(id, inst, ctx, done)
-
 	return nil
 }
 
-func (fs *Service) newClient(serverId *string) (*client.Service, *v1.ClientCommonConfig, error) {
-	cfg, err := fs.genCommonCfgs(serverId)
+func (fs *Service) newClient(serverId *string) (*client.Service, *v1.ClientCommonConfig, [32]byte, map[string]bool, error) {
+	var hash [32]byte
+	cfg, err := fs.buildCommonCfg(serverId)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, hash, nil, err
 	}
-
+	hash = commonHash(cfg)
+	if err := fs.materializeCommon(*serverId, cfg); err != nil {
+		return nil, nil, hash, nil, err
+	}
 	proxyCfgs, err := fs.genProxyCfgs(serverId)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, hash, nil, err
 	}
 	visitorCfgs, err := fs.genVisitorCfgs(serverId)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, hash, nil, err
 	}
 	if err := fs.writePluginCerts(*serverId, proxyCfgs); err != nil {
-		return nil, nil, err
+		return nil, nil, hash, nil, err
 	}
-
-	fs.app.Logger().Debug("Config", "serverAddr", cfg.ServerAddr, "serverPort", cfg.ServerPort, "proxyCount", len(proxyCfgs), "visitorCount", len(visitorCfgs))
-
-	// Print frp configurations in logs with sensitive data masked
-	commonCfgBytes, _ := json.Marshal(cfg)
-	proxyCfgsBytes, _ := json.Marshal(proxyCfgs)
-	visitorCfgsBytes, _ := json.Marshal(visitorCfgs)
-
-	safeCommon := sensitiveRegex.ReplaceAll(commonCfgBytes, []byte(`"${1}":"***"`))
-	safeProxies := sensitiveRegex.ReplaceAll(proxyCfgsBytes, []byte(`"${1}":"***"`))
-	safeVisitors := sensitiveRegex.ReplaceAll(visitorCfgsBytes, []byte(`"${1}":"***"`))
-
-	fs.app.Logger().Info("FRP Configuration", "common", string(safeCommon), "proxies", string(safeProxies), "visitors", string(safeVisitors))
-
+	// Log only an allowlisted summary, never the full configuration.
+	fs.logConfigSummary(*serverId, "FRP configuration prepared", len(proxyCfgs), len(visitorCfgs))
 	if err := cfg.Complete(); err != nil {
-		return nil, nil, err
+		return nil, nil, hash, nil, err
 	}
 	fs.logger.ensure(cfg.Log.To, cfg.Log.Level, int(cfg.Log.MaxDays))
-
 	configSrc := frpcsource.NewConfigSource()
 	if err := configSrc.ReplaceAll(proxyCfgs, visitorCfgs); err != nil {
-		return nil, nil, err
+		return nil, nil, hash, nil, err
 	}
-	svr, err := client.NewService(client.ServiceOptions{
-		Common:                 cfg,
-		ConfigSourceAggregator: frpcsource.NewAggregator(configSrc),
-	})
+	svr, err := client.NewService(client.ServiceOptions{Common: cfg, ConfigSourceAggregator: frpcsource.NewAggregator(configSrc)})
 	if err != nil {
-		fs.app.Logger().Error("NewService", "err", err)
-		return nil, nil, err
+		return nil, nil, hash, nil, err
 	}
-	return svr, cfg, nil
+	return svr, cfg, hash, pluginFiles(proxyCfgs), nil
 }
 
 // monitorServiceStatus monitors service status and updates the database.
@@ -591,8 +463,8 @@ func (fs *Service) monitorServiceStatus(id string, inst *instance, ctx context.C
 
 	select {
 	case err := <-done:
-		fs.app.Logger().Error("Service exited during startup", "id", id, "error", err)
-		if fs.observer != nil {
+		fs.app.Logger().Error("Service exited during startup", "id", id)
+		if fs.observer != nil && ctx.Err() == nil {
 			fs.observer.FrpcExited(id, fs.serverName(id), err)
 		}
 		return
@@ -607,16 +479,19 @@ func (fs *Service) monitorServiceStatus(id string, inst *instance, ctx context.C
 		fs.app.Logger().Info("Service is running", "id", id)
 	}
 
-	go fs.monitorProxyStatus(id, inst.svr, ctx)
+	proxyDone := make(chan struct{})
+	go func() { defer close(proxyDone); fs.monitorProxyStatus(id, inst.svr, ctx) }()
+	// Stop and join the status writer before final offline status is persisted.
+	defer func() { inst.cancel(); <-proxyDone }()
 
 	select {
 	case err := <-done:
 		if err != nil {
-			fs.app.Logger().Error("Service exited with error", "id", id, "error", err)
+			fs.app.Logger().Error("Service exited with error", "id", id)
 		} else {
 			fs.app.Logger().Info("Service exited normally", "id", id)
 		}
-		if fs.observer != nil {
+		if fs.observer != nil && ctx.Err() == nil {
 			fs.observer.FrpcExited(id, fs.serverName(id), err)
 		}
 	case <-ctx.Done():
@@ -631,15 +506,44 @@ func (fs *Service) monitorServiceStatus(id string, inst *instance, ctx context.C
 // destroying cleans up an instance. A newer instance of the same server may
 // already have been launched; in that case its map entry and status are left alone.
 func (fs *Service) destroying(id string, inst *instance) {
+	inst.reloadMu.Lock()
 	fs.mu.Lock()
-	if cur, ok := fs.instances[id]; !ok || cur == inst {
-		delete(fs.instances, id)
+	current := fs.instances[id] == inst
+	inst.exiting = true
+	fs.mu.Unlock()
+	inst.reloadMu.Unlock()
+	// Keep the slot reserved until status writes finish; a new launch cannot have
+	// its running status overwritten by an older instance's cleanup.
+	if current {
 		fs.serverRepo.UpdateBootStatus(id, serverdomain.ServerStatusStopped)
 		fs.proxyRepo.UpdateBootStatusByServerID(id, proxydomain.ProxyBootStatusOffline)
 	}
-	fs.mu.Unlock()
-	inst.cancel()
+	if inst.cancel != nil {
+		inst.cancel()
+	}
+	fs.mu.Lock()
+	var next *instance
+	if fs.instances[id] == inst {
+		if t := fs.reloadTimers[id]; t != nil {
+			t.Stop()
+			delete(fs.reloadTimers, id)
+		}
+		if inst.restartRequested && !inst.stopRequested && !fs.closing {
+			next = &instance{stopped: make(chan struct{})}
+			fs.instances[id] = next
+		} else {
+			delete(fs.instances, id)
+		}
+	}
 	close(inst.stopped)
+	fs.mu.Unlock()
+	if next != nil {
+		go func() {
+			if err := fs.startReserved(id, next); err != nil {
+				fs.app.Logger().Error("Frpc restart failed; server stopped", "serverId", id)
+			}
+		}()
+	}
 }
 
 // monitorProxyStatus monitors proxy status from frp and updates the database.
@@ -687,17 +591,21 @@ func (fs *Service) monitorProxyStatus(serverId string, svr *client.Service, ctx 
 
 // TerminateFrpc stops the specified frpc service and waits for it to exit.
 func (fs *Service) TerminateFrpc(id *string) error {
+	if id == nil || !validServerID.MatchString(*id) {
+		return errors.New("invalid server id")
+	}
 	fs.app.Logger().Info("Stop frpc", "id", *id)
-
 	fs.mu.Lock()
+	if t := fs.reloadTimers[*id]; t != nil {
+		t.Stop()
+		delete(fs.reloadTimers, *id)
+	}
 	inst, exists := fs.instances[*id]
 	var cancel context.CancelFunc
 	if exists {
+		inst.stopRequested = true
+		inst.restartRequested = false
 		cancel = inst.cancel
-		if cancel == nil {
-			// Still building its config: LaunchFrpc sees the flag and gives up before running.
-			inst.stopRequested = true
-		}
 	}
 	fs.mu.Unlock()
 	if !exists {
@@ -712,6 +620,7 @@ func (fs *Service) TerminateFrpc(id *string) error {
 		fs.app.Logger().Info("Frpc stopped", "id", *id)
 	case <-time.After(stopTimeout):
 		fs.app.Logger().Warn("Timed out waiting for frpc to stop", "id", *id)
+		return errors.New("timed out waiting for frpc to stop")
 	}
 	return nil
 }
@@ -720,26 +629,37 @@ func (fs *Service) TerminateFrpc(id *string) error {
 // It is meant to be called on application shutdown.
 func (fs *Service) StopAll() {
 	fs.mu.Lock()
+	fs.closing = true
+	for id, t := range fs.reloadTimers {
+		t.Stop()
+		delete(fs.reloadTimers, id)
+	}
 	instances := make([]*instance, 0, len(fs.instances))
+	var closers []func()
 	for _, inst := range fs.instances {
-		if inst.svr != nil {
-			instances = append(instances, inst)
+		inst.stopRequested = true
+		inst.restartRequested = false
+		instances = append(instances, inst)
+		if svr := inst.svr; svr != nil {
+			if inst.graceful {
+				closers = append(closers, func() { svr.GracefulClose(500 * time.Millisecond) })
+			} else {
+				closers = append(closers, svr.Close)
+			}
 		}
 	}
 	fs.mu.Unlock()
-
-	for _, inst := range instances {
-		if inst.graceful {
-			inst.svr.GracefulClose(500 * time.Millisecond)
-		} else {
-			inst.cancel()
-		}
+	for _, closeService := range closers {
+		closeService()
 	}
-	timeout := time.After(stopTimeout)
+	// Set frp's graceful-close duration before cancelling its parent context.
+	fs.cancel()
+	timeout := time.NewTimer(stopTimeout)
+	defer timeout.Stop()
 	for _, inst := range instances {
 		select {
 		case <-inst.stopped:
-		case <-timeout:
+		case <-timeout.C:
 			return
 		}
 	}
@@ -834,46 +754,10 @@ func (fs *Service) StreamLog(serverId string, ctx context.Context, w http.Respon
 // ReloadFrpc pushes the current proxy configuration to a running frpc.
 // It does nothing when the server is not running.
 func (fs *Service) ReloadFrpc(serverId *string) error {
-	fs.mu.Lock()
-	inst, ok := fs.instances[*serverId]
-	var svr *client.Service
-	var common *v1.ClientCommonConfig
-	if ok {
-		svr, common = inst.svr, inst.common
+	if serverId == nil || !validServerID.MatchString(*serverId) {
+		return errors.New("invalid server id")
 	}
-	fs.mu.Unlock()
-	if svr == nil {
-		return nil
-	}
-
-	// Read and push under one lock: a reload that read the proxies earlier must not apply last.
-	inst.reloadMu.Lock()
-	defer inst.reloadMu.Unlock()
-
-	fs.app.Logger().Info("Reload frpc", "id", *serverId)
-
-	proxyCfgs, err := fs.genProxyCfgs(serverId)
-	if err != nil {
-		return err
-	}
-
-	visitorCfgs, err := fs.genVisitorCfgs(serverId)
-	if err != nil {
-		return err
-	}
-	if err := fs.writePluginCerts(*serverId, proxyCfgs); err != nil {
-		return err
-	}
-
-	proxyCfgsBytes, _ := json.Marshal(proxyCfgs)
-	visitorCfgsBytes, _ := json.Marshal(visitorCfgs)
-	safeProxies := sensitiveRegex.ReplaceAll(proxyCfgsBytes, []byte(`"${1}":"***"`))
-	safeVisitors := sensitiveRegex.ReplaceAll(visitorCfgsBytes, []byte(`"${1}":"***"`))
-	fs.app.Logger().Info("FRP Reload Configurations", "proxies", string(safeProxies), "visitors", string(safeVisitors))
-
-	// UpdateConfigSource completes and filters the configs like startup does; pushing raw
-	// configs would make every proxy differ from the running one and restart them all.
-	return svr.UpdateConfigSource(common, proxyCfgs, visitorCfgs)
+	return fs.ReconcileServer(*serverId)
 }
 
 // IsServerRunning checks if a server is currently running or starting.
@@ -888,7 +772,9 @@ func (fs *Service) IsServerRunning(serverId string) bool {
 func (fs *Service) AutoStartServers() {
 	fs.app.Logger().Info("Auto-starting servers with autoConnection enabled")
 	fs.app.Logger().Info("Waiting for 10 seconds before auto-starting servers")
-	time.Sleep(10 * time.Second)
+	if !waitContext(fs.ctx, 10*time.Second) {
+		return
+	}
 
 	records, err := fs.serverRepo.FindAllWithAutoConnect()
 	if err != nil {
@@ -897,19 +783,38 @@ func (fs *Service) AutoStartServers() {
 	}
 
 	for i, record := range records {
-		if i > 0 {
-			time.Sleep(1 * time.Second)
+		if fs.ctx.Err() != nil {
+			return
+		}
+		if i > 0 && !waitContext(fs.ctx, time.Second) {
+			return
 		}
 		id := record.ID
+		// The setting may have been disabled or the record deleted during the delay.
+		current, err := fs.app.FindRecordById("fh_servers", id)
+		if err != nil || !current.GetBool("autoConnection") {
+			continue
+		}
 		fs.app.Logger().Info("Auto-starting server", "id", id, "name", record.ServerName)
 		if err := fs.LaunchFrpc(&id); err != nil {
-			fs.app.Logger().Error("Failed to auto-start server", "id", id, "error", err)
+			fs.app.Logger().Error("Failed to auto-start server", "id", id)
 		} else {
 			fs.app.Logger().Info("Successfully auto-started server", "id", id)
 		}
 	}
 
 	fs.app.Logger().Info("Auto-start initiated for servers", "count", len(records))
+}
+
+func waitContext(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return ctx.Err() == nil
+	}
 }
 
 // isEmptyOption reports whether an options value means "not set": "", nil, or an empty list/object.

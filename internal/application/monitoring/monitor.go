@@ -1,6 +1,7 @@
 package monitoring
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"podux/pkg/utils"
@@ -12,206 +13,235 @@ import (
 	"ganigeorgiev.com/pocketbase/pocketbase/core"
 )
 
-// MonitorService is the background network monitoring service.
+const serverPageSize = 128
+const latencyConcurrency = 16
+
+// eachServer uses keyset pagination: concurrent updates/deletes cannot shift an
+// offset and silently skip servers. Only one page of full records is retained.
+func eachServer(ctx context.Context, app core.App, visit func(*core.Record)) error {
+	after := ""
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		var records []*core.Record
+		err := app.RecordQuery("fh_servers").WithContext(ctx).Where(dbx.NewExp("id > {:after}", dbx.Params{"after": after})).OrderBy("id").Limit(serverPageSize).All(&records)
+		if err != nil {
+			return err
+		}
+		for _, r := range records {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			visit(r)
+			after = r.Id
+		}
+		if len(records) < serverPageSize {
+			return nil
+		}
+	}
+}
+
+// MonitorService owns two non-overlapping loops and bounded worker pools.
 type MonitorService struct {
 	app            core.App
 	geoService     *GeoService
 	metricsService *MetricsService
-	stopChan       chan struct{}
-	stopOnce       sync.Once
+	mu             sync.Mutex
+	started        bool
+	ctx            context.Context
+	cancel         context.CancelFunc
+	workers        sync.WaitGroup
 	latencyTicker  *time.Ticker
 	geoTicker      *time.Ticker
-	// onLatency, if set, receives every latency probe (see SetLatencyObserver).
-	onLatency LatencyObserver
+	geoQueue       chan geoRequest
+	onLatency      LatencyObserver
+	ping           func(context.Context, string, time.Duration) utils.PingResult
 }
-
-// LatencyObserver receives a latency probe of a server; running is whether its frpc
-// was running when the probe started, and latencyMs is -1 when unreachable.
+type geoRequest struct{ id, addr string }
 type LatencyObserver func(serverID, serverName, addr string, running, reachable bool, latencyMs int64)
 
-// SetLatencyObserver registers fn; call it before Start.
-func (s *MonitorService) SetLatencyObserver(fn LatencyObserver) {
-	s.onLatency = fn
-}
-
-// NewMonitorService creates a new network monitoring service.
+func (s *MonitorService) SetLatencyObserver(fn LatencyObserver) { s.onLatency = fn }
 func NewMonitorService(app core.App, geoService *GeoService, metricsService *MetricsService) *MonitorService {
-	return &MonitorService{
-		app:            app,
-		geoService:     geoService,
-		metricsService: metricsService,
-		stopChan:       make(chan struct{}),
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &MonitorService{app: app, geoService: geoService, metricsService: metricsService, ctx: ctx, cancel: cancel, geoQueue: make(chan geoRequest, serverPageSize), ping: utils.PingHostContext}
 }
-
-// Start begins background monitoring.
-// latencyInterval: how often to check latency (e.g., 30s).
-// geoInterval: how often to check geolocation (e.g., 24h).
 func (s *MonitorService) Start(latencyInterval, geoInterval time.Duration) {
-	s.app.Logger().Info("Starting network monitor service",
-		"latencyInterval", latencyInterval,
-		"geoInterval", geoInterval)
-
-	// Execute immediately once
-	go s.updateAllServersLatency()
-	go s.updateAllServersGeoLocation()
-
-	s.latencyTicker = time.NewTicker(latencyInterval)
-	s.startTicker(s.latencyTicker, s.updateAllServersLatency)
-
-	s.geoTicker = time.NewTicker(geoInterval)
-	s.startTicker(s.geoTicker, s.updateAllServersGeoLocation)
-
-	s.app.Logger().Info("Network monitor service started successfully")
-}
-
-// startTicker runs fn on each tick until stopped.
-func (s *MonitorService) startTicker(ticker *time.Ticker, fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.started || s.ctx.Err() != nil {
+		return
+	}
+	s.started = true
+	s.latencyTicker = time.NewTicker(max(time.Second, latencyInterval))
+	s.geoTicker = time.NewTicker(max(time.Second, geoInterval))
+	s.startLoop(s.latencyTicker, s.updateAllServersLatency)
+	s.startLoop(s.geoTicker, s.updateAllServersGeoLocation)
+	s.workers.Add(1)
 	go func() {
+		defer s.workers.Done()
 		for {
 			select {
-			case <-ticker.C:
-				fn()
-			case <-s.stopChan:
+			case <-s.ctx.Done():
 				return
+			case req := <-s.geoQueue:
+				s.updateServerGeoLocation(req.id, req.addr)
 			}
 		}
 	}()
 }
-
-// UpdateIntervals applies new check intervals to the running tickers.
+func (s *MonitorService) startLoop(ticker *time.Ticker, fn func()) {
+	s.workers.Add(1)
+	go func() {
+		defer s.workers.Done()
+		fn()
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-ticker.C:
+				fn()
+			}
+		}
+	}()
+}
 func (s *MonitorService) UpdateIntervals(latencyInterval, geoInterval time.Duration) {
-	if s.latencyTicker == nil || s.geoTicker == nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.latencyTicker == nil || s.ctx.Err() != nil {
 		return
 	}
-	s.latencyTicker.Reset(latencyInterval)
-	s.geoTicker.Reset(geoInterval)
-	s.app.Logger().Info("Network monitor intervals updated",
-		"latencyInterval", latencyInterval,
-		"geoInterval", geoInterval)
+	s.latencyTicker.Reset(max(time.Second, latencyInterval))
+	s.geoTicker.Reset(max(time.Second, geoInterval))
 }
-
-// Stop halts the background monitoring task. It is safe to call more than once.
 func (s *MonitorService) Stop() {
+	s.mu.Lock()
+	s.cancel()
 	if s.latencyTicker != nil {
 		s.latencyTicker.Stop()
-	}
-	if s.geoTicker != nil {
 		s.geoTicker.Stop()
 	}
-	s.stopOnce.Do(func() { close(s.stopChan) })
+	s.mu.Unlock()
+	s.workers.Wait()
 }
 
-// updateAllServersLatency updates latency for all servers.
 func (s *MonitorService) updateAllServersLatency() {
-	s.app.Logger().Debug("Updating latency for all servers")
-
-	records, err := s.app.FindRecordsByFilter(
-		"fh_servers",
-		"",
-		"-created",
-		500,
-		0,
-	)
-	if err != nil {
-		s.app.Logger().Error("Failed to fetch servers for latency monitoring", "error", err)
-		return
+	jobs := make(chan *core.Record)
+	samples := make(chan latencySample, latencyConcurrency)
+	var wg sync.WaitGroup
+	for range latencyConcurrency {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for record := range jobs {
+				if s.ctx.Err() != nil {
+					continue
+				}
+				sample := s.metricsService.beginLatency(record)
+				result := s.ping(s.ctx, sample.endpoint, 5*time.Second)
+				sample.latency, sample.err = result.Latency, result.Error
+				sample.at = time.Now().UTC()
+				select {
+				case samples <- sample:
+				case <-s.ctx.Done():
+					return
+				}
+			}
+		}()
 	}
-
-	s.app.Logger().Debug("Found servers to check latency", "count", len(records))
-
-	for _, record := range records {
-		go s.updateServerLatency(record)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		batch := make([]latencySample, 0, 64)
+		flush := func() {
+			if len(batch) == 0 || s.ctx.Err() != nil {
+				return
+			}
+			accepted, err := s.metricsService.recordLatencyBatch(s.ctx, batch)
+			if err != nil {
+				s.app.Logger().Warn("Record latency batch", "error", err)
+			}
+			if s.onLatency != nil {
+				for _, sample := range accepted {
+					s.onLatency(sample.id, sample.name, sample.endpoint, sample.running, sample.latency >= 0, sample.latency)
+				}
+			}
+			batch = batch[:0]
+		}
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case sample, ok := <-samples:
+				if !ok {
+					flush()
+					return
+				}
+				batch = append(batch, sample)
+				if len(batch) == cap(batch) {
+					flush()
+				}
+			case <-ticker.C:
+				flush()
+			}
+		}
+	}()
+	err := eachServer(s.ctx, s.app, func(r *core.Record) {
+		select {
+		case jobs <- r:
+		case <-s.ctx.Done():
+		}
+	})
+	close(jobs)
+	wg.Wait()
+	close(samples)
+	<-done
+	if err != nil && s.ctx.Err() == nil {
+		s.app.Logger().Warn("List latency servers", "error", err)
 	}
 }
-
-// updateAllServersGeoLocation updates geolocation for servers without geo data.
 func (s *MonitorService) updateAllServersGeoLocation() {
-	s.app.Logger().Info("Updating geolocation for servers without geo data")
-
-	records, err := s.app.FindRecordsByFilter(
-		"fh_servers",
-		"geoLocation = '' || geoLocation = null",
-		"-created",
-		500,
-		0,
-	)
-	if err != nil {
-		s.app.Logger().Error("Failed to fetch servers for geo monitoring", "error", err)
-		return
-	}
-
-	if len(records) == 0 {
-		s.app.Logger().Debug("All servers already have geolocation data")
-		return
-	}
-
-	s.app.Logger().Info("Found servers needing geolocation", "count", len(records))
-
-	for _, record := range records {
-		go s.updateServerGeoLocation(record.Id, record.GetString("serverAddr"))
+	err := eachServer(s.ctx, s.app, func(r *core.Record) {
+		if r.GetString("geoLocation") == "" || r.GetString("geoLocation") == "null" {
+			s.updateServerGeoLocation(r.Id, r.GetString("serverAddr"))
+		}
+	})
+	if err != nil && s.ctx.Err() == nil {
+		s.app.Logger().Warn("List geolocation servers", "error", err)
 	}
 }
 
-// updateServerLatency pings a single server and records the result to metrics.
-func (s *MonitorService) updateServerLatency(record *core.Record) {
-	serverID, serverAddr := record.Id, record.GetString("serverAddr")
-	addr := net.JoinHostPort(serverAddr, strconv.Itoa(record.GetInt("serverPort")))
-	pingResult := utils.PingHost(addr, 5*time.Second)
-
-	if err := s.metricsService.RecordServerLatency(serverID, pingResult.Latency, pingResult.Error); err != nil {
-		s.app.Logger().Error("Failed to record server latency metric", "serverId", serverID, "error", err)
+// RefreshGeoLocation coalesces work in a bounded queue, never spawning per-record
+// goroutines. Overflow is recovered by the periodic missing-location scan.
+func (s *MonitorService) RefreshGeoLocation(serverID, serverAddr string) {
+	if s.ctx.Err() != nil {
+		return
 	}
-
-	s.app.Logger().Debug("Checked latency",
-		"serverId", serverID,
-		"addr", serverAddr,
-		"latency", pingResult.Latency,
-		"reachable", pingResult.Reachable,
-	)
-
-	if s.onLatency != nil {
-		running := record.GetString("bootStatus") == "running"
-		s.onLatency(serverID, record.GetString("serverName"), addr, running, pingResult.Reachable, pingResult.Latency)
+	select {
+	case s.geoQueue <- geoRequest{serverID, serverAddr}:
+	default:
 	}
 }
-
-// RefreshGeoLocation looks up a server's location in the background, e.g. after it was
-// created or its address changed, instead of waiting for the next geo interval.
-func (s *MonitorService) RefreshGeoLocation(serverID string, serverAddr string) {
-	go s.updateServerGeoLocation(serverID, serverAddr)
+func (s *MonitorService) updateServerGeoLocation(serverID, serverAddr string) {
+	if s.ctx.Err() != nil {
+		return
+	}
+	location, err := s.geoService.LookupContext(s.ctx, serverAddr)
+	if err != nil {
+		if s.ctx.Err() == nil {
+			s.app.Logger().Debug("Geolocation lookup failed", "serverId", serverID, "error", err)
+		}
+		return
+	}
+	value, err := json.Marshal(location)
+	if err != nil {
+		return
+	}
+	_, err = s.app.DB().Update("fh_servers", dbx.Params{"geoLocation": string(value)}, dbx.HashExp{"id": serverID, "serverAddr": serverAddr}).WithContext(s.ctx).Execute()
+	if err != nil && s.ctx.Err() == nil {
+		s.app.Logger().Warn("Save geolocation", "error", err)
+	}
 }
-
-// updateServerGeoLocation updates geolocation for a single server.
-func (s *MonitorService) updateServerGeoLocation(serverID string, serverAddr string) {
-	location, err := s.geoService.Lookup(serverAddr)
-	if err != nil {
-		s.app.Logger().Warn("Failed to get geo location", "serverId", serverID, "addr", serverAddr, "error", err)
-		return
-	}
-
-	geoLocationJSON, err := json.Marshal(location)
-	if err != nil {
-		s.app.Logger().Error("Failed to marshal geo location", "serverId", serverID, "error", err)
-		return
-	}
-
-	_, err = s.app.DB().
-		Update("fh_servers",
-			dbx.Params{"geoLocation": string(geoLocationJSON)},
-			// Skip the write if the address changed while the lookup ran.
-			dbx.HashExp{"id": serverID, "serverAddr": serverAddr},
-		).Execute()
-
-	if err != nil {
-		s.app.Logger().Error("Failed to update server geolocation", "serverId", serverID, "error", err)
-		return
-	}
-
-	s.app.Logger().Info("Updated geolocation",
-		"serverId", serverID,
-		"addr", serverAddr,
-		"city", location.City,
-		"isp", location.ISP,
-	)
+func serverEndpoint(r *core.Record) string {
+	return net.JoinHostPort(r.GetString("serverAddr"), strconv.Itoa(r.GetInt("serverPort")))
 }

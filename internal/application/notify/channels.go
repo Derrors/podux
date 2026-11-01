@@ -27,7 +27,7 @@ func (s *Service) sendAll(ctx context.Context, settings Settings, m Message) map
 	if settings.Bark.Enabled {
 		results["bark"] = s.sendBark(ctx, settings.Bark, m)
 	}
-	if settings.Email.Enabled {
+	if settings.Email.Enabled && ctx.Err() == nil {
 		results["email"] = sendEmail(s.app, settings.Email, m)
 	}
 	return results

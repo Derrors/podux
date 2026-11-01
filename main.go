@@ -50,6 +50,8 @@ func main() {
 	geoService := monitoring.NewGeoService(app)
 	metricsService := monitoring.NewMetricsService(app)
 	frpsService := monitoring.NewFrpsService(app)
+	frpsService.RegisterHooks()
+	metricsService.RegisterHooks()
 	probeService := monitoring.NewProbeService(app, frpsService)
 	dashboardService := dashboard.NewService(app, serverService, proxyService, metricsService, frpsService)
 	metricsScheduler := monitoring.NewMetricsScheduler(app, metricsService)
@@ -77,51 +79,14 @@ func main() {
 	serverHandler := httphandler.NewServerHandler(app, metricsService)
 	notifyHandler := httphandler.NewNotifyHandler(notifyService)
 	proxyHandler := httphandler.NewProxyHandler(app)
-	backupHandler := httphandler.NewBackupHandler(app, backup.NewService(app))
+	backupService := backup.NewService(app)
+	backupHandler := httphandler.NewBackupHandler(app, backupService)
 	monitorHandler := httphandler.NewMonitorHandler(app, frpsService, probeService)
 	apiKeyService := apikey.NewService(app)
 	apiKeyHandler := httphandler.NewAPIKeyHandler(apiKeyService, monitoring.NewExporter(app, metricsService, frpsService, probeService))
 
-	// Hooks: reload the running frpc whenever one of its proxies or visitors changes.
-	reloadServers := func(e *core.RecordEvent, serverIds ...string) {
-		seen := map[string]bool{}
-		for _, serverId := range serverIds {
-			if serverId == "" || seen[serverId] || !frpcService.IsServerRunning(serverId) {
-				continue
-			}
-			seen[serverId] = true
-			app.Logger().Info("Config changed, reloading frpc", "collection", e.Record.Collection().Name, "recordId", e.Record.Id, "serverId", serverId)
-			frpcService.RequestReload(serverId)
-		}
-	}
-	app.OnRecordAfterCreateSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
-		reloadServers(e, e.Record.GetString("serverId"))
-		return e.Next()
-	})
-	app.OnRecordAfterUpdateSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
-		// A proxy moved to another server must also be removed from the old one.
-		// The Podux-only public probe switch never requires an frpc reload.
-		if frpc.ProxyNeedsReload(e.Record) {
-			reloadServers(e, e.Record.GetString("serverId"), e.Record.Original().GetString("serverId"))
-		}
-		return e.Next()
-	})
-	app.OnRecordAfterDeleteSuccess("fh_proxies").BindFunc(func(e *core.RecordEvent) error {
-		reloadServers(e, e.Record.GetString("serverId"))
-		return e.Next()
-	})
-	app.OnRecordAfterCreateSuccess("fh_visitors").BindFunc(func(e *core.RecordEvent) error {
-		reloadServers(e, e.Record.GetString("serverId"))
-		return e.Next()
-	})
-	app.OnRecordAfterUpdateSuccess("fh_visitors").BindFunc(func(e *core.RecordEvent) error {
-		reloadServers(e, e.Record.GetString("serverId"), e.Record.Original().GetString("serverId"))
-		return e.Next()
-	})
-	app.OnRecordAfterDeleteSuccess("fh_visitors").BindFunc(func(e *core.RecordEvent) error {
-		reloadServers(e, e.Record.GetString("serverId"))
-		return e.Next()
-	})
+	// Lifecycle owns runtime state and committed configuration reconciliation.
+	frpcService.RegisterHooks()
 
 	// A new or moved server gets its location now; a moved one drops the stale location first.
 	app.OnRecordUpdate("fh_servers").BindFunc(func(e *core.RecordEvent) error {
@@ -158,18 +123,28 @@ func main() {
 
 	// Stop background work before the app shuts down (kcp/quic sessions close gracefully).
 	app.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		if !e.IsRestart {
+			backupService.Stop()
+		}
 		networkMonitorService.Stop()
 		probeService.Stop()
+		metricsScheduler.Stop()
+		frpsService.Stop()
 		frpcService.StopAll()
+		notifyService.Stop()
 		return e.Next()
 	})
 
 	// register custom routes
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
-		// Reset all server statuses to stopped on startup
-		serverService.ResetAllServerStatus()
-		// Reset all proxy statuses to offline on startup
-		proxyService.ResetAllProxyBootStatus()
+		if err := backupService.RecoverRestore(); err != nil {
+			// A damaged task journal must not prevent the restored UI from booting.
+			app.Logger().Error("Cannot confirm previous restore result", "error", err)
+		}
+		// Actual runtime state is rebuilt by the lifecycle owner after restart.
+		if err := frpcService.ResetRuntimeStatus(); err != nil {
+			return err
+		}
 
 		// Auto-start servers with autoConnection enabled (non-blocking)
 		go frpcService.AutoStartServers()
@@ -181,6 +156,7 @@ func main() {
 			networkMonitorService.UpdateIntervals(settingsService.GetMonitoringIntervals())
 		})
 		metricsScheduler.Register()
+		frpsService.Start()
 		probeService.Start()
 
 		// API keys only unlock routes wrapped with requireScope; see httphandler.APIKeyAuth.

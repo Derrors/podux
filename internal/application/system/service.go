@@ -1,6 +1,7 @@
 package system
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,19 +54,24 @@ func NewService(app core.App) *Service {
 
 // CheckInitialized checks if the system has been initialized.
 func (s *Service) CheckInitialized() (bool, error) {
-	collection, err := s.app.FindCollectionByNameOrId("fh_settings")
+	return checkInitialized(s.app)
+}
+
+func checkInitialized(app core.App) (bool, error) {
+	collection, err := app.FindCollectionByNameOrId("fh_settings")
 	if err != nil {
 		return false, fmt.Errorf("failed to find settings collection: %w", err)
 	}
 
-	record, err := s.app.FindRecordById(collection, SettingsID)
-	if err != nil {
-		// If record doesn't exist, system is not initialized
+	record, err := app.FindRecordById(collection, SettingsID)
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
+	if err != nil {
+		return false, fmt.Errorf("failed to find settings record: %w", err)
+	}
 
-	initialized := record.GetBool("initialized")
-	return initialized, nil
+	return record.GetBool("initialized"), nil
 }
 
 // GetSettings retrieves the system settings.
@@ -102,32 +108,30 @@ func (s *Service) UpdateSettings(req *UpdateSettingsRequest) error {
 		return errors.New("general settings cannot be nil")
 	}
 
-	// Merge into the stored settings: the settings page only sends the keys it edits,
-	// and replacing the whole object dropped others such as defaultLanguage.
-	merged := map[string]interface{}{}
-	if current, err := s.GetSettings(); err == nil {
-		for k, v := range current.General {
+	// Merge and save under the same single-writer transaction. Reading first
+	// could lose another request's patch, or replace settings after a read error.
+	err := s.app.RunInTransaction(func(tx core.App) error {
+		record, err := tx.FindRecordById("fh_settings", SettingsID)
+		if err != nil {
+			return fmt.Errorf("failed to find settings record: %w", err)
+		}
+		var merged map[string]interface{}
+		if err := record.UnmarshalJSONField("general", &merged); err != nil {
+			return fmt.Errorf("failed to unmarshal general settings: %w", err)
+		}
+		if merged == nil {
+			merged = make(map[string]interface{})
+		}
+		for k, v := range req.General {
 			merged[k] = v
 		}
-	}
-	for k, v := range req.General {
-		merged[k] = v
-	}
-
-	generalJSON, err := json.Marshal(merged)
-	if err != nil {
-		return fmt.Errorf("failed to marshal general settings: %w", err)
-	}
-
-	_, err = s.app.DB().NewQuery(`
-		UPDATE fh_settings
-		SET general = {:general}, updated = STRFTIME('%Y-%m-%d %H:%M:%S', 'now')
-		WHERE id = {:id}
-	`).Bind(map[string]interface{}{
-		"general": string(generalJSON),
-		"id":      SettingsID,
-	}).Execute()
-
+		generalJSON, err := json.Marshal(merged)
+		if err != nil {
+			return fmt.Errorf("failed to marshal general settings: %w", err)
+		}
+		record.Set("general", string(generalJSON))
+		return tx.Save(record.IgnoreUnchangedFields(true))
+	})
 	if err != nil {
 		return fmt.Errorf("failed to update settings: %w", err)
 	}
@@ -261,16 +265,17 @@ func (s *Service) InitializeSystem(req *InitializeRequest) error {
 		req.Language = "en"
 	}
 
-	initialized, err := s.CheckInitialized()
-	if err != nil {
-		return fmt.Errorf("failed to check initialization status: %w", err)
-	}
-
-	if initialized {
-		return errors.New("system is already initialized")
-	}
-
 	return s.app.RunInTransaction(func(txApp core.App) error {
+		// PocketBase's single writer connection serializes the check with both
+		// writes, including concurrent initialization with different emails.
+		initialized, err := checkInitialized(txApp)
+		if err != nil {
+			return fmt.Errorf("failed to check initialization status: %w", err)
+		}
+		if initialized {
+			return errors.New("system is already initialized")
+		}
+
 		usersCollection, err := txApp.FindCollectionByNameOrId("fh_users")
 		if err != nil {
 			return fmt.Errorf("failed to find users collection: %w", err)
@@ -292,9 +297,11 @@ func (s *Service) InitializeSystem(req *InitializeRequest) error {
 		}
 
 		settingsRecord, err := txApp.FindRecordById(settingsCollection, SettingsID)
-		if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			settingsRecord = core.NewRecord(settingsCollection)
 			settingsRecord.Set("id", SettingsID)
+		} else if err != nil {
+			return fmt.Errorf("failed to find settings record: %w", err)
 		}
 
 		settingsRecord.Set("initialized", true)
