@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcileTopology, selectTopologyPage, TOPOLOGY_PAGE_SIZE } from "./topologyData";
+import { groupTopology, reconcileTopology } from "./topologyData";
 import type { TopologyData } from "./useDashboard";
 
 export function fixture(size = 10000): TopologyData {
@@ -34,7 +34,7 @@ export function fixture(size = 10000): TopologyData {
   };
 }
 
-describe("topology reconciliation and bounded selection", () => {
+describe("topology reconciliation and complete grouping", () => {
   it("reuses the full snapshot on an unchanged 10,000-proxy poll", () => {
     const old = fixture();
     expect(reconcileTopology(old, structuredClone(old))).toBe(old);
@@ -52,24 +52,29 @@ describe("topology reconciliation and bounded selection", () => {
     expect(merged.proxies[1]).not.toBe(old.proxies[1]);
   });
 
-  it("bounds every page, includes visitors across the page boundary and clamps deletion", () => {
-    const data = fixture(TOPOLOGY_PAGE_SIZE + 1);
-    const first = selectTopologyPage(data, "s1", 0, true);
-    expect(first.topology.proxies).toHaveLength(TOPOLOGY_PAGE_SIZE);
-    expect(first.topology.visitors).toHaveLength(0);
-    const last = selectTopologyPage(data, "s1", 999, true);
-    expect(last.currentPage).toBe(1);
-    expect(last.topology.proxies).toHaveLength(1);
-    expect(last.topology.visitors).toHaveLength(1);
-    expect(selectTopologyPage(data, "s2", 999, true).currentPage).toBe(0);
-    expect(selectTopologyPage(data, "deleted", 0, true).topology.servers[0].id).toBe("s1");
+  it("keeps every server, proxy and visitor in stable order without a page limit", () => {
+    const data = fixture();
+    const groups = groupTopology(data);
+    expect(groups.map(({ server }) => server.id)).toEqual(["s1", "s2"]);
+    expect(groups[0].proxies).toEqual(data.proxies);
+    expect(groups[0].visitors).toEqual(data.visitors);
+    expect(groups[0].proxies[9999]).toBe(data.proxies[9999]);
+    expect(groups[1].proxies).toEqual([]);
+    expect(groups[1].visitors).toEqual([]);
   });
 
-  it("builds only server summaries until expanded and handles legacy null/missing lists", () => {
-    const result = selectTopologyPage(fixture(), "s1", 0, false);
-    expect(result.total).toBe(10001);
-    expect(result.topology.proxies).toHaveLength(0);
-    expect(result.topology.visitors).toHaveLength(0);
-    expect(reconcileTopology(fixture(), {})).toEqual({ servers: [], proxies: [], visitors: [] });
+  it("does not attach orphan connections to another server and handles missing lists", () => {
+    const data = fixture(2);
+    data.proxies[0].serverId = "deleted";
+    data.proxies[1].serverId = "s2";
+    data.visitors[0].serverId = "s2";
+    const groups = groupTopology(data);
+    expect(groups[0].proxies).toEqual([]);
+    expect(groups[0].visitors).toEqual([]);
+    expect(groups[1].proxies).toEqual([data.proxies[1]]);
+    expect(groups[1].visitors).toEqual(data.visitors);
+    const empty = reconcileTopology(data, {});
+    expect(empty).toEqual({ servers: [], proxies: [], visitors: [] });
+    expect(groupTopology(empty)).toEqual([]);
   });
 });

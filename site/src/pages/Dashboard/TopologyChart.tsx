@@ -1,6 +1,5 @@
-import { memo, useId, useMemo, useState, type ReactNode } from "react";
+import { memo, useMemo, useState } from "react";
 import { useReducedMotion } from "framer-motion";
-import { selectTopologyPage } from "./topologyData";
 import {
   ReactFlow,
   Background,
@@ -16,6 +15,7 @@ import { Button, Dialog, Flex, IconButton, Text, Tooltip, useThemeContext } from
 import { Icon } from "@iconify/react/offline";
 import { useTranslation } from "react-i18next";
 import type { TopologyData } from "./useDashboard";
+import { groupTopology } from "./topologyData";
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 const VISITOR_W = 112;
@@ -395,159 +395,8 @@ interface TopologyChartProps {
   topology: TopologyData;
 }
 
-export const TopologyChart = memo(function TopologyChart({ topology }: TopologyChartProps) {
-  const { t } = useTranslation();
-  const [serverId, setServerId] = useState("");
-  const [page, setPage] = useState(0);
-  const [expanded, setExpanded] = useState<boolean | null>(null);
-  const [table, setTable] = useState(false);
-  // Small installations keep the original expanded overview; larger ones are opt-in.
-  const isExpanded = expanded ?? topology.proxies.length + topology.visitors.length <= 10;
-  const selection = useMemo(
-    () => selectTopologyPage(topology, serverId, page, isExpanded),
-    [topology, serverId, page, isExpanded]
-  );
-  const selectedId = selection.topology.servers[0]?.id ?? "";
-  const controls = (
-    <TopologyControls
-      topology={topology}
-      serverId={selectedId}
-      page={selection.currentPage}
-      pages={selection.pages}
-      total={selection.total}
-      expanded={isExpanded}
-      table={table}
-      selectServer={(id) => {
-        setServerId(id);
-        setPage(0);
-      }}
-      setPage={setPage}
-      toggleExpanded={() => setExpanded(!isExpanded)}
-      canCollapse={selection.total > 0}
-      toggleTable={() => setTable((value) => !value)}
-    />
-  );
-  if (table)
-    return (
-      <Flex direction="column" gap="3">
-        {controls}
-        <TopologyTable topology={selection.topology} />
-      </Flex>
-    );
-  return (
-    <Flex direction="column" gap="3">
-      <TopologyGraph
-        topology={selection.topology}
-        controls={controls}
-        layoutKey={`${selectedId}-${selection.currentPage}-${isExpanded}`}
-      />
-      <Text size="1" color="gray">
-        {t("dashboard.topologyLegend")}
-      </Text>
-    </Flex>
-  );
-});
-
-function TopologyControls({
-  topology,
-  serverId,
-  page,
-  pages,
-  total,
-  expanded,
-  table,
-  selectServer,
-  setPage,
-  toggleExpanded,
-  canCollapse,
-  toggleTable,
-}: {
-  topology: TopologyData;
-  serverId: string;
-  page: number;
-  pages: number;
-  total: number;
-  expanded: boolean;
-  table: boolean;
-  canCollapse: boolean;
-  selectServer: (id: string) => void;
-  setPage: (page: number) => void;
-  toggleExpanded: () => void;
-  toggleTable: () => void;
-}) {
-  const { t } = useTranslation();
-  const id = useId();
-  return (
-    <Flex direction="column" gap="3">
-      <Flex gap="3" wrap="wrap" align="center">
-        <label htmlFor={id}>{t("dashboard.topologyServer")}</label>
-        <select
-          id={id}
-          value={serverId}
-          onChange={(event) => selectServer(event.target.value)}
-          style={{
-            maxWidth: "100%",
-            minWidth: 0,
-            width: 220,
-            padding: 8,
-            borderRadius: "var(--radius-2)",
-            color: "var(--gray-12)",
-            background: "var(--color-panel-solid)",
-            border: "1px solid var(--gray-7)",
-          }}
-        >
-          {topology.servers.map((server) => (
-            <option key={server.id} value={server.id}>
-              {server.serverName}
-            </option>
-          ))}
-        </select>
-        {canCollapse && (
-          <Button variant="soft" onClick={toggleExpanded} aria-expanded={expanded}>
-            {t(expanded ? "dashboard.topologyCollapse" : "dashboard.topologyExpand")}
-          </Button>
-        )}
-        <Button variant="soft" onClick={toggleTable} aria-pressed={table}>
-          {t(table ? "dashboard.topologyGraph" : "dashboard.topologyTable")}
-        </Button>
-      </Flex>
-      <Flex align="center" gap="3" wrap="wrap">
-        <Text size="2" color="gray" role="status">
-          {t("dashboard.topologyCount", { count: total })}
-        </Text>
-        {expanded && total > 0 && (
-          <>
-            <Button
-              size="1"
-              variant="soft"
-              disabled={page === 0}
-              onClick={() => setPage(page - 1)}
-              aria-label={t("common.previousPage")}
-            >
-              <Icon icon="lucide:chevron-left" />
-            </Button>
-            <Text size="2">
-              {page + 1} / {pages}
-            </Text>
-            <Button
-              size="1"
-              variant="soft"
-              disabled={page + 1 === pages}
-              onClick={() => setPage(page + 1)}
-              aria-label={t("common.nextPage")}
-            >
-              <Icon icon="lucide:chevron-right" />
-            </Button>
-          </>
-        )}
-      </Flex>
-    </Flex>
-  );
-}
-
 function TopologyTable({ topology }: TopologyChartProps) {
   const { t } = useTranslation();
-  const server = topology.servers[0];
   return (
     <div
       style={{ overflowX: "auto" }}
@@ -555,91 +404,84 @@ function TopologyTable({ topology }: TopologyChartProps) {
       role="region"
       aria-label={t("dashboard.topologyTable")}
     >
-      <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse", fontSize: 13 }}>
-        <caption style={{ textAlign: "left", padding: "8px 0", overflowWrap: "anywhere" }}>
-          {server?.serverName} · {server?.serverAddr} ·{" "}
-          {t(server?.bootStatus === "running" ? "server.running" : "server.stopped")}
-        </caption>
-        <thead>
-          <tr>
-            {["common.name", "common.type", "dashboard.topologyLocalService", "common.status"].map(
-              (key) => (
+      {groupTopology(topology).map(({ server, proxies, visitors }) => (
+        <table
+          key={server.id}
+          style={{ width: "100%", minWidth: 560, borderCollapse: "collapse", fontSize: 13 }}
+        >
+          <caption style={{ textAlign: "left", padding: "8px 0", overflowWrap: "anywhere" }}>
+            {server.serverName} · {server.serverAddr} ·{" "}
+            {t(server.bootStatus === "running" ? "server.running" : "server.stopped")}
+          </caption>
+          <thead>
+            <tr>
+              {[
+                "common.name",
+                "common.type",
+                "dashboard.topologyLocalService",
+                "common.status",
+              ].map((key) => (
                 <th key={key} scope="col" style={{ textAlign: "left", padding: 8 }}>
                   {t(key)}
                 </th>
-              )
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {topology.proxies.map((proxy) => (
-            <tr key={`proxy-${proxy.id}`}>
-              <th scope="row" style={{ padding: 8, textAlign: "left", overflowWrap: "anywhere" }}>
-                {proxy.name}
-              </th>
-              <td style={{ padding: 8 }}>
-                {proxy.proxyType.toUpperCase()}
-                {proxy.remotePort ? ` :${proxy.remotePort}` : ""}
-              </td>
-              <td style={{ padding: 8, overflowWrap: "anywhere" }}>
-                {proxy.localPort
-                  ? `${proxy.localIP}:${proxy.localPort}`
-                  : t("dashboard.topologyHandledByPlugin")}
-              </td>
-              <td style={{ padding: 8 }}>
-                {t(proxy.bootStatus === "online" ? "proxy.online" : "proxy.offline")}
-              </td>
+              ))}
             </tr>
-          ))}
-          {topology.visitors.map((visitor) => (
-            <tr key={`frpVisitor-${visitor.id}`}>
-              <th scope="row" style={{ padding: 8, textAlign: "left", overflowWrap: "anywhere" }}>
-                {visitor.name}
-              </th>
-              <td style={{ padding: 8 }}>
-                {visitor.visitorType.toUpperCase()} → {visitor.serverName}
-              </td>
-              <td style={{ padding: 8, overflowWrap: "anywhere" }}>
-                {visitor.bindPort > 0
-                  ? `${visitor.bindAddr || "127.0.0.1"}:${visitor.bindPort}`
-                  : t("dashboard.topologyFallbackOnly")}
-              </td>
-              <td style={{ padding: 8 }}>
-                {t(visitor.status === "enabled" ? "proxy.enabled" : "proxy.disabled")}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {proxies.map((proxy) => (
+              <tr key={`proxy-${proxy.id}`}>
+                <th scope="row" style={{ padding: 8, textAlign: "left", overflowWrap: "anywhere" }}>
+                  {proxy.name}
+                </th>
+                <td style={{ padding: 8 }}>
+                  {proxy.proxyType.toUpperCase()}
+                  {proxy.remotePort ? ` :${proxy.remotePort}` : ""}
+                </td>
+                <td style={{ padding: 8, overflowWrap: "anywhere" }}>
+                  {proxy.localPort
+                    ? `${proxy.localIP}:${proxy.localPort}`
+                    : t("dashboard.topologyHandledByPlugin")}
+                </td>
+                <td style={{ padding: 8 }}>
+                  {t(proxy.bootStatus === "online" ? "proxy.online" : "proxy.offline")}
+                </td>
+              </tr>
+            ))}
+            {visitors.map((visitor) => (
+              <tr key={`frpVisitor-${visitor.id}`}>
+                <th scope="row" style={{ padding: 8, textAlign: "left", overflowWrap: "anywhere" }}>
+                  {visitor.name}
+                </th>
+                <td style={{ padding: 8 }}>
+                  {visitor.visitorType.toUpperCase()} → {visitor.serverName}
+                </td>
+                <td style={{ padding: 8, overflowWrap: "anywhere" }}>
+                  {visitor.bindPort > 0
+                    ? `${visitor.bindAddr || "127.0.0.1"}:${visitor.bindPort}`
+                    : t("dashboard.topologyFallbackOnly")}
+                </td>
+                <td style={{ padding: 8 }}>
+                  {t(visitor.status === "enabled" ? "proxy.enabled" : "proxy.disabled")}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ))}
     </div>
   );
 }
 
-function TopologyGraph({
-  topology,
-  controls,
-  layoutKey,
-}: TopologyChartProps & { controls: ReactNode; layoutKey: string }) {
+export const TopologyChart = memo(function TopologyChart({ topology }: TopologyChartProps) {
   const { t } = useTranslation();
   const themeCtx = useThemeContext();
   const isDark = themeCtx.appearance === "dark";
   const [fullscreen, setFullscreen] = useState(false);
+  const [table, setTable] = useState(false);
   const { servers, proxies, visitors } = topology;
 
   const { nodes, edges, totalRows } = useMemo(() => {
     if (servers.length === 0) return { nodes: [], edges: [], totalRows: 0 };
-
-    // group proxies and visitors by server; visitors take rows after the proxies
-    const groups = new Map<string, typeof proxies>();
-    for (const px of proxies) {
-      if (!groups.has(px.serverId)) groups.set(px.serverId, []);
-      groups.get(px.serverId)!.push(px);
-    }
-    const visitorGroups = new Map<string, typeof visitors>();
-    for (const v of visitors) {
-      if (!visitorGroups.has(v.serverId)) visitorGroups.set(v.serverId, []);
-      visitorGroups.get(v.serverId)!.push(v);
-    }
 
     // build row assignments
     const serverRows: Array<{
@@ -650,9 +492,11 @@ function TopologyGraph({
       rowCount: number;
     }> = [];
     let row = 0;
-    for (const server of servers) {
-      const sProxies = groups.get(server.id) ?? [];
-      const sVisitors = visitorGroups.get(server.id) ?? [];
+    for (const { server, proxies: sProxies, visitors: sVisitors } of groupTopology({
+      servers,
+      proxies,
+      visitors,
+    })) {
       const rowCount = Math.max(sProxies.length + sVisitors.length, 1);
       serverRows.push({ server, sProxies, sVisitors, startRow: row, rowCount });
       row += rowCount;
@@ -796,19 +640,13 @@ function TopologyGraph({
 
   return (
     <>
-      {controls}
+      {/* Complete overview, as before: no server filtering, collapsed branches or paging. */}
       {/* Read-only on the dashboard: wheel and touch scroll the page instead of zooming the chart. */}
       <div
         style={{ position: "relative", height: containerH, borderRadius: 8, overflow: "hidden" }}
       >
         {!fullscreen && (
-          <TopologyFlow
-            key={layoutKey}
-            nodes={nodes}
-            edges={edges}
-            isDark={isDark}
-            interactive={false}
-          />
+          <TopologyFlow nodes={nodes} edges={edges} isDark={isDark} interactive={false} />
         )}
         <Tooltip content={t("dashboard.topologyFullscreen")}>
           <IconButton
@@ -823,10 +661,17 @@ function TopologyGraph({
         </Tooltip>
       </div>
 
-      <Dialog.Root open={fullscreen} onOpenChange={setFullscreen}>
+      <Dialog.Root
+        open={fullscreen}
+        onOpenChange={(open) => {
+          setFullscreen(open);
+          if (!open) setTable(false);
+        }}
+      >
         <Dialog.Content
           width="100%"
-          maxWidth="1600px"
+          minWidth="0"
+          maxWidth="min(1600px, calc(100vw - 32px))"
           height="92vh"
           maxHeight="92vh"
           style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}
@@ -846,15 +691,34 @@ function TopologyGraph({
               </IconButton>
             </Dialog.Close>
           </Flex>
-          {controls}
-          <div style={{ flex: 1, minHeight: 0, borderRadius: 8, overflow: "hidden" }}>
-            <TopologyFlow key={layoutKey} nodes={nodes} edges={edges} isDark={isDark} interactive />
+          <Flex gap="3" align="center" wrap="wrap">
+            <Button
+              variant="soft"
+              size="1"
+              onClick={() => setTable((value) => !value)}
+              aria-pressed={table}
+            >
+              {t(table ? "dashboard.topologyGraph" : "dashboard.topologyTable")}
+            </Button>
+            <Text size="1" color="gray">
+              {t("dashboard.topologyLegend")}
+            </Text>
+          </Flex>
+          <div
+            style={{ flex: 1, minHeight: 0, borderRadius: 8, overflow: table ? "auto" : "hidden" }}
+          >
+            {fullscreen &&
+              (table ? (
+                <TopologyTable topology={topology} />
+              ) : (
+                <TopologyFlow nodes={nodes} edges={edges} isDark={isDark} interactive />
+              ))}
           </div>
         </Dialog.Content>
       </Dialog.Root>
     </>
   );
-}
+});
 
 interface TopologyFlowProps {
   nodes: Node[];

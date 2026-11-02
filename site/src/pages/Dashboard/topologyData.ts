@@ -31,33 +31,15 @@ export function reconcileTopology(
     : { servers, proxies, visitors };
 }
 
-// A page never constructs more than 22 graph nodes (internet + server + 2 per row).
-export const TOPOLOGY_PAGE_SIZE = 10;
-
-export function selectTopologyPage(
-  topology: TopologyData,
-  serverId: string,
-  page: number,
-  expanded: boolean
-) {
-  const server = topology.servers.find((item) => item.id === serverId) ?? topology.servers[0];
-  const proxies = topology.proxies.filter((item) => item.serverId === server?.id);
-  const visitors = topology.visitors.filter((item) => item.serverId === server?.id);
-  const total = proxies.length + visitors.length;
-  const pages = Math.max(1, Math.ceil(total / TOPOLOGY_PAGE_SIZE));
-  const currentPage = Math.max(0, Math.min(page, pages - 1));
-  const start = currentPage * TOPOLOGY_PAGE_SIZE;
-  const end = start + TOPOLOGY_PAGE_SIZE;
-  return {
-    total,
-    pages,
-    currentPage,
-    topology: {
-      servers: server ? [server] : [],
-      proxies: expanded ? proxies.slice(start, end) : [],
-      visitors: expanded
-        ? visitors.slice(Math.max(0, start - proxies.length), Math.max(0, end - proxies.length))
-        : [],
-    },
-  };
+/** Full overview in server order; group once without filtering or paging connections away. */
+export function groupTopology(topology: TopologyData) {
+  const groups = topology.servers.map((server) => ({
+    server,
+    proxies: [] as TopologyData["proxies"],
+    visitors: [] as TopologyData["visitors"],
+  }));
+  const byId = new Map(groups.map((group) => [group.server.id, group]));
+  for (const proxy of topology.proxies) byId.get(proxy.serverId)?.proxies.push(proxy);
+  for (const visitor of topology.visitors) byId.get(visitor.serverId)?.visitors.push(visitor);
+  return groups;
 }
