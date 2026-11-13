@@ -50,6 +50,8 @@ export interface ServerFormData {
   metadatas: Record<string, string>;
   /** frps dashboard (webServer) for traffic stats; empty url = not used. */
   dashboard: { url: string; user: string; password: string };
+  /** Probe http/https proxies through their public HTTPS entry (domain:443). */
+  probePublicHTTPS: boolean;
 }
 
 const defaultData: ServerFormData = {
@@ -91,6 +93,7 @@ const defaultData: ServerFormData = {
   },
   metadatas: {},
   dashboard: { url: "", user: "", password: "" },
+  probePublicHTTPS: false,
 };
 
 /** The checks frp makes on auth.oidc at startup, so they show up on the form instead. */
@@ -159,6 +162,7 @@ export function useServerForm() {
           },
           metadatas: record.metadatas || {},
           dashboard: { ...defaultData.dashboard, ...(record.dashboard || {}) },
+          probePublicHTTPS: record.probePublicHTTPS ?? false,
         });
       })
       .catch((err) => {

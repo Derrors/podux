@@ -47,7 +47,9 @@ type ProbeObserver func(serverID, serverName string, results []ProbeResult)
 
 // ProbeService checks from outside that online proxies really answer on their public
 // endpoint: a TCP connect for tcp proxies, an HTTP request for http and a TLS
-// handshake for https. frpc may report a proxy online while frps or a firewall
+// handshake for https. A server with probePublicHTTPS probes http/https proxies on
+// their domain's port 443 (an HTTPS request for http), for frps behind a public
+// HTTPS reverse proxy. frpc may report a proxy online while frps or a firewall
 // still blocks it. udp, stcp, sudp, xtcp and tcpmux proxies are not probed.
 type ProbeService struct {
 	app  core.App
@@ -132,6 +134,8 @@ func (s *ProbeService) Results() map[string]ProbeResult {
 
 type probeTarget struct {
 	id, name, proxyType, endpoint, host, path string
+	// scheme is "https" when an http proxy is probed through a public HTTPS entry.
+	scheme string
 }
 
 // ProbeAll probes the online proxies of every running server once. Concurrent
@@ -346,6 +350,10 @@ func (s *ProbeService) targets(ctx context.Context, srv *core.Record) []probeTar
 		subdomainHost = stats.Info.SubdomainHost
 	}
 
+	// Behind a public HTTPS reverse proxy (frps's vhost port then firewalled), probe
+	// http/https proxies the way users reach them: domain:443.
+	public := srv.GetBool("probePublicHTTPS")
+
 	var out []probeTarget
 	addr := srv.GetString("serverAddr")
 	for _, p := range proxies {
@@ -358,7 +366,7 @@ func (s *ProbeService) targets(ctx context.Context, srv *core.Record) []probeTar
 			}
 			t.endpoint = net.JoinHostPort(addr, strconv.Itoa(port))
 		case "http", "https":
-			if !portsReady {
+			if !portsReady && !public {
 				continue
 			} // unknown configured ports are not 80/443
 			t.host = probeHost(p.GetStringSlice("customDomains"), p.GetString("subdomain"), subdomainHost)
@@ -368,6 +376,12 @@ func (s *ProbeService) targets(ctx context.Context, srv *core.Record) []probeTar
 			port := httpPort
 			if t.proxyType == "https" {
 				port = httpsPort
+			}
+			if public {
+				port = 443
+				if t.proxyType == "http" {
+					t.scheme = "https"
+				}
 			}
 			t.endpoint = net.JoinHostPort(t.host, strconv.Itoa(port))
 			t.path = "/"
@@ -421,13 +435,24 @@ func probe(ctx context.Context, t probeTarget) error {
 		return conn.Close()
 
 	case "http":
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+t.endpoint+t.path, nil)
+		scheme := "http"
+		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		if t.scheme == "https" {
+			scheme = "https"
+			tr := http.DefaultTransport.(*http.Transport).Clone()
+			tr.TLSClientConfig = &tls.Config{
+				ServerName:         t.host,
+				InsecureSkipVerify: true, // as for https: only checks that the tunnel answers
+			}
+			tr.DisableKeepAlives = true // a per-probe transport must not leave idle connections
+			client.Transport = tr
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, scheme+"://"+t.endpoint+t.path, nil)
 		if err != nil {
 			return err
 		}
 		req.Host = t.host
 		req.Header.Set("User-Agent", "Podux probe")
-		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 		resp, err := client.Do(req)
 		if err != nil {
 			return err

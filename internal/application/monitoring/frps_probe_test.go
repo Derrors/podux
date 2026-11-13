@@ -112,6 +112,23 @@ func TestProbe(t *testing.T) {
 	defer frps404.Close()
 	tlsSrv := httptest.NewTLSServer(http.NotFoundHandler())
 	defer tlsSrv.Close()
+	// A public HTTPS reverse proxy in front of frps's vhost port.
+	publicApp := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil || r.TLS.ServerName != "app.example.com" || r.Host != "app.example.com" || r.URL.Path != "/api" {
+			t.Errorf("public probe sent SNI/Host/path %v %q %q", r.TLS, r.Host, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusForbidden) // the service's own answer: still reachable
+	}))
+	defer publicApp.Close()
+	publicFrps404 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound) // reverse proxy passes frps's page through
+		_, _ = w.Write([]byte("<p><em>" + frpsNotFoundMarker + "</em></p>"))
+	}))
+	defer publicFrps404.Close()
+	publicBadGateway := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway) // reverse proxy cannot reach frps
+	}))
+	defer publicBadGateway.Close()
 
 	ctx := context.Background()
 	hostOf := func(u string) string { return strings.TrimPrefix(strings.TrimPrefix(u, "http://"), "https://") }
@@ -125,6 +142,10 @@ func TestProbe(t *testing.T) {
 		{"http answered", probeTarget{proxyType: "http", endpoint: hostOf(app200.URL), host: "app.example.com", path: "/api"}, true},
 		{"http frps 404", probeTarget{proxyType: "http", endpoint: hostOf(frps404.URL), host: "x", path: "/"}, false},
 		{"https handshake", probeTarget{proxyType: "https", endpoint: hostOf(tlsSrv.URL), host: "x.example.com"}, true},
+		{"http via public https", probeTarget{proxyType: "http", scheme: "https", endpoint: hostOf(publicApp.URL), host: "app.example.com", path: "/api"}, true},
+		{"http via public https, frps 404", probeTarget{proxyType: "http", scheme: "https", endpoint: hostOf(publicFrps404.URL), host: "x", path: "/"}, false},
+		{"http via public https, 502", probeTarget{proxyType: "http", scheme: "https", endpoint: hostOf(publicBadGateway.URL), host: "x", path: "/"}, false},
+		{"http via public https, plain listener", probeTarget{proxyType: "http", scheme: "https", endpoint: hostOf(app200.URL), host: "app.example.com", path: "/api"}, false},
 	}
 	for _, c := range cases {
 		if err := probe(ctx, c.t); (err == nil) != c.ok {

@@ -48,6 +48,8 @@ export interface ServerListResponse {
 export interface ServerRecord extends Omit<ServerListItem, "networkStatus"> {
   /** frps dashboard login for traffic stats (url empty = not used). */
   dashboard?: { url?: string; user?: string; password?: string } | null;
+  /** Probe http/https proxies on their domain's port 443 instead of frps's vhost ports. */
+  probePublicHTTPS?: boolean;
   serverVersion?: string;
   log?: {
     level: "trace" | "debug" | "info" | "warn" | "error";

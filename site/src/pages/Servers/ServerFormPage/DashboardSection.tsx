@@ -1,16 +1,18 @@
 import { Icon } from "@iconify/react/offline";
-import { Box, Button, Flex, Separator, Text, TextField } from "@radix-ui/themes";
+import { Box, Button, Flex, Separator, Switch, Text, TextField } from "@radix-ui/themes";
 import { useTranslation } from "react-i18next";
 import { FormItem } from "../../../components/FormItem";
 import { SectionHeading } from "../../../components/SectionHeading";
 import type { ServerFormData } from "./useServerForm";
 
 /** Optional frps dashboard login, used for traffic stats and probe targets. */
-export function DashboardSection({ dashboard, testing, onChange, onTest }: {
+export function DashboardSection({ dashboard, testing, onChange, onTest, probePublicHTTPS, onProbePublicHTTPSChange }: {
   dashboard: ServerFormData["dashboard"];
   testing: boolean;
   onChange: (field: keyof ServerFormData["dashboard"], value: string) => void;
   onTest: () => void;
+  probePublicHTTPS: boolean;
+  onProbePublicHTTPSChange: (value: boolean) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -53,6 +55,17 @@ export function DashboardSection({ dashboard, testing, onChange, onTest }: {
               <Icon icon={testing ? "lucide:loader-2" : "lucide:plug-zap"} className={testing ? "animate-spin" : ""} width="14" height="14" />
               {t("server.dashboardTest")}
             </Button>
+          </Flex>
+          <Flex justify="between" align="center" gap="3">
+            <Box>
+              <Text as="label" htmlFor="probe-public-https" size="2" weight="medium">
+                {t("server.probePublicHTTPS")}
+              </Text>
+              <Text as="p" size="1" color="gray">
+                {t("server.probePublicHTTPSDesc")}
+              </Text>
+            </Box>
+            <Switch id="probe-public-https" size="2" checked={probePublicHTTPS} onCheckedChange={onProbePublicHTTPSChange} />
           </Flex>
         </Flex>
       </section>

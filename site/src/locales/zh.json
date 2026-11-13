@@ -331,6 +331,8 @@
     "dashboardTest": "测试连接",
     "dashboardOk": "连接成功：frps {{version}}，{{clients}} 个客户端在线",
     "dashboardFailed": "无法读取 frps 管理面板",
+    "probePublicHTTPS": "通过公网 HTTPS 探测",
+    "probePublicHTTPSDesc": "frps 前面有 HTTPS 反向代理、vhost 端口不对外开放时打开：http/https 代理改为探测其域名的 443 端口，不再连接 frps 的 vhost 端口。",
     "frpsCard": "frps 状态",
     "frpsVersion": "版本",
     "frpsTrafficIn": "今日入站",

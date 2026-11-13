@@ -388,6 +388,8 @@ export function ServerFormPageView({
                 testing={testingDashboard}
                 onChange={onDashboardChange}
                 onTest={onTestDashboard}
+                probePublicHTTPS={formData.probePublicHTTPS}
+                onProbePublicHTTPSChange={(v) => onChange("probePublicHTTPS", v)}
               />
 
               <Separator size="4" />

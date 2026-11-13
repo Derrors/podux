@@ -42,6 +42,8 @@ When off, the "Reachability / traffic" column in the proxy list and server detai
 
 HTTP/HTTPS probes use frps's vhost ports and `subdomainHost`: read from frps when a dashboard is configured, otherwise 80 and 443, and subdomain-only proxies are skipped.
 
+If frps sits behind an HTTPS reverse proxy (for example nginx terminating TLS on 443) and its vhost ports are not reachable from outside, turn on **Probe through public HTTPS** in the server's frps dashboard section. HTTP and HTTPS proxies are then probed on their domain's port 443 the way users reach them; the certificate is not checked. Subdomain proxies still need the dashboard for `subdomainHost`.
+
 Within each round, servers are probed in parallel, with probe starts staggered and rate-limited separately for each server record: at most 4 concurrent probes and at least `max(250ms, 1min / N)` between starts (`N` is that server's target count for the current round). This spreads short-lived connection bursts. The next round waits for all servers to finish, so many or slow targets can delay its start; rounds never overlap and missed rounds are not replayed to catch up. This only reduces bursts and does not guarantee elimination of FRP connection-pool-full errors.
 
 Each completed probe immediately updates its reachability result, shown in the "Reachability / traffic" column; alerts are evaluated after each server's complete round. With the "Proxy unreachable from outside" [alert](/en/guide/notifications) on, a proxy failing probes in 3 consecutive complete rounds triggers an alert, and another when it recovers. This usually takes about 3 minutes, but depends on round completion and takes longer with many or slow targets.

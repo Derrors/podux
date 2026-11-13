@@ -169,3 +169,54 @@ func TestProbeColdDashboardUsesReportedPorts(t *testing.T) {
 		t.Fatalf("cold dashboard used default ports: %+v", targets)
 	}
 }
+
+func TestProbePublicHTTPSUsesDomainPort443(t *testing.T) {
+	app := newTestApp(t)
+	dash := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/serverinfo" {
+			_, _ = w.Write([]byte(`{"vhostHTTPPort":18081,"vhostHTTPSPort":18443,"subdomainHost":"example.test"}`))
+		} else {
+			_, _ = w.Write([]byte(`{"proxies":[]}`))
+		}
+	}))
+	defer dash.Close()
+	server := testutil.SaveRecord(t, app, "fh_servers", map[string]any{
+		"serverName": "public", "serverAddr": "127.0.0.1", "serverPort": 7000,
+		"dashboard": DashboardConfig{URL: dash.URL}, "probePublicHTTPS": true,
+	})
+	online := func(fields map[string]any) {
+		fields["serverId"], fields["status"], fields["bootStatus"] = server.Id, "enabled", "online"
+		testutil.SaveRecord(t, app, "fh_proxies", fields)
+	}
+	online(map[string]any{"name": "web", "proxyType": "http", "subdomain": "app"})
+	online(map[string]any{"name": "secure", "proxyType": "https", "customDomains": []string{"secure.example.test"}})
+	online(map[string]any{"name": "ssh", "proxyType": "tcp", "localPort": 22, "remotePort": 6022})
+	frps := NewFrpsService(app)
+	defer frps.Stop()
+	s := NewProbeService(app, frps)
+	defer s.Stop()
+
+	got := map[string]probeTarget{}
+	for _, target := range s.targets(context.Background(), server) {
+		got[target.name] = target
+	}
+	if w := got["web"]; w.endpoint != "app.example.test:443" || w.scheme != "https" || w.host != "app.example.test" {
+		t.Errorf("http proxy not probed through public https: %+v", w)
+	}
+	if w := got["secure"]; w.endpoint != "secure.example.test:443" || w.scheme != "" {
+		t.Errorf("https proxy not probed on 443: %+v", w)
+	}
+	if w := got["ssh"]; w.endpoint != "127.0.0.1:6022" {
+		t.Errorf("tcp proxy endpoint changed: %+v", w)
+	}
+
+	server.Set("probePublicHTTPS", false)
+	if err := app.Save(server); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range s.targets(context.Background(), server) {
+		if target.name == "web" && (target.endpoint != "app.example.test:18081" || target.scheme != "") {
+			t.Errorf("switching off did not restore frps vhost probes: %+v", target)
+		}
+	}
+}

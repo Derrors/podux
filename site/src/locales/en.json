@@ -331,6 +331,8 @@
     "dashboardTest": "Test connection",
     "dashboardOk": "Connected: frps {{version}}, {{clients}} clients online",
     "dashboardFailed": "Couldn't read the frps dashboard",
+    "probePublicHTTPS": "Probe through public HTTPS",
+    "probePublicHTTPSDesc": "Turn on when frps sits behind an HTTPS reverse proxy and its vhost ports are not public: http/https proxies are probed on their domain's port 443 instead of frps's vhost ports.",
     "frpsCard": "frps status",
     "frpsVersion": "Version",
     "frpsTrafficIn": "In today",
