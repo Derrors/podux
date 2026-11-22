@@ -57,6 +57,12 @@ Open the server's log from its detail page to see frpc's error. Common causes: w
 
 The tunnel between frpc and frps works, but its public port or domain can't be reached from outside. Common causes: a firewall or security group on the frps host blocks the port; the domain doesn't resolve to frps; an HTTP proxy's domain doesn't match frps's `subdomainHost`. Probes go out from the Podux host; see [Traffic and Reachability](/en/guide/traffic#external-reachability-probes).
 
+### Why does an HTTP(S) proxy work in practice but show "Unreachable"?
+
+If your frps sits behind an HTTPS reverse proxy (such as Nginx, Caddy, or a cloud load balancer) terminating TLS on port 443, and frps's internal `vhostHTTPPort` or `vhostHTTPSPort` is not directly accessible from the outside, Podux's default vhost probe will fail.
+
+In this case, open the server's settings, expand the **frps Dashboard** section, and turn on **Probe through public HTTPS**. Podux will then probe the proxy on port 443 using its public domain just like an external visitor, avoiding false unreachable alerts.
+
 ### Traffic always shows "-"
 
 Traffic comes from the frps dashboard: enable webServer on frps and enter the dashboard address and login in the server settings; see [Traffic and Reachability](/en/guide/traffic).

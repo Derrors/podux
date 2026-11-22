@@ -9,10 +9,12 @@ interface Image {
 
 const images: Image[] = [
   { src: '/22.png', caption: '服务器管理 — 实时延迟与地理位置' },
-  { src: '/33.png', caption: '代理管理 — 可视化配置所有隧道' },
-  { src: '/44.png', caption: '代理详情 — 实时连接日志' },
-  { src: '/55.png', caption: '一键导入 — 支持 TOML 配置文件' },
-  { src: '/66.png', caption: '添加代理 — 表单填写界面' },
+  { src: '/33.png', caption: '代理管理 — 多维筛选与批量运维' },
+  { src: '/77.png', caption: '全屏拓扑 — 沉浸式平移缩放与链路聚焦' },
+  { src: '/88.png', caption: '移动端适配 — 触控底部导航与卡片化列表' },
+  { src: '/44.png', caption: '运行日志 — 实时推送、分级筛选与下载' },
+  { src: '/55.png', caption: '一键导入 — 支持 TOML 预览与冲突识别' },
+  { src: '/66.png', caption: '添加代理 — 实时端口与域名冲突预检' },
 ]
 
 const activeIndex = ref<number | null>(null)

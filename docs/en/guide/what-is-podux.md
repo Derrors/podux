@@ -77,9 +77,13 @@ Listen on a local port to reach STCP/SUDP/XTCP proxies published by other machin
 
 After changing proxies or visitors, Podux automatically triggers an frpc reload — **no manual restart required**. Only proxies whose config changed are restarted; the server's other proxies keep running.
 
-### Modern Interface
+### Modern Interface and Interaction
 
-Built with Radix UI and Tailwind CSS, delivering a clean and elegant UI with Chinese/English language switching.
+Built with React, Radix UI, and Tailwind CSS, combining professional DevOps control with an elegant visual experience:
+
+- **Interactive Network Topology**: Visualizes traffic flow from the internet and servers down to proxies and local services. Features automatic full-graph viewport adaptation, immersive fullscreen pan and zoom, and click-to-highlight chain focus (highlighting upstream and downstream dependencies while dimming unrelated nodes).
+- **Modern Design & Themes**: Fresh blue and subtle cool-gray surfaces paired with colorful KPI highlight cards; full dark mode support with automatic system preference detection; built-in English and Chinese localization.
+- **Deep Mobile & Responsive Optimization**: Fully adapted for tablets and smartphones. On mobile screens (≤760px), a touch-friendly bottom navigation bar takes over, and the proxy list seamlessly transitions to a responsive card layout with full filtering and operational capabilities preserved.
 
 ## Architecture
 

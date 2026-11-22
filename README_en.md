@@ -48,10 +48,10 @@ Podux embeds frpc as a library. The backend is built on [PocketBase](https://poc
 - **Multiple servers**: connect to several frps servers at once, each with its own frpc instance; token / OIDC auth, tcp, kcp, quic, websocket and wss transports with TLS; optional auto-connect on startup
 - **Proxies**: form-based TCP, UDP, HTTP, HTTPS, TCPMUX, STCP, SUDP and XTCP proxies with subdomains and custom domains, HTTP sign-in and path routing, load balancing, encryption, compression, bandwidth limits, health checks, 9 plugins and expiry; port and domain conflicts are caught on save; batch actions and cloning; changes are hot-reloaded and **only proxies whose config changed are restarted**
 - **Visitors**: listen on a local port to reach STCP/SUDP/XTCP proxies published by other machines, without a public port on frps
-- **Monitoring and alerts**: dashboard and topology chart; latency history and server geolocation; per-proxy traffic from the frps dashboard; external probes of whether proxies are really reachable; live frpc logs with filters and download; alerts by webhook (including WeCom, DingTalk and Feishu), Telegram, Bark or email when frps is unreachable, proxies go offline or become unreachable, and more
+- **Monitoring and alerts**: dashboard and complete topology chart (with adaptive viewport, fullscreen pan/zoom, and click-to-highlight chain focus); latency history and server geolocation; per-proxy traffic from the frps dashboard; external probes of whether proxies are really reachable; live frpc logs with filters and download; alerts by webhook (including WeCom, DingTalk and Feishu), Telegram, Bark or email when frps is unreachable, proxies go offline or become unreachable, and more
 - **API and metrics**: read-only or read-and-write API keys for scripts and Home Assistant; Prometheus metrics at `/api/metrics` for Grafana
 - **Import, export and backups**: import an existing frpc TOML config, with a preview and duplicate detection; export a server's configuration as an `frpc.toml` native frpc can run; back up, schedule backups and restore in the UI
-- **More**: first-run admin setup and rate-limited login; Chinese / English UI, light / dark theme, mobile-friendly layout
+- **Modern experience**: clean modern theme, first-run admin setup and rate-limited login; Chinese / English UI with light / dark theme switching; deep mobile & tablet optimization (touch bottom navigation bar and responsive card list)
 
 The VirtualNet plugin and visitor plugins are not supported yet; see [Compatibility](https://derrors.github.io/podux/en/guide/compatibility.html) for the full scope.
 
@@ -64,7 +64,9 @@ The VirtualNet plugin and visitor plugins are not supported yet; see [Compatibil
 
 | Servers | Proxies |
 | --- | --- |
-| ![Servers: live latency and location](docs/public/22.png) | ![Proxies](docs/public/33.png) |
+| ![Servers: live latency and location](docs/public/22.png) | ![Proxies: multi-filter and batch operations](docs/public/33.png) |
+| **Fullscreen Topology** | **Mobile Optimization** |
+| ![Fullscreen topology: pan/zoom and chain focus](docs/public/77.png) | ![Mobile view: touch bottom bar and adaptive cards](docs/public/88.png) |
 | **Runtime log** | **TOML import** |
 | ![Live connection log](docs/public/44.png) | ![Import a TOML config](docs/public/55.png) |
 | **Add a proxy** | |

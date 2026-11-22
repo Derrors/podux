@@ -83,3 +83,14 @@ When you save or enable a proxy, Podux checks the enabled proxies of the same se
 - HTTP, HTTPS and TCPMUX proxies can't share a subdomain or custom domain
 
 These are allowed, as frps allows them: the same load balancing group; routing by different users; HTTP proxies whose locations don't overlap.
+
+## Multi-filter and Mobile Card View
+
+When managing many tunnels, the proxy list provides combined multi-dimensional filters:
+
+- **Server**: focus on proxies under a specific frps server
+- **Proxy Type**: filter by protocol (TCP, UDP, HTTP, HTTPS, STCP, etc.)
+- **Tunnel Status**: filter by all, online, or offline to quickly spot issues or disabled tunnels
+- **Keyword Search**: instant fuzzy matching on proxy names, local/remote ports, or custom domains
+
+On mobile devices and narrow viewports (≤760px), the proxy list automatically adapts into a card layout with full batch-selection, status badges, and action menus preserved for convenient on-the-go maintenance.
