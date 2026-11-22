@@ -6,7 +6,7 @@ import i18n from "../i18n";
 import { mockViewport } from "../test/mediaQuery";
 import { MainLayout } from "./MainLayout";
 
-vi.mock("../lib/api", () => ({ apiGet: () => Promise.resolve({ version: "0.2.12" }) }));
+vi.mock("../lib/api", () => ({ apiGet: () => Promise.resolve({ version: "0.2.13" }) }));
 vi.mock("../hooks/useAuthRecord", () => ({
   useAuthRecord: () => ({ nickname: "Demo", email: "demo@example.test" }),
 }));
