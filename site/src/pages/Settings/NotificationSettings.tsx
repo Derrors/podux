@@ -141,14 +141,7 @@ export function NotificationSettings() {
 
   return (
     <Flex direction="column" gap="4">
-      <Box>
-        <Heading size="4" mb="1">
-          {t("notifications.title")}
-        </Heading>
-        <Text size="2" color="gray">
-          {t("notifications.description")}
-        </Text>
-      </Box>
+      <Heading size="4">{t("notifications.title")}</Heading>
 
       <Separator size="4" />
 

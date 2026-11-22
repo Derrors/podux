@@ -1,4 +1,5 @@
 import { Badge } from "@radix-ui/themes";
+import { Icon } from "@iconify/react/offline";
 import { useTranslation } from "react-i18next";
 import type { ServerBootStatus } from "../types/server";
 
@@ -7,27 +8,20 @@ interface ServerStatusBadgeProps {
   variant?: "soft";
 }
 
-/** Animated running/stopped badge for an frpc server. */
-export function ServerStatusBadge({ status, variant }: ServerStatusBadgeProps) {
+/** A stopped frpc is not necessarily a failure; show it neutrally unless an error is known. */
+export function ServerStatusBadge({ status, variant = "soft" }: ServerStatusBadgeProps) {
   const { t } = useTranslation();
   const running = status === "running";
   const stopped = status === "stopped";
-
   return (
-    <Badge
-      radius="full"
-      variant={variant}
-      color={running ? "green" : stopped ? "red" : "gray"}
-      className={`animate-status-appear ${
-        running ? "animate-status-pulse" : stopped ? "animate-status-fade" : ""
-      }`}
-    >
-      <span
-        className={`status-dot ${
-          running ? "status-dot-green" : stopped ? "status-dot-red" : "status-dot-gray"
-        }`}
+    <Badge radius="full" variant={variant} color={running ? "green" : "gray"}>
+      <Icon
+        icon={running ? "lucide:circle-check" : stopped ? "lucide:square" : "lucide:circle-help"}
+        width="12"
+        height="12"
+        aria-hidden="true"
       />
-      {running ? t("server.running") : stopped ? t("server.stopped") : t("common.status")}
+      {t(running ? "server.running" : stopped ? "server.stopped" : "server.unknownState")}
     </Badge>
   );
 }

@@ -129,19 +129,27 @@ export function useDashboard() {
   const [topologyLoading, setTopologyLoading] = useState(true);
   const [statsFailed, setStatsFailed] = useState(false);
   const [topologyFailed, setTopologyFailed] = useState(false);
+  const [statsRefreshing, setStatsRefreshing] = useState(false);
+  const [topologyRefreshing, setTopologyRefreshing] = useState(false);
+  const [statsUpdatedAt, setStatsUpdatedAt] = useState<Date | null>(null);
+  const [topologyUpdatedAt, setTopologyUpdatedAt] = useState<Date | null>(null);
   const statsRequest = useLatestRequest();
   const topologyRequest = useLatestRequest();
 
   const loadStats = useCallback(async () => {
+    setStatsRefreshing(true);
     try {
       const data = await statsRequest.run((signal) =>
         apiGet<DashboardStatsResponse>("/api/dashboard/stats", { signal })
       );
       if (data === STALE) return;
       setStats(toStats(data));
+      setStatsUpdatedAt(new Date());
       setStatsFailed(false);
       setStatsLoading(false);
+      setStatsRefreshing(false);
     } catch (err) {
+      setStatsRefreshing(false);
       setStatsLoading(false);
       setStatsFailed(true);
       notifyError(i18n.t("dashboard.loadFailed"), err, "dashboard-stats");
@@ -149,15 +157,19 @@ export function useDashboard() {
   }, [statsRequest]);
 
   const loadTopology = useCallback(async () => {
+    setTopologyRefreshing(true);
     try {
       const data = await topologyRequest.run((signal) =>
         apiGet<TopologyData>("/api/dashboard/topology", { signal })
       );
       if (data === STALE) return;
       setTopology((previous) => reconcileTopology(previous, data ?? {}));
+      setTopologyUpdatedAt(new Date());
       setTopologyFailed(false);
       setTopologyLoading(false);
+      setTopologyRefreshing(false);
     } catch (err) {
+      setTopologyRefreshing(false);
       setTopologyLoading(false);
       setTopologyFailed(true);
       notifyError(i18n.t("dashboard.topologyLoadFailed"), err, "dashboard-topology");
@@ -175,6 +187,10 @@ export function useDashboard() {
     topologyLoading,
     statsFailed,
     topologyFailed,
+    statsRefreshing,
+    topologyRefreshing,
+    statsUpdatedAt,
+    topologyUpdatedAt,
     loadStats,
     loadTopology,
   };

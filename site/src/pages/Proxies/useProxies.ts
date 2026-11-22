@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import pb from "../../lib/pocketbase";
@@ -9,23 +9,38 @@ import { useProxyStatus } from "../../hooks/useProxyStatus";
 import type { ServerOption } from "./ProxyFormPage/useProxyForm";
 import { usePaginatedList, type PageQuery, type PageResult } from "../../hooks/usePaginatedList";
 import type { Proxy } from "../../types/proxy";
+import {
+  buildProxyFilter,
+  DEFAULT_PROXY_FILTERS,
+  hasProxyFilters,
+  normalizeProxyFilter,
+  proxyFiltersKey,
+  proxySelectionKey,
+  type ProxyFilters,
+} from "./proxyFilters";
 
 const PER_PAGE = 10;
 
 interface ProxyPage extends PageResult<Proxy> {
-  /** Stat card counts: all proxies, independent of the search. */
+  /** Stat card counts: all proxies, independent of search and filters. */
   allCount: number;
   onlineCount: number;
 }
 
 export function useProxies() {
   const { t } = useTranslation();
+  const [filters, setFilters] = useState<ProxyFilters>(() => ({ ...DEFAULT_PROXY_FILTERS }));
+  const setFilter = useCallback((key: keyof ProxyFilters, value: string) => {
+    const normalized = normalizeProxyFilter(key, value);
+    setFilters((current) => current[key] === normalized ? current : { ...current, [key]: normalized });
+  }, []);
+  const resetFilters = useCallback(() => setFilters({ ...DEFAULT_PROXY_FILTERS }), []);
+  const hasFilters = hasProxyFilters(filters);
+  const queryKey = proxyFiltersKey(filters);
 
   const fetchPage = useCallback(
     async ({ page, perPage, search, signal }: PageQuery): Promise<ProxyPage> => {
-      const filter = search
-        ? pb.filter("name ~ {:q} || localIP ~ {:q} || remotePort ~ {:q}", { q: search })
-        : "";
+      const filter = buildProxyFilter(filters, search, (expression, params) => pb.filter(expression, params));
       const proxies = pb.collection("fh_proxies");
       const [result, online, all] = await Promise.all([
         proxies.getList<Proxy>(page, perPage, {
@@ -34,9 +49,9 @@ export function useProxies() {
           filter,
           signal,
         }),
-        proxies.getList(1, 1, { filter: 'bootStatus = "online"', signal }),
-        // Without a search the page query already counts every proxy.
-        search ? proxies.getList(1, 1, { signal }) : null,
+        proxies.getList(1, 1, { filter: 'status = "enabled" && bootStatus = "online"', signal }),
+        // Only the completely unfiltered page query counts every proxy.
+        filter ? proxies.getList(1, 1, { signal }) : null,
       ]);
       return {
         items: result.items,
@@ -46,11 +61,12 @@ export function useProxies() {
         onlineCount: online.totalItems,
       };
     },
-    []
+    [filters]
   );
 
   const list = usePaginatedList<Proxy, ProxyPage>({
     fetchPage,
+    queryKey,
     perPage: PER_PAGE,
     onError: (err) => notifyError(t("proxy.fetchFailed"), err, "proxies-fetch"),
   });
@@ -90,15 +106,33 @@ export function useProxies() {
     });
   };
 
-  // Batch actions apply to the selected proxies of the current page.
-  // The selection belongs to the page it was made on: another page or search clears it.
-  const pageKey = `${list.page}|${list.search}`;
-  const [selection, setSelection] = useState<{ key: string; ids: Set<string> }>({ key: "", ids: new Set() });
-  const selected = selection.key === pageKey ? selection.ids : new Set<string>();
+  // Selection is scoped to a page, search and filters; it cannot act on stale rows while loading.
+  const pageKey = proxySelectionKey(list.page, list.search, filters);
+  const [selection, setSelection] = useState<{ key: string; version: number; ids: Set<string> }>(
+    () => ({ key: pageKey, version: 0, ids: new Set() })
+  );
+  const selectionVersion = selection.version + (selection.key !== pageKey ? 1 : 0);
+  const pageIds = new Set(list.items.map((proxy) => proxy.id));
+  const selected = selection.key === pageKey && !list.loading
+    ? new Set([...selection.ids].filter((id) => pageIds.has(id)))
+    : new Set<string>();
+  if (selection.key !== pageKey || (!list.loading && selected.size !== selection.ids.size)) {
+    setSelection({ key: pageKey, version: selectionVersion, ids: selected });
+  }
+  const selectionScope = useRef({ key: pageKey, version: selectionVersion, ready: !list.loading, pageIds, selected });
+  useLayoutEffect(() => {
+    selectionScope.current = { key: pageKey, version: selectionVersion, ready: !list.loading, pageIds, selected };
+  });
   const setSelected = (update: Set<string> | ((prev: Set<string>) => Set<string>)) =>
     setSelection((prev) => {
-      const current = prev.key === pageKey ? prev.ids : new Set<string>();
-      return { key: pageKey, ids: typeof update === "function" ? update(current) : update };
+      const scope = selectionScope.current;
+      // A completed batch may hold an old callback after the user changed the query.
+      if (scope.key !== pageKey || scope.version !== selectionVersion || !scope.ready) return prev;
+      const current = prev.key === pageKey
+        ? new Set([...prev.ids].filter((id) => scope.pageIds.has(id)))
+        : new Set<string>();
+      const next = typeof update === "function" ? update(current) : update;
+      return { key: pageKey, version: selectionVersion, ids: new Set([...next].filter((id) => scope.pageIds.has(id))) };
     });
   const [servers, setServers] = useState<ServerOption[]>([]);
   const [batchBusy, setBatchBusy] = useState(false);
@@ -121,7 +155,9 @@ export function useProxies() {
   const selectPage = (all: boolean) => setSelected(all ? new Set(list.items.map((p) => p.id)) : new Set());
 
   const runBatch = async (action: "enable" | "disable" | "delete" | "move", serverId?: string) => {
-    const ids = [...selected];
+    const scope = selectionScope.current;
+    if (scope.key !== pageKey || scope.version !== selectionVersion || !scope.ready || batchBusy) return;
+    const ids = [...scope.selected];
     if (ids.length === 0) return;
     setBatchBusy(true);
     await runMutation(async () => {
@@ -167,6 +203,11 @@ export function useProxies() {
     totalPages: list.totalPages,
     search: list.search,
     setSearch: list.setSearch,
+    filters,
+    setFilter,
+    resetFilters,
+    hasFilters,
+    totalItems: list.totalItems,
     refreshProxies: list.refresh,
   };
 }

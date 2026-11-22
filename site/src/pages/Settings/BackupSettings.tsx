@@ -156,14 +156,7 @@ export function BackupSettings() {
 
   return (
     <Flex direction="column" gap="4">
-      <Box>
-        <Heading size="4" mb="1">
-          {t("backup.title")}
-        </Heading>
-        <Text size="2" color="gray">
-          {t("backup.description")}
-        </Text>
-      </Box>
+      <Heading size="4">{t("backup.title")}</Heading>
 
       <Separator size="4" />
 

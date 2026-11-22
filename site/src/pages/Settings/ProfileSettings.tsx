@@ -95,14 +95,7 @@ export function ProfileSettings() {
 
   return (
     <Flex direction="column" gap="4">
-      <Box>
-        <Heading size="4" mb="1">
-          {t("settings.userProfile")}
-        </Heading>
-        <Text size="2" color="gray">
-          {t("settings.managePersonalInfo")}
-        </Text>
-      </Box>
+      <Heading size="4">{t("settings.userProfile")}</Heading>
 
       <Separator size="4" />
 

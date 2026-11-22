@@ -36,7 +36,7 @@ function ErrorFallback({
 }) {
   const { t } = useTranslation();
   return (
-    <Theme appearance={fallbackAppearance()} accentColor="indigo" grayColor="slate" radius="large">
+    <Theme appearance={fallbackAppearance()} accentColor="blue" grayColor="slate" radius="large">
       <Flex
         className={className}
         align="center"

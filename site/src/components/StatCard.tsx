@@ -1,5 +1,5 @@
-import { Box, Card, Flex, Text } from "@radix-ui/themes";
-import React from "react";
+import { Box, Card, Flex, Skeleton, Text } from "@radix-ui/themes";
+import type { ReactNode } from "react";
 
 export function StatCard({
   title,
@@ -7,51 +7,50 @@ export function StatCard({
   subtitle,
   icon,
   color = "gray",
+  loading = false,
 }: {
   title: string;
-  value: React.ReactNode;
-  subtitle?: string;
-  icon: React.ReactNode;
-  color?: "green" | "red" | "blue" | "orange" | "gray";
+  value: ReactNode;
+  subtitle?: ReactNode;
+  icon: ReactNode;
+  color?: "green" | "red" | "blue" | "orange" | "amber" | "purple" | "cyan" | "gray";
+  loading?: boolean;
 }) {
   const colorMap = {
-    green: "var(--green-9)",
-    red: "var(--red-9)",
-    blue: "var(--blue-9)",
-    orange: "var(--orange-9)",
-    gray: "var(--gray-9)",
+    green: { ink: "var(--green-10)", background: "var(--green-a3)" },
+    red: { ink: "var(--red-10)", background: "var(--red-a3)" },
+    blue: { ink: "var(--blue-10)", background: "var(--blue-a3)" },
+    orange: { ink: "var(--orange-10)", background: "var(--orange-a3)" },
+    amber: { ink: "var(--amber-11)", background: "var(--amber-a3)" },
+    purple: { ink: "var(--purple-10)", background: "var(--purple-a3)" },
+    cyan: { ink: "var(--cyan-10)", background: "var(--cyan-a3)" },
+    gray: { ink: "var(--gray-11)", background: "var(--gray-a3)" },
   };
-
   return (
-    <Card className="h-full flex-1">
-      <Flex gap="4" align="center" className="h-full">
-        <Flex
-          className="h-12 w-12 shrink-0 rounded-xl select-none"
-          align="center"
-          justify="center"
-          style={{
-            backgroundColor: `${colorMap[color]}20`,
-            color: colorMap[color],
-          }}
+    <Card className="stat-card" size="2">
+      <Flex justify="between" align="start" gap="2">
+        <Text size="2" color="gray" className="min-w-0">
+          {title}
+        </Text>
+        <span
+          className="stat-card__icon"
+          style={{ color: colorMap[color].ink, background: colorMap[color].background }}
         >
           {icon}
-        </Flex>
-        <Flex direction="column" gap="1" className="min-w-0">
-          <Text size="2" color="gray">
-            {title}
-          </Text>
-          <Box className="min-w-0 truncate">
-            <Text size="6" weight="bold">
-              {value}
-            </Text>
-          </Box>
-          {subtitle && (
-            <Text size="1" color="gray">
-              {subtitle}
-            </Text>
-          )}
-        </Flex>
+        </span>
       </Flex>
+      <Box mt="2" className="min-w-0">
+        <Skeleton loading={loading}>
+          <Text as="div" size="6" weight="bold" className="stat-card__value">
+            {value}
+          </Text>
+        </Skeleton>
+      </Box>
+      {subtitle && (
+        <Text as="div" size="1" color="gray" mt="2" className="stat-card__subtitle">
+          <Skeleton loading={loading}>{subtitle}</Skeleton>
+        </Text>
+      )}
     </Card>
   );
 }

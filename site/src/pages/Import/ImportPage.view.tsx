@@ -763,7 +763,6 @@ export function ImportPageView(props: ImportViewProps) {
     <Flex direction="column" gap="5" className="flex flex-1 flex-col">
       <PageHeader
         title={t("import.title")}
-        description={t("import.description")}
         visible={visible}
       />
 

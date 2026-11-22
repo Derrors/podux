@@ -116,14 +116,7 @@ export function ApiKeySettings() {
 
   return (
     <Flex direction="column" gap="4">
-      <Box>
-        <Heading size="4" mb="1">
-          {t("apiKeys.title")}
-        </Heading>
-        <Text size="2" color="gray">
-          {t("apiKeys.description")}
-        </Text>
-      </Box>
+      <Heading size="4">{t("apiKeys.title")}</Heading>
 
       <Separator size="4" />
 

@@ -1,473 +1,350 @@
-import { Avatar, Box, DropdownMenu, Flex, Popover, Text } from "@radix-ui/themes";
+import {
+  Avatar,
+  Box,
+  DropdownMenu,
+  Flex,
+  IconButton,
+  Popover,
+  Text,
+  Tooltip,
+} from "@radix-ui/themes";
 import { type ReactNode, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { AnimatePresence } from "framer-motion";
+import { Icon } from "@iconify/react/offline";
 import pb from "../lib/pocketbase";
 import { apiGet } from "../lib/api";
 import { logout } from "../lib/auth";
 import { isNewerVersion } from "../lib/version";
 import { useAuthRecord } from "../hooks/useAuthRecord";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { getGravatarUrl } from "../lib/gravatar";
-import { motion, AnimatePresence } from "framer-motion";
 import { PageTransition } from "../components/PageTransition";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { LanguageToggle } from "../components/LanguageToggle";
 import logo from "../assets/logo.webp";
-import { Icon } from "@iconify/react/offline";
 
-interface MainLayoutProps {
-  children: ReactNode;
-}
+const primaryNav = [
+  { labelKey: "nav.dashboard", path: "/dashboard", icon: "lucide:layout-dashboard" },
+  { labelKey: "nav.servers", path: "/servers", icon: "lucide:server" },
+  { labelKey: "nav.proxies", path: "/proxies", icon: "lucide:network" },
+  { labelKey: "nav.visitors", path: "/visitors", icon: "lucide:door-open" },
+];
+const utilityNav = [
+  { labelKey: "nav.logs", path: "/logs", icon: "lucide:scroll-text" },
+  { labelKey: "nav.import", path: "/import", icon: "lucide:file-input" },
+];
+const settingsNav = { labelKey: "nav.settings", path: "/settings", icon: "lucide:settings" };
+const matchesRoute = (pathname: string, path: string) =>
+  pathname === path || pathname.startsWith(`${path}/`);
 
-// Detect mobile by user agent OR viewport width < 640px (sm breakpoint).
-// Uses matchMedia so the layout re-evaluates only when the threshold is crossed,
-// not on every pixel change.
-function useIsMobile() {
-  const isUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-    navigator.userAgent,
+export function MainLayout({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const isMobile = useMediaQuery("(max-width: 760px)");
+  const isWide = useMediaQuery("(min-width: 1200px)");
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("podux.sidebarCollapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [appVersion, setAppVersion] = useState("");
+  const [latestVersion, setLatestVersion] = useState("");
+  const [releaseUrl, setReleaseUrl] = useState("");
+  const [releaseBody, setReleaseBody] = useState("");
+  const updateAvailable = Boolean(
+    appVersion && latestVersion && isNewerVersion(latestVersion, appVersion)
+  );
+  const currentNav = [...primaryNav, ...utilityNav, settingsNav].find((item) =>
+    matchesRoute(pathname, item.path)
   );
 
-  const [isSmall, setIsSmall] = useState(() => window.matchMedia("(max-width: 760px)").matches);
-
   useEffect(() => {
-    const mq = window.matchMedia("(max-width: 760px)");
-    const handler = (e: MediaQueryListEvent) => setIsSmall(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-
-  return isUA || isSmall;
-}
-
-const navItems = [
-  {
-    labelKey: "nav.dashboard",
-    path: "/dashboard",
-    icon: <Icon icon="lucide:layout-dashboard" width="18" height="18" />,
-  },
-  {
-    labelKey: "nav.servers",
-    path: "/servers",
-    icon: <Icon icon="lucide:server" width="18" height="18" />,
-  },
-  {
-    labelKey: "nav.proxies",
-    path: "/proxies",
-    icon: <Icon icon="lucide:network" width="18" height="18" />,
-  },
-  {
-    labelKey: "nav.visitors",
-    path: "/visitors",
-    icon: <Icon icon="lucide:door-open" width="18" height="18" />,
-  },
-];
-
-const mobileBottomNavItems = navItems;
-
-export function MainLayout({ children }: MainLayoutProps) {
-  const { t } = useTranslation();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const isMobile = useIsMobile();
-
-  const [appVersion, setAppVersion] = useState<string>("");
-  const [latestVersion, setLatestVersion] = useState<string>("");
-  const [releaseUrl, setReleaseUrl] = useState<string>("");
-  const [releaseBody, setReleaseBody] = useState<string>("");
-  const updateAvailable = appVersion && latestVersion ? isNewerVersion(latestVersion, appVersion) : false;
-
+    try {
+      localStorage.setItem("podux.sidebarCollapsed", String(collapsed));
+    } catch {
+      /* Cosmetic preference only. */
+    }
+  }, [collapsed]);
   useEffect(() => {
-    // Version info is decorative: failures (e.g. no GitHub access) are ignored on purpose.
+    let active = true;
     apiGet<{ version?: string }>("/api/system/version")
       .then((data) => {
-        if (data?.version) setAppVersion(data.version);
+        if (active && data?.version) setAppVersion(data.version);
       })
       .catch(() => undefined);
-
     apiGet<{ tag_name?: string; html_url?: string; body?: string }>("/api/system/latest-version")
       .then((data) => {
-        if (data?.tag_name) setLatestVersion(data.tag_name);
-        if (data?.html_url) setReleaseUrl(data.html_url);
-        if (data?.body) setReleaseBody(data.body);
+        if (!active) return;
+        setLatestVersion(data?.tag_name ?? "");
+        setReleaseUrl(data?.html_url ?? "");
+        setReleaseBody(data?.body ?? "");
       })
       .catch(() => undefined);
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login", { replace: true });
+  const user = useAuthRecord();
+  const userEmail = user?.email || "";
+  const userName = user?.nickname || userEmail;
+  const avatarUrl = user?.avatar
+    ? pb.files.getURL(user, user.avatar)
+    : getGravatarUrl(userEmail, 80);
+  const renderNavLink = (item: typeof settingsNav, compact = false) => {
+    const active = matchesRoute(pathname, item.path);
+    const link = (
+      <Link
+        key={item.path}
+        to={item.path}
+        className="console-nav-link"
+        aria-current={active ? "page" : undefined}
+        aria-label={compact ? t(item.labelKey) : undefined}
+      >
+        <Icon icon={item.icon} width="19" height="19" aria-hidden="true" />
+        {!compact && <span>{t(item.labelKey)}</span>}
+      </Link>
+    );
+    return compact ? (
+      <Tooltip key={item.path} content={t(item.labelKey)}>
+        {link}
+      </Tooltip>
+    ) : (
+      link
+    );
   };
 
-  const handleGotoProfile = () => navigate("/settings?tab=profile");
-
-  // Current user from the PocketBase auth store (updates after a profile save).
-  const currentUser = useAuthRecord();
-  const userEmail = currentUser?.email || "";
-  const userNickName = currentUser?.nickname || "";
-  const gravatarUrl = currentUser?.avatar
-    ? pb.files.getURL(currentUser, currentUser.avatar)
-    : getGravatarUrl(userEmail, 80);
-
   return (
-    <Flex direction="column" className="min-h-screen" style={{ backgroundColor: "var(--gray-2)", minWidth: "320px" }}>
-      {/* Top Navigation */}
-      <Box
-        style={{
-          backgroundColor: "var(--color-background)",
-          borderBottom: "1px solid var(--gray-6)",
-        }}
-        className="sticky top-0 z-50"
-      >
-        <Box className="mx-auto box-border max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
-          <Flex justify="between" align="center">
-            {/* Left: Logo + Desktop Nav */}
-            <Flex align="center" gap="8" style={{ minWidth: 0 }}>
-              {/* Logo */}
-              <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-              >
-                <Link to="/" className="no-underline">
-                  <Flex align="center" gap="2">
-                    <motion.img
-                      initial={{ scale: 0, rotate: -180 }}
-                      animate={{ scale: 1, rotate: 0 }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 260,
-                        damping: 20,
-                        delay: 0.1,
-                      }}
-                      whileHover={{ scale: 1.1, rotate: 10 }}
-                      whileTap={{ scale: 0.95 }}
-                      src={logo}
-                      alt={t("common.logoAlt")}
-                      className="h-8 w-8 cursor-pointer rounded-2xl object-contain"
-                    />
-                    <Text size="4" weight="bold">
-                      Podux
-                    </Text>
-                  </Flex>
-                </Link>
-              </motion.div>
-
-              {/* Desktop Navigation Menu */}
-              {!isMobile && (
-                <Flex gap="1">
-                  {navItems.map((item) => {
-                    const isActive = location.pathname === item.path;
-                    return (
-                      <Link key={item.path} to={item.path} className="relative no-underline">
-                        <motion.div
-                          whileHover={{ y: -2 }}
-                          whileTap={{ scale: 0.95 }}
-                          className="relative"
-                        >
-                          <Flex
-                            align="center"
-                            gap="2"
-                            className="relative z-10 rounded-lg px-4 py-2 transition-colors"
-                            style={{
-                              color: isActive ? "var(--accent-11)" : "var(--gray-11)",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {item.icon}
-                            <Text size="2" weight="medium">
-                              {t(item.labelKey)}  
-                            </Text>
-                          </Flex>
-                          {isActive && (
-                            <motion.div
-                              layoutId="active-nav"
-                              className="absolute inset-0 rounded-lg bg-[var(--accent-a3)]"
-                              transition={{
-                                type: "spring",
-                                bounce: 0.2,
-                                duration: 0.6,
-                              }}
-                            />
-                          )}
-                        </motion.div>
-                      </Link>
-                    );
-                  })}
-                </Flex>
+    <div className="console-shell" data-sidebar-collapsed={collapsed} data-wide={isWide}>
+      <a href="#main-content" className="console-skip-link">
+        {t("nav.skipToContent")}
+      </a>
+      {isWide && (
+        <aside className="console-sidebar" aria-label={t("nav.mainNavigation")}>
+          <Link to="/dashboard" className="console-brand" aria-label="Podux">
+            <img src={logo} alt="" width="34" height="34" />
+            {!collapsed && (
+              <Text as="span" size="5" weight="bold">
+                Podux
+              </Text>
+            )}
+          </Link>
+          <nav className="console-sidebar__primary" aria-label={t("nav.mainNavigation")}>
+            {primaryNav.map((item) => renderNavLink(item, collapsed))}
+          </nav>
+          <nav className="console-sidebar__utilities" aria-label={t("nav.tools")}>
+            {!collapsed && (
+              <Text size="1" color="gray" className="console-sidebar__label">
+                {t("nav.tools")}
+              </Text>
+            )}
+            {utilityNav.map((item) => renderNavLink(item, collapsed))}
+          </nav>
+          <div className="console-sidebar__bottom">
+            {renderNavLink(settingsNav, collapsed)}
+            <div className="console-sidebar__meta">
+              {!collapsed && (
+                <Text size="1" color="gray">
+                  {appVersion ? `v${appVersion}` : "Podux"}
+                </Text>
               )}
-            </Flex>
+              <Tooltip content={t(collapsed ? "nav.expandSidebar" : "nav.collapseSidebar")}>
+                <IconButton
+                  variant="ghost"
+                  color="gray"
+                  aria-label={t(collapsed ? "nav.expandSidebar" : "nav.collapseSidebar")}
+                  aria-expanded={!collapsed}
+                  onClick={() => setCollapsed((value) => !value)}
+                >
+                  <Icon
+                    icon={collapsed ? "lucide:panel-left-open" : "lucide:panel-left-close"}
+                    width="18"
+                    height="18"
+                  />
+                </IconButton>
+              </Tooltip>
+            </div>
+          </div>
+        </aside>
+      )}
 
-            {/* Right: Controls */}
-            <Flex align="center" gap={isMobile ? "2" : "4"} style={{ flexShrink: 0 }}>
-              {/* Theme Toggle */}
+      <div className="console-workspace">
+        <header className="console-topbar">
+          <div className="console-topbar__row">
+            {isWide ? (
+              <Flex gap="2" align="center" className="min-w-0" aria-label={t("nav.currentPage")}>
+                <Icon
+                  icon={currentNav?.icon ?? "lucide:layout-dashboard"}
+                  width="17"
+                  height="17"
+                  style={{ color: "var(--gray-11)" }}
+                />
+                <Text size="2" weight="medium">
+                  {t(currentNav?.labelKey ?? "nav.dashboard")}
+                </Text>
+              </Flex>
+            ) : (
+              <Link to="/dashboard" className="console-brand console-brand--compact">
+                <img src={logo} alt="" width="28" height="28" />
+                <Text size="4" weight="bold">
+                  Podux
+                </Text>
+              </Link>
+            )}
+            <Flex align="center" gap={isMobile ? "2" : "3"} className="console-topbar__controls">
               <ThemeToggle />
-
-              {/* Language Toggle */}
               <LanguageToggle />
-
-              {/* Update Available Badge */}
               {updateAvailable && (
                 <Popover.Root>
                   <Popover.Trigger>
-                    <motion.div
-                      whileTap={{ scale: 0.95 }}
-                      whileHover={{ scale: 1.05 }}
-                      className="relative cursor-pointer rounded-lg p-2 transition-colors hover:bg-[var(--amber-a3)]"
-                      style={{ color: "var(--amber-11)" }}
+                    <IconButton
+                      variant="ghost"
+                      color="amber"
+                      aria-label={t("version.updateAvailable")}
                     >
-                      <Icon icon="lucide:arrow-up-circle" width="20" height="20" />
-                      <span
-                        className="absolute right-1 top-1 h-2 w-2 rounded-full bg-[var(--amber-9)]"
-                        style={{ display: "block" }}
-                      />
-                    </motion.div>
+                      <Icon icon="lucide:circle-arrow-up" width="19" height="19" />
+                    </IconButton>
                   </Popover.Trigger>
-                  <Popover.Content style={{ maxWidth: 320 }}>
+                  <Popover.Content maxWidth="320px">
                     <Flex direction="column" gap="3">
-                      <Flex align="center" gap="2">
-                        <Icon icon="lucide:package" width="16" height="16" style={{ color: "var(--amber-11)" }} />
-                        <Text size="2" weight="bold">
-                          {t("version.updateAvailable")}
+                      <Text size="2" weight="bold">
+                        {t("version.updateAvailable")}
+                      </Text>
+                      <Flex justify="between" gap="3">
+                        <Text size="1" color="gray">
+                          {t("version.current")}
                         </Text>
+                        <Text size="1">v{appVersion}</Text>
                       </Flex>
-                      <Flex direction="column" gap="1">
-                        <Flex justify="between">
-                          <Text size="1" color="gray">{t("version.current")}</Text>
-                          <Text size="1" weight="medium">v{appVersion}</Text>
-                        </Flex>
-                        <Flex justify="between">
-                          <Text size="1" color="gray">{t("version.latest")}</Text>
-                          <Text size="1" weight="medium" style={{ color: "var(--amber-11)" }}>{latestVersion}</Text>
-                        </Flex>
+                      <Flex justify="between" gap="3">
+                        <Text size="1" color="gray">
+                          {t("version.latest")}
+                        </Text>
+                        <Text size="1">{latestVersion}</Text>
                       </Flex>
                       {releaseBody && (
-                        <Flex direction="column" gap="1">
-                          <Text size="1" color="gray" weight="medium">{t("version.releaseNotes")}</Text>
-                          <Box
-                            style={{
-                              maxHeight: 160,
-                              overflowY: "auto",
-                              backgroundColor: "var(--gray-a2)",
-                              borderRadius: "var(--radius-2)",
-                              padding: "8px",
-                            }}
+                        <Box className="console-release-notes">
+                          <Text
+                            size="1"
+                            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
                           >
-                            <Text size="1" style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                              {releaseBody}
-                            </Text>
-                          </Box>
-                        </Flex>
+                            {releaseBody}
+                          </Text>
+                        </Box>
                       )}
                       {releaseUrl && (
-                        <a href={releaseUrl} target="_blank" rel="noopener noreferrer" className="no-underline">
-                          <Flex
-                            align="center"
-                            gap="1"
-                            className="rounded-md px-3 py-2 transition-colors hover:bg-[var(--amber-a3)]"
-                            style={{ color: "var(--amber-11)" }}
-                          >
-                            <Icon icon="lucide:external-link" width="14" height="14" />
-                            <Text size="1" weight="medium">{t("version.updateNow")}</Text>
-                          </Flex>
+                        <a href={releaseUrl} target="_blank" rel="noopener noreferrer">
+                          {t("version.updateNow")}
                         </a>
                       )}
                     </Flex>
                   </Popover.Content>
                 </Popover.Root>
               )}
-
-              {/* Settings */}
-              <Link to="/settings" className="no-underline">
-                <motion.div
-                  whileTap={{ scale: 0.95 }}
-                  whileHover="hover"
-                  className="cursor-pointer rounded-lg p-2 transition-colors hover:bg-[var(--gray-a3)]"
-                >
-                  <motion.div
-                    variants={{ hover: { scale: 1.1, rotate: 30 } }}
-                    className="flex items-center justify-center"
-                  >
-                    <Icon icon="lucide:settings" width="20" height="20" />
-                  </motion.div>
-                </motion.div>
-              </Link>
-
-              {/* User Dropdown */}
+              {!isWide && (
+                <Tooltip content={t("nav.settings")}>
+                  <IconButton asChild variant="ghost" color="gray">
+                    <Link to="/settings" aria-label={t("nav.settings")}>
+                      <Icon icon="lucide:settings" width="19" height="19" />
+                    </Link>
+                  </IconButton>
+                </Tooltip>
+              )}
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
-                  <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
-                    <Flex align="center" gap="2" className="cursor-pointer">
-                      <Avatar
-                        size="2"
-                        src={gravatarUrl}
-                        fallback={userNickName.charAt(0).toUpperCase()}
-                        radius="full"
-                      />
-                      {/* Show name/email only on desktop */}
-                      {!isMobile && (
-                        <Flex direction="column" gap="0">
-                          <Text size="2" weight="medium">
-                            {userNickName}
-                          </Text>
-                          <Text size="1" color="gray">
-                            {userEmail}
-                          </Text>
-                        </Flex>
-                      )}
-                    </Flex>
-                  </motion.div>
+                  <button
+                    className="console-account"
+                    type="button"
+                    aria-label={t("nav.accountMenu")}
+                  >
+                    <Avatar
+                      size="2"
+                      src={avatarUrl}
+                      fallback={userName.charAt(0).toUpperCase() || "P"}
+                      radius="full"
+                    />
+                    {!isMobile && <Icon icon="lucide:chevron-down" width="14" height="14" />}
+                  </button>
                 </DropdownMenu.Trigger>
-                <DropdownMenu.Content>
-                  <DropdownMenu.Item onClick={handleGotoProfile}>
-                    <Icon icon="lucide:user" width="16" height="16" /> {t("settings.profile")}
+                <DropdownMenu.Content align="end">
+                  <div className="console-account__identity">
+                    <Text as="div" size="2" weight="medium">
+                      {userName}
+                    </Text>
+                    <Text as="div" size="1" color="gray">
+                      {userEmail}
+                    </Text>
+                  </div>
+                  <DropdownMenu.Separator />
+                  <DropdownMenu.Item onSelect={() => navigate("/settings?tab=profile")}>
+                    <Icon icon="lucide:user" width="16" height="16" />
+                    {t("settings.profile")}
                   </DropdownMenu.Item>
-                  <DropdownMenu.Item onClick={() => window.open("/_/", "_blank", "noopener,noreferrer")}>
-                    <Icon icon="lucide:database" width="16" height="16" /> {t("nav.pbAdmin")}
+                  {!isWide &&
+                    utilityNav.map((item) => (
+                      <DropdownMenu.Item key={item.path} onSelect={() => navigate(item.path)}>
+                        <Icon icon={item.icon} width="16" height="16" />
+                        {t(item.labelKey)}
+                      </DropdownMenu.Item>
+                    ))}
+                  <DropdownMenu.Item
+                    onSelect={() => window.open("/_/", "_blank", "noopener,noreferrer")}
+                  >
+                    <Icon icon="lucide:database" width="16" height="16" />
+                    {t("nav.pbAdmin")}
                   </DropdownMenu.Item>
                   <DropdownMenu.Separator />
-                  <DropdownMenu.Item color="red" onClick={handleLogout}>
-                    <Icon icon="lucide:log-out" width="16" height="16" /> {t("nav.logout")}
+                  <DropdownMenu.Item
+                    color="red"
+                    onSelect={() => {
+                      logout();
+                      navigate("/login", { replace: true });
+                    }}
+                  >
+                    <Icon icon="lucide:log-out" width="16" height="16" />
+                    {t("nav.logout")}
                   </DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu.Root>
             </Flex>
-          </Flex>
-        </Box>
-      </Box>
+          </div>
+          {!isWide && !isMobile && (
+            <nav className="console-top-nav" aria-label={t("nav.mainNavigation")}>
+              {primaryNav.map((item) => renderNavLink(item))}
+            </nav>
+          )}
+        </header>
 
-      {/* Main Content */}
-      <Box className="flex w-full flex-1 flex-col overflow-y-auto">
-        <Box
-          className="mx-auto box-border min-h-full w-full max-w-7xl flex-1 px-4 py-6 sm:px-6 lg:px-8"
-          style={{ paddingBottom: isMobile ? "72px" : undefined }}
-        >
-          <AnimatePresence mode="wait" initial={false}>
-            <PageTransition key={location.pathname}>{children}</PageTransition>
-          </AnimatePresence>
-        </Box>
-      </Box>
+        <main id="main-content" tabIndex={-1} className="console-main">
+          <div className="console-content">
+            <AnimatePresence mode="wait" initial={false}>
+              <PageTransition key={pathname}>{children}</PageTransition>
+            </AnimatePresence>
+          </div>
+        </main>
+        {!isMobile && (
+          <footer className="console-footer">
+            <Text size="1" color="gray">
+              Podux {appVersion && `v${appVersion}`}
+            </Text>
+            <a href="https://github.com/Derrors/podux" target="_blank" rel="noopener noreferrer">
+              <Icon icon="lucide:github" width="14" height="14" />
+              GitHub
+            </a>
+          </footer>
+        )}
+      </div>
 
-      {/* Footer — desktop only */}
-      {!isMobile && (
-        <Box
-          style={{
-            backgroundColor: "var(--color-background)",
-            borderTop: "1px solid var(--gray-6)",
-          }}
-        >
-          <Box className="mx-auto box-border max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-            <Flex justify="between" align="center" wrap="wrap" gap="4">
-              {/* Left: Copyright */}
-              <Flex align="center" gap="2">
-                <Text size="1" color="gray">
-                  © 2026 Podux. All rights reserved.
-                </Text>
-              </Flex>
-
-              {/* Center: Version & Author */}
-              <Flex align="center" gap="4">
-                <Flex align="center" gap="2">
-                  <Text size="1" color="gray">
-                    Version: <Text weight="medium">{appVersion ? `v${appVersion}` : "—"}</Text>
-                  </Text>
-                  {updateAvailable && releaseUrl && (
-                    <a href={releaseUrl} target="_blank" rel="noopener noreferrer" className="no-underline">
-                      <Flex
-                        align="center"
-                        gap="1"
-                        className="rounded-md px-2 py-0.5 transition-colors hover:bg-[var(--amber-a3)]"
-                        style={{ color: "var(--amber-11)" }}
-                      >
-                        <Icon icon="lucide:arrow-up-circle" width="12" height="12" />
-                        <Text size="1" weight="medium">{latestVersion}</Text>
-                      </Flex>
-                    </a>
-                  )}
-                </Flex>
-                <Flex align="center" gap="2">
-                  <Text size="1" color="gray">
-                    Author:
-                  </Text>
-                  <Link
-                    to="https://github.com/Derrors"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:text-gray-12 cursor-pointer no-underline transition-colors"
-                    style={{
-                      color: "var(--gray-11)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                    }}
-                  >
-                    <Avatar
-                      size="1"
-                      src="https://github.com/Derrors.png"
-                      fallback="D"
-                      radius="full"
-                    />
-                    <Text weight="medium" size="1">
-                      Derrors
-                    </Text>
-                  </Link>
-                </Flex>
-              </Flex>
-
-              {/* Right: Links */}
-              <Flex align="center" gap="4">
-                <a
-                  href="https://github.com/Derrors/podux"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="no-underline"
-                >
-                  <Flex
-                    align="center"
-                    gap="1"
-                    className="text-gray-500 transition-colors hover:text-gray-700"
-                  >
-                    <Icon icon="lucide:github" width="16" height="16" />
-                    <Text size="1">Podux</Text>
-                  </Flex>
-                </a>
-              </Flex>
-            </Flex>
-          </Box>
-        </Box>
-      )}
-
-      {/* Mobile Bottom Navigation */}
       {isMobile && (
-        <Box
-          className="fixed bottom-0 left-0 right-0 z-50"
-          style={{
-            backgroundColor: "var(--color-background)",
-            borderTop: "1px solid var(--gray-6)",
-          }}
-        >
-          <Flex justify="between" align="center" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-            {mobileBottomNavItems.map((item) => {
-              const isActive = location.pathname.startsWith(item.path);
-              return (
-                <Link key={item.path} to={item.path} className="no-underline flex-1">
-                  <Flex
-                    direction="column"
-                    align="center"
-                    gap="1"
-                    className="py-3"
-                    style={{ color: isActive ? "var(--accent-11)" : "var(--gray-10)" }}
-                  >
-                    {item.icon}
-                    <Text size="1" weight={isActive ? "bold" : "regular"}>
-                      {t(item.labelKey)}
-                    </Text>
-                  </Flex>
-                </Link>
-              );
-            })}
-          </Flex>
-        </Box>
+        <nav className="console-bottom-nav" aria-label={t("nav.mainNavigation")}>
+          {primaryNav.map((item) => renderNavLink(item))}
+        </nav>
       )}
-    </Flex>
+    </div>
   );
 }

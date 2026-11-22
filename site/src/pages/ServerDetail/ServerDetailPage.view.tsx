@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Flex, Text, Badge, Grid, Button, Heading, Box, Table } from "@radix-ui/themes";
+import { Card, Flex, Text, Badge, Grid, Button, Heading, Box } from "@radix-ui/themes";
 import { Icon } from "@iconify/react/offline";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "../../components/PageHeader";
@@ -13,11 +13,9 @@ import { ServerLogViewer } from "../../components/ServerLogViewer";
 import { RefreshButton } from "../../components/RefreshButton";
 import { ExportConfigDialog } from "../../components/ExportConfigDialog";
 import { ConfirmDeleteDialog } from "../../components/ConfirmDeleteDialog";
-import { CopyableText } from "../../components/CopyableText";
-import { ProxyEndpoints } from "../../components/ProxyEndpoints";
-import { ExpiryBadge, ProxyHealth } from "../../components/ProxyHealth";
+import { ServerProxyList } from "../../components/ServerProxyList";
 import { formatBytes } from "../../lib/format";
-import { ProxyStatusToggle } from "../../components/ProxyStatusToggle";
+import { AdvancedSection } from "../../components/AdvancedSection";
 import { Reveal } from "../../components/Reveal";
 import { useDelayedMount } from "../../hooks/useDelayedMount";
 import type { useServerDetail } from "./useServerDetail";
@@ -68,11 +66,10 @@ export function ServerDetailView({
   if (!server || !serverId) return null;
 
   return (
-    <Flex direction="column" gap="5" className="flex-1">
+    <Flex direction="column" gap="5" className="server-detail">
       {/* Header */}
       <PageHeader
         title={server.serverName}
-        description={t("server.detailsAndLogs")}
         visible={mounted}
         extra={
           <Flex gap="3" align="center" wrap="wrap">
@@ -82,7 +79,13 @@ export function ServerDetailView({
             </Button>
             <ExportConfigDialog serverId={serverId} serverName={server.serverName} />
             {server.bootStatus === "running" ? (
-              <Button size="2" color="red" variant="soft" onClick={handleStop} disabled={actionLoading}>
+              <Button
+                size="2"
+                color="red"
+                variant="soft"
+                onClick={handleStop}
+                disabled={actionLoading}
+              >
                 {actionLoading ? (
                   <Icon icon="lucide:loader-2" className="animate-spin" />
                 ) : (
@@ -91,7 +94,13 @@ export function ServerDetailView({
                 {t("server.stop")}
               </Button>
             ) : (
-              <Button size="2" color="green" variant="soft" onClick={handleStart} disabled={actionLoading}>
+              <Button
+                size="2"
+                color="green"
+                variant="soft"
+                onClick={handleStart}
+                disabled={actionLoading}
+              >
                 {actionLoading ? (
                   <Icon icon="lucide:loader-2" className="animate-spin" />
                 ) : (
@@ -259,34 +268,35 @@ export function ServerDetailView({
         </Reveal>
       )}
 
-      {/* Probe History */}
-      <Reveal visible={mounted} delay={0.3}>
-        <Card size="3">
-          <Flex direction="column" gap="3">
-            <Heading size="4">{t("server.statusCard")}</Heading>
-            <ProbeHistory
-              points={probeHistory.points}
-              fetchedAt={probeHistory.fetchedAt}
-              loading={probeHistory.loading}
-            />
-          </Flex>
-        </Card>
-      </Reveal>
+      <div className="server-detail__monitoring">
+        {/* Probe History */}
+        <Reveal visible={mounted} delay={0.3}>
+          <Card size="3">
+            <Flex direction="column" gap="3">
+              <Heading size="4">{t("server.statusCard")}</Heading>
+              <ProbeHistory
+                points={probeHistory.points}
+                fetchedAt={probeHistory.fetchedAt}
+                loading={probeHistory.loading}
+              />
+            </Flex>
+          </Card>
+        </Reveal>
 
-      {/* Latency Chart */}
-      <Reveal visible={mounted} delay={0.35}>
-        <Card size="3">
-          <Flex direction="column" gap="3">
-            <Heading size="4">{t("server.latencyChartCard")}</Heading>
-            <LatencyChart points={probeHistory.points} loading={probeHistory.loading} />
-          </Flex>
-        </Card>
-      </Reveal>
-
+        {/* Latency Chart */}
+        <Reveal visible={mounted} delay={0.35}>
+          <Card size="3">
+            <Flex direction="column" gap="3">
+              <Heading size="4">{t("server.latencyChartCard")}</Heading>
+              <LatencyChart points={probeHistory.points} loading={probeHistory.loading} />
+            </Flex>
+          </Card>
+        </Reveal>
+      </div>
       {/* Proxy List */}
       <Reveal visible={mounted} delay={0.3}>
         <Card size="3">
-          <Flex justify="between" align="center" mb="4">
+          <Flex justify="between" align="center" mb="4" wrap="wrap" gap="3">
             <Heading size="4">{t("proxy.title")}</Heading>
             <Flex gap="2">
               <RefreshButton
@@ -302,116 +312,23 @@ export function ServerDetailView({
             </Flex>
           </Flex>
 
-          {proxies.length === 0 ? (
-            <Flex direction="column" align="center" gap="2" py="6">
-              <Icon icon="lucide:network" width="32" height="32" color="var(--gray-8)" />
-              <Text size="2" color="gray">
-                {t("proxy.noProxies")}
-              </Text>
-            </Flex>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table.Root>
-                <Table.Header>
-                  <Table.Row>
-                    <Table.ColumnHeaderCell>{t("common.name")}</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>{t("common.type")}</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>{t("proxy.localIP")}</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>{t("proxy.localPort")}</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>{t("proxy.remotePortOrDomain")}</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>{t("proxy.bootStatus")}</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>{t("proxy.healthColumn")}</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>{t("common.status")}</Table.ColumnHeaderCell>
-                    <Table.ColumnHeaderCell>{t("common.actions")}</Table.ColumnHeaderCell>
-                  </Table.Row>
-                </Table.Header>
-                <Table.Body>
-                  {proxies.map((proxy) => (
-                    <Table.Row key={proxy.id}>
-                      <Table.Cell>
-                        <Flex direction="column" gap="1" align="start">
-                          <Text weight="medium">{proxy.name || <Text color="gray">-</Text>}</Text>
-                          <ExpiryBadge expiresAt={proxy.expiresAt} />
-                        </Flex>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <Badge variant="surface">{proxy.proxyType.toUpperCase()}</Badge>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <CopyableText text={proxy.localIP || "127.0.0.1"} color="gray" />
-                      </Table.Cell>
-                      <Table.Cell>
-                        {proxy.localPort ? (
-                          <CopyableText text={String(proxy.localPort)} />
-                        ) : (
-                          <Text size="2" color="gray">
-                            -
-                          </Text>
-                        )}
-                      </Table.Cell>
-                      <Table.Cell>
-                        <ProxyEndpoints proxy={proxy} subdomainHost={frps?.info?.subdomainHost} />
-                      </Table.Cell>
-                      <Table.Cell>
-                        <Badge radius="full" color={proxy.bootStatus === "online" ? "green" : "red"}>
-                          <span
-                            className={`status-dot ${
-                              proxy.bootStatus === "online" ? "status-dot-green" : "status-dot-red"
-                            }`}
-                          />
-                          {proxy.bootStatus === "online" ? t("proxy.online") : t("proxy.offline")}
-                        </Badge>
-                      </Table.Cell>
-                      <Table.Cell>
-                        <ProxyHealth
-                          proxyId={proxy.id}
-                          proxyName={proxy.name ?? ""}
-                          status={proxyStatuses[proxy.id]}
-                          probeDisabled={proxy.probeDisabled}
-                        />
-                      </Table.Cell>
-                      <Table.Cell>
-                        <ProxyStatusToggle
-                          enabled={proxy.status === "enabled"}
-                          toggling={togglingId === proxy.id}
-                          onToggle={() => void toggleStatus(proxy)}
-                        />
-                      </Table.Cell>
-                      <Table.Cell>
-                        <Flex gap="2">
-                          <Button
-                            size="1"
-                            variant="soft"
-                            onClick={() => navigate(`/proxies/${proxy.id}/edit`)}
-                          >
-                            <Icon icon="lucide:pencil" width="14" height="14" />
-                            {t("common.edit")}
-                          </Button>
-                          <Button
-                            size="1"
-                            variant="soft"
-                            color="red"
-                            onClick={() => setDeleteProxyId(proxy.id)}
-                          >
-                            <Icon icon="lucide:trash-2" width="14" height="14" />
-                            {t("common.delete")}
-                          </Button>
-                        </Flex>
-                      </Table.Cell>
-                    </Table.Row>
-                  ))}
-                </Table.Body>
-              </Table.Root>
-            </div>
-          )}
+          <ServerProxyList
+            proxies={proxies}
+            statuses={proxyStatuses}
+            subdomainHost={frps?.info?.subdomainHost}
+            togglingId={togglingId}
+            onToggle={(proxy) => void toggleStatus(proxy)}
+            onEdit={(proxy) => navigate(`/proxies/${proxy.id}/edit`)}
+            onDelete={(proxy) => setDeleteProxyId(proxy.id)}
+          />
         </Card>
       </Reveal>
 
       {/* Logs Section */}
       <Reveal visible={mounted} delay={0.3}>
-        <Card size="3">
+        <AdvancedSection title={t("server.connectionLogs")} description={t("server.viewLogsDesc")}>
           <ServerLogViewer serverId={serverId} />
-        </Card>
+        </AdvancedSection>
       </Reveal>
 
       <ConfirmDeleteDialog

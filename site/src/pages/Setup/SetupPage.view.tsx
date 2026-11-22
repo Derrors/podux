@@ -102,15 +102,6 @@ export function SetupView({
                   {t("setup.title")}
                 </Heading>
               </motion.div>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4, duration: 0.5 }}
-              >
-                <Text color="gray" size="2" align="center">
-                  {t("setup.description")}
-                </Text>
-              </motion.div>
             </Flex>
 
             {/* Error Message */}

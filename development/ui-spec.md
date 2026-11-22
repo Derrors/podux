@@ -2,68 +2,108 @@
 
 ## Technology Stack, Entry Point, and Theme
 
-The application UI under `site/` uses React 19, TypeScript, and Vite 7 together with Radix Themes, Tailwind CSS 4, Iconify (offline: `vite-plugins/iconify-offline.ts` bundles only the `lucide`/`circle-flags` icons the source uses, so import `Icon` from `@iconify/react/offline` and never rely on the Iconify API), Framer Motion, Recharts, Sonner, and react-i18next; it does not use Vue. Vue is used only by the VitePress site under `docs/`.
+The application under `site/` uses React 19, TypeScript, Vite 7, Radix Themes, Tailwind CSS 4, Iconify, Framer Motion, Recharts, Sonner and react-i18next. Vue belongs only to the VitePress documentation site. See [site/package.json](../site/package.json) for dependency versions.
 
-`site/src/main.tsx` loads [styles.radix.css](../site/src/styles.radix.css), `index.css`, and i18n in that order. The Radix entry retains the official component/utility styles but includes only used color scales (covered by a source-token regression test); add any newly used scale there instead of importing the full stylesheet. It then wraps the application in `ThemeProvider`, `LanguageProvider`, and Radix `<Theme>`. Theme settings are `accentColor="indigo"`, `grayColor="slate"`, and `radius="large"`. Appearance is light/dark, initially taken from the system `prefers-color-scheme` and then stored in `localStorage.theme`. `index.css` is the entry point for Tailwind and global status-dot styles.
+[main.tsx](../site/src/main.tsx) loads `styles.radix.css`, `index.css`, i18n and the offline icon bundle. The Radix CSS entry includes the official component/utility styles and only used color scales, checked by [radixStyles.test.ts](../site/src/lib/radixStyles.test.ts). Import `Icon` from `@iconify/react/offline`; never depend on the Iconify API. [ThemedApp.tsx](../site/src/ThemedApp.tsx) sets `accentColor="blue"`, `grayColor="slate"`, `radius="large"`, and wraps application motion with `MotionConfig reducedMotion="user"`.
 
-## Design Tokens in Use
+[ThemeContext.tsx](../site/src/contexts/ThemeContext.tsx) accepts only `light`/`dark` saved values, otherwise follows the system preference. Storage reads/writes are best-effort; a blocked `localStorage` must not prevent rendering or switching themes. Language selection remains in LanguageContext and react-i18next.
 
-The project has no custom token file. It primarily consumes Radix CSS variables and component size/gap scales directly.
+## Surfaces, Tokens, and Density
 
-| Category | Verified values/usage |
+[index.css](../site/src/index.css) imports [styles.console.css](../site/src/styles.console.css), the scoped console stylesheet. It introduces structural variables, not a second brand palette:
+
+| Category | Current contract |
 | --- | --- |
-| Brand/accent | Radix indigo mappings `--accent-2/3/4/6/9/10/11` and `--accent-a3`; do not hard-code a new "Podux blue" |
-| Neutrals/surfaces | Slate mappings `--gray-1..12`, alpha gray, `--color-background`, and `--color-panel-solid`; main page background is `--gray-2` |
-| Status colors | Radix green/red/amber/orange/blue/purple scales; online dot `--green-9`, offline dot `--red-9`, unknown dot `--gray-9` |
-| Typography | No project font family; inherits Radix/browser. Body text commonly uses `<Text size="1|2|3|4">`, page titles use `<Heading size="6">`, and section titles commonly use size 3/4 |
-| Spacing | Prefer Radix `gap/mb/px/py` scales and Tailwind (for example px-4, sm:px-6, lg:px-8); local values commonly include 8/12/16/20/24/32px |
-| Radius | Radix global `large`; variables `--radius-2/3`; local 8/12/16/24px and full circles |
-| Borders | Usually `1px solid var(--gray-5|6)`; highlighted areas use `--accent-6` |
-| Shadows | A few local `0 4px 12px rgba(0,0,0,.05/.2)` and `0 4px 16px rgba(0,0,0,.1)` values; prefer Card/Dialog defaults |
-| Stacking | Sticky top bar uses `z-50`; full-screen Loading uses `z-index: 9999`; otherwise prefer component overlay defaults |
+| Brand | Radix `--accent-*` / blue (`accentColor="blue"`); solid blue active sidebar pill with `--accent-contrast` text |
+| Surfaces | Cool airy canvas (`color-mix` of `--gray-2` and `--blue-2`), pure `--color-panel-solid` sidebar and panels, hairline `--gray-4` borders |
+| Status | Green for online/running, red for enabled-but-offline or failed probes, gray for deliberately stopped/disabled or unknown states; always pair color with text/icon |
+| Text | Radix `Text`/`Heading` sizes; page headings size 6, sections size 3; long names and endpoints wrap |
+| Spacing | Radix scales; 16–32px page gutter (16px on phones), 10–20px grid gaps |
+| Structural width | `--console-sidebar-width: 228px` (76px collapsed); `--console-content-width: 1600px`; forms at most 920px |
+| Cards | Use Radix surface-card variables for one border, not an extra border stacked over the component pseudo-border; avoid repeated decorative shadows |
+| Layering | Sidebar/bottom nav 40, topbar 30, form action dock 10; Radix manages dialog/popover portals |
 
-`site/src` contains no hard-coded hex colors; status colors and the Dashboard topology use Radix variables such as `var(--green-9)` and `var(--red-9)`, which resolve per theme. Keep it that way: use Radix tokens for new colors.
+[StatCard](../site/src/components/StatCard.tsx) uses neutral values, compact semantic icon backgrounds (`--green-a3`, etc.), optional visible subtitles and Skeleton loading. Do not append hex alpha digits to a CSS `var()`. Large standalone figures do not need tabular digits; vertically aligned table values do.
 
-## Layout and Component Patterns
+## Application Shell and Navigation
 
-- Application shell: reuse `layouts/MainLayout.tsx`. Desktop uses a sticky top bar with logo, Dashboard/Servers/Proxies navigation, and controls on the right. Below `760px`, mobile uses bottom navigation. Content uses `max-w-7xl`, supports a minimum viewport width of 320px, and reserves space for the mobile bottom bar.
-- Page titles: reuse `components/PageHeader.tsx`, keeping title, description, and right-side actions at a consistent hierarchy. Reuse `SectionHeading` for section titles.
-- Forms: prefer Radix `TextField/Select/Switch/Button`; reuse `FormItem` for labels and required markers. Keep page state and submission logic in hooks/index files and layout in views.
-- Cards and statistics: use Radix `Card` for general content. Reuse `StatCard` and `AnimateNumber` for dashboard value cards rather than duplicating animation/color decisions.
-- Lists: Servers/Proxies establish the desktop-table + mobile-card, search, pagination, Badge, and DropdownMenu pattern. Prefer it for new resources of the same kind.
-- Dialogs: use Radix `AlertDialog` for delete confirmation and Radix `Dialog` for editing, passwords, and similar tasks. Mark dangerous actions red, separate cancel and confirm, and prevent duplicate submissions during async work.
-- Charts: reuse `LatencyChart/ProbeHistory` for latency trends, `TrafficDialog` for a proxy's 7-day traffic, and Dashboard `TopologyChart` for topology. Containers must be responsive, with sufficient contrast in both themes. Multi-series charts use fixed series colors checked with a palette validator for light and dark surfaces and color vision deficiency (traffic in `#0090ff`, out `#ef5f00`), plus a legend and a table of the values; theme accent variables are not used for series because they change with the accent. Charts embedded in a scrolling page must not capture the wheel or touch scroll: the inline topology is read-only, and pan/zoom live in its fullscreen dialog.
-- Proxy status: [ProxyHealth](../site/src/components/ProxyHealth.tsx) shows the external probe badge and today's traffic (click for `TrafficDialog`); `ExpiryBadge` shows the time left of a temporary proxy. Both are used by the [proxy list](../site/src/pages/Proxies/ProxiesPage.view.tsx) and [server detail](../site/src/pages/ServerDetail/ServerDetailPage.view.tsx). Both callers pass the record's `probeDisabled?: boolean` separately from `status`. When true, show a gray “探测已关闭” / “Probe disabled” badge even without a status response and suppress old probe results and tooltips; keep traffic, connections and the history action unchanged. Missing/false retains the existing probe display. The [useProxyStatus](../site/src/hooks/useProxyStatus.ts) API contract is unchanged.
-- External probe setting: the [proxy form view](../site/src/pages/Proxies/ProxyFormPage/ProxyFormPage.view.tsx) has a positively labeled “外网可达性探测” / “External reachability probe” switch under Network Config, with an associated label and description. The [form hook](../site/src/pages/Proxies/ProxyFormPage/useProxyForm.ts) defaults it on, loads `probeEnabled = record.probeDisabled !== true`, and saves `fh_proxies.probeDisabled = !probeEnabled` for create/edit/clone. The boolean field defaults to false (missing also means false). Show the switch only for TCP/HTTP/HTTPS, including supported plugin-backed proxies; hiding it for other types must not reset its value. Explain that this only controls Podux's independent external probes, never proxy `status`, tunnel configuration or frpc's local `healthCheck`. Reuse Radix Switch/gray Badge tokens for both themes; let the label and description wrap on mobile without shrinking the switch.
-- Latency-axis layout: [LatencyChart](../site/src/components/LatencyChart.tsx) keeps a non-negative left chart margin and uses `YAxis width="auto"` so the full formatted tick, including `ms`, fits inside the SVG and reveal-animation clipping bounds. For regression checks, use probe-history values up to 280ms, 1200ms, and 12000ms at 320px mobile and desktop widths in both themes; check the rendered tick bounds, not only their text content. Repeat after a data refresh changes the number of digits. Keep the reveal animation and chart clipping enabled.
-- Notifications: prefer `sonner` toast for operation success/failure (global top-center with richColors). Do not add native `alert` calls. Report API failures with `notifyError` from `lib/notify.ts`, which shows a translated title with the backend `error` message as the description.
-- Data fetching: poll with `hooks/usePolling.ts` (pauses in hidden tabs, never overlaps) and paginated lists with `hooks/usePaginatedList.ts`; use `lib/latestRequest.ts` so stale responses are dropped. Reuse `PaginationBar`, `SearchField`, `RefreshButton`, and `ConfirmDeleteDialog` for list pages.
-- Empty/loading/error: reuse `EmptyState` and `Loading`. The root [ErrorBoundary](../site/src/components/ErrorBoundary.tsx) catches render and lazy JS/CSS chunk failures and offers translated recovery actions; never create an automatic refresh loop. Ordinary render failures allow retry or reload. Failed chunks require an explicit document reload, because native module and Vite CSS preload failures can remain cached across React remounts. Data requests still report their own recoverable errors without taking down the application.
+Reuse [MainLayout.tsx](../site/src/layouts/MainLayout.tsx):
 
-## Reference Pages
+- At **1200px and wider**, fixed collapsible sidebar plus sticky utility topbar. Primary navigation is Dashboard/Servers/Proxies/Visitors; tools are Logs/Import; Settings is at the bottom. Sidebar collapse is a per-browser convenience stored as `podux.sidebarCollapsed` with guarded reads/writes.
+- At **761–1199px**, compact brand/utility topbar and a second row of primary navigation. Logs and Import remain reachable in the account menu.
+- At **760px and below**, compact topbar and four-item bottom navigation with safe-area padding. Content and sticky form actions reserve space above it.
+- Layout is viewport-based via [useMediaQuery](../site/src/hooks/useMediaQuery.ts), not user-agent-based. An iPad with a wide viewport must not be forced into phone navigation.
+- Navigation uses path-prefix ownership, so server details/forms/logs retain the Servers active state. A skip link targets the semantic `<main>`.
+- Account, theme, language, updates and sidebar buttons must be actual keyboard-operable buttons/links with translated accessible names. The account identity is inside the menu, not a wide email competing with page content.
 
-- Dashboard: [DashboardPage.view.tsx](../site/src/pages/Dashboard/DashboardPage.view.tsx) combines `PageHeader`, `StatCard`, Radix Grid/Card, a lightweight tabular proxy distribution and lazy `TopologyChart`. [useDashboard.ts](../site/src/pages/Dashboard/useDashboard.ts) polls stats and topology independently, retains previous data on refresh failure and reuses topology references when values are unchanged. [TopologyChart.tsx](../site/src/pages/Dashboard/TopologyChart.tsx) shows the complete multi-server overview immediately, with all proxy and visitor branches and no server selector, collapse step or connection pagination. It keeps memoized snapshots and visible-element rendering; graph construction scales with the full dataset rather than imposing a display limit. The inline view retains the original node sizes, four-column layout and 480–900px canvas; fullscreen provides pan/zoom, a status legend and an optional table containing every server and connection.
-- Servers/Proxies: `site/src/pages/Servers/ServersPage.view.tsx` and `site/src/pages/Proxies/ProxiesPage.view.tsx` are the primary references for responsive lists, status badges, action menus, and AlertDialog. Their forms are under the corresponding `*FormPage` directories.
-- Settings: `site/src/pages/Settings/SettingsPage.view.tsx` and `SettingsPage.css` use a 240px sidebar, active accent state, and content area; at 760px and below the sidebar becomes a horizontally scrolling row of tabs above the content, and the content area has `min-width: 0` so wide tables scroll inside their `overflow-x-auto` wrapper. `GeneralSettings.tsx` demonstrates `FormItem`, loading, and save toast; `ProfileSettings.tsx` demonstrates profile cards and security sections; `ApiKeySettings.tsx` shows a newly created secret once in a Callout with a copy button.
+[PageHeader](../site/src/components/PageHeader.tsx) consistently groups page title and actions without header subtitles; the sidebar brand displays only the logo and Podux name without a tagline. On phones, actions move to their own wrapping row. [SectionHeading](../site/src/components/SectionHeading.tsx) uses a quiet accent icon and a semantic section heading, not a gradient block.
 
-## Responsiveness, Themes, Internationalization, and Accessibility
+## Dashboard and Topology
 
-- Responsiveness: the actual application-shell breakpoint is `max-width: 760px` (the 640px comment is stale). Test at least 320px mobile and desktop widths. On mobile, table content must use cards or controlled scrolling and must not require hover for actions.
-- Themes: new colors should use `var(--accent-*)`, `var(--gray-*)`, and semantic colors. Avoid fixed white backgrounds/black text. Check charts, overlays, borders, and focus states in light and dark themes.
-- Internationalization: route all user-facing text through `t()` and update both `locales/zh.json` and `en.json`. LanguageContext/localStorage owns language selection; do not use hard-coded Chinese or English as fallback UI.
-- Accessibility: use semantic Radix components. Icon-only buttons need accessible names/tooltips; images need alt text; form labels must associate with controls; keyboard focus must remain visible. `index.css` currently forces the Recharts surface outline off and must be limited to non-interactive charts; reassess it if keyboard chart interaction is added.
-- Motion: the standard page transition is `PageTransition` at 0.3s cubic-bezier; titles use 0.5s easeOut; status dots loop every 1.6–2.5s. Lightweight hover/tap effects are acceptable but must not block interaction. Framer/status-dot animations do not observe `prefers-reduced-motion` consistently; this remains technical debt. Inside a page, give a `motion` element an `exit` prop only under its own `AnimatePresence`: one that mounts while `PageTransition` is exiting otherwise joins that exit and can leave the page stuck invisible.
+[DashboardPage.view.tsx](../site/src/pages/Dashboard/DashboardPage.view.tsx) prioritizes the KPI row, **complete topology**, then compact protocol distribution/runtime summary. Creation/import/refresh belong in the page header; do not add a second row of large navigation cards or a 350px uptime tile.
 
-## Reuse and Addition Rules
+[useDashboard.ts](../site/src/pages/Dashboard/useDashboard.ts) polls statistics and topology independently every 30 seconds, retains prior successful data after errors and reconciles unchanged topology references. Manual refresh starts both requests without coupling their results. Its `statsUpdatedAt`/`topologyUpdatedAt` are **successful page-fetch times**, never monitoring sample times. Empty/unknown metrics use a dash; loading uses skeletons, not convincing zero values.
 
-1. Check Radix Themes first, then `site/src/components/`, then neighboring page view/hook patterns.
-2. Extract a shared component only when a semantically stable pattern spans at least two pages; keep page-specific compositions in the page directory.
-3. New shared components must use tokens, support `className` and necessary props, cover loading/disabled/error states, and be verified in both themes and mobile layouts.
-4. Local styles are acceptable for third-party charts, complex layouts, or states difficult to express with Radix props/Tailwind. Scope names to the page/component and avoid global selectors and `!important`. Existing `!important` usage in Settings CSS is a compatibility condition, not a pattern for new styles.
-5. Put necessary global rules in `index.css` and document their impact.
+Today's traffic is explicitly the frps server totals from configured dashboards, with visible in/out values and coverage. It can include proxies belonging to other clients on the same frps; do not imply it equals the sum of Podux-managed proxy nodes. No arbitrary time selector, rolling 24h counter, throughput or edge-volume animation is provided by these APIs.
 
-## Technical Debt
+[TopologyChart.tsx](../site/src/pages/Dashboard/TopologyChart.tsx):
 
-- There is no centralized project-owned set of spacing, shadow, z-index, or motion tokens; the UI relies on Radix scales mixed with local pixel values.
-- The root ErrorBoundary is shared; form-error presentation still follows page-specific patterns.
-- Actual interaction animations do not yet systematically honor `prefers-reduced-motion`.
+- Always builds all servers, proxies and visitors in stable four-column order. Do not add a display limit, mandatory server selector, default collapsed branches or connection pagination.
+- Node dimensions are Internet 128×100, Server 188×108, Proxy/Visitor 184×108 and Local 180×84, with 132px row spacing. Canvas remains 480–900px high with visible-element rendering. Explicit node dimensions and [topologyViewport.ts](../site/src/pages/Dashboard/topologyViewport.ts) compute minimum zoom and viewport bounds from the complete graph and observed pane, with no fixed 0.25 floor that could clip larger graphs. Overview actions use `getViewportForBounds`/`setViewport`, and locate uses `setCenter` from the node's coordinates: neither requires the DOM measurements that off-screen virtualized nodes lack. Inline resizes refit; fullscreen initially fits the complete graph and preserves pan/zoom during polling. Larger installations are a global overview, not a promise that every label stays readable at once.
+- The inline header contains the topology title and a single fullscreen icon button, without a resource-count subtitle, visible button text, legend bar or decorative overview badge. The icon retains a translated tooltip and accessible name. Inline graph is read-only: page wheel/touch scrolling is never captured. Fullscreen opens a clean canvas with pan/zoom controls and click-to-highlight chain focus, without a hint subtitle, legend bar, table toggle or node search bar.
+- [topologyFocus.ts](../site/src/pages/Dashboard/topologyFocus.ts) highlights a clicked node's ancestors/descendants in linear time **without removing any graph elements**; unrelated siblings are dimmed and clicking the pane or fit-to-view clears the highlight. Polls must not recenter the user's fullscreen viewport.
+- A disabled proxy is neutral even when its old `bootStatus` still says online. Stopped servers and local endpoint nodes are neutral; local nodes have no independent health data.
+- Lines describe resource relationships with frpc runtime state. They do **not** guarantee public reachability, local-service health or actual packets/traffic. Active edges require the relevant server running and the proxy enabled/online (or visitor enabled).
+- Edge animation runs only in fullscreen and is disabled for reduced motion. Closing the fullscreen dialog returns to the complete inline overview.
+
+[ProxyDistribution](../site/src/pages/Dashboard/ProxyDistribution.tsx) uses ranked horizontal bars plus an accessible table and focus/hover tooltip. Keep one hue for this magnitude series; no decorative categorical rainbow or fixed minimum panel height.
+
+## Resource Lists, Filters, and States
+
+The resource patterns live in [ServersPage.view.tsx](../site/src/pages/Servers/ServersPage.view.tsx), [ProxiesPage.view.tsx](../site/src/pages/Proxies/ProxiesPage.view.tsx) and [VisitorsPage.view.tsx](../site/src/pages/Visitors/VisitorsPage.view.tsx):
+
+- Desktop tables; real resource cards at ≤760px. Render the appropriate structure rather than keeping two hidden sets of controls/dialogs mounted.
+- Server name/address/port form one identity; proxy protocol joins its name, and public endpoint/local address form one mapping. IPv6 literals are bracketed by [formatEndpoint](../site/src/lib/endpoints.ts).
+- Reuse `ResourceListToolbar`, `SearchField`, `RefreshButton`, `PaginationBar` and `ConfirmDeleteDialog`. Secondary/destructive actions use [MoreActions](../site/src/components/MoreActions.tsx), accessible without hover. Filtered zero results offer clearing filters, not first-install creation instructions.
+- Proxy batch selection works on the visible page on both desktop and phone, with a visible selection toolbar. Disable competing actions while a batch is executing. Selection belongs to **page + search + filter**, not the whole installation.
+- [usePaginatedList](../site/src/hooks/usePaginatedList.ts) owns search debounce, polling, paging, aborts/stale-response handling and mutation guards. Its optional `queryKey` isolates external filters and resets the effective page to 1 immediately; old filtered data must not be treated as matching a new query.
+- [proxyFilters.ts](../site/src/pages/Proxies/proxyFilters.ts) and [useProxies.ts](../site/src/pages/Proxies/useProxies.ts) combine server/protocol/state filters with search using safe PocketBase parameters. Filters apply to the **complete collection query**, not only the current page. Invalid protocol/state values are normalized; global statistics remain independent of filtering.
+
+Three separate proxy concepts must stay distinguishable:
+
+| Concept | Component / meaning |
+| --- | --- |
+| Configuration intent | `ProxyStatusToggle`: enabled/disabled; button can change the desired setting |
+| Tunnel runtime | `ProxyRuntimeBadge`: enabled and online, enabled but offline, or deliberately disabled (neutral) |
+| Public reachability / traffic | `ProxyHealth`: independent external probe and today's frps traffic |
+
+[ProxyHealth](../site/src/components/ProxyHealth.tsx) continues to accept `probeDisabled` separately from status. True suppresses stale probes and shows a gray disabled badge even with no API data; traffic/connections/history remain available. Missing/false keeps existing behavior. Clicking traffic opens its 7-day chart/table. A missing probe is not proof of failure. Active proxy filters use enabled+online, enabled+not-online, and disabled separately; the neutral “Not online (includes disabled)” global tile is not an outage count.
+
+## Forms and Server Details
+
+Server/proxy/visitor forms remain full pages, not cramped drawers. They use [FormActions](../site/src/components/FormActions.tsx) with a sticky action dock above the mobile bottom bar and enough focus-scroll margin to keep controls usable. Async submission disables duplicate actions. Preserve the existing view/index/hook split and payload semantics.
+
+[AdvancedSection](../site/src/components/AdvancedSection.tsx) is a native disclosure whose children remain mounted, so collapsing does not reset edits. New forms collapse optional configuration; edits open it. Proxy validation errors inside advanced settings open that group. Required server/authentication, proxy/network, external-probe settings and visitor target/listener remain outside optional groups. Never clear hidden values when changing type or opening a section.
+
+The proxy form's translated positive “External reachability probe” switch appears for TCP/HTTP/HTTPS, including supported plugins. `probeEnabled = record.probeDisabled !== true` and `probeDisabled = !probeEnabled` persist for create/edit/clone; hiding it for other types must not reset the value. It has an associated label/description and is independent of frpc `healthCheck` and desired proxy status.
+
+[ServerDetailPage.view.tsx](../site/src/pages/ServerDetail/ServerDetailPage.view.tsx) places probe history and latency side by side on desktop, stacked on phone; its proxy list follows the same endpoint/runtime/configuration pattern as the global list and becomes cards on phone. Live logs use an optional disclosure. Existing API polling/credentials/export behavior is unchanged.
+
+## Settings, Charts, and Accessibility
+
+[SettingsPage.view.tsx](../site/src/pages/Settings/SettingsPage.view.tsx) keeps URL-owned selection; [SettingsPage.css](../site/src/pages/Settings/SettingsPage.css) scopes the 220px section sidebar, which becomes an internally scrolling horizontal row at ≤760px. Content `min-width: 0` keeps wide API tables from widening the page. Avoid global `.nav-item` overrides and `!important`.
+
+- [TrafficDialog](../site/src/components/TrafficDialog.tsx) retains validated fixed series colors `#0090ff`/`#ef5f00`, legend, tooltips and table. Newly added categorical palettes require validation for both theme surfaces and color-vision deficiencies.
+- [LatencyChart](../site/src/components/LatencyChart.tsx) retains a non-negative left margin and `YAxis width="auto"`. Check actual SVG tick bounds with 280ms, 1200ms and 12000ms, after refresh, at 320px and desktop in both themes. Preserve normal reveal clipping when motion is enabled.
+- `index.css` no longer globally removes Recharts focus outlines; keyboard focus stays visible. Search-clear/copy/theme/language/more-action controls are real buttons. Icon-only controls need translated names and visible focus.
+- Use `notifyError`/Sonner for operations. Root [ErrorBoundary](../site/src/components/ErrorBoundary.tsx) handles render/lazy-chunk failures with explicit recovery, never an automatic reload loop. Recoverable data requests report their own failure.
+- Short `PageTransition` (0.18s), `PageHeader`/`Reveal` (0.2s) respect reduced motion. Global reduced-motion CSS disables status-dot/spinner loops. A motion `exit` must belong to an inner AnimatePresence, never inadvertently join the page exit.
+- All user-facing text goes through `t()` with matched `zh.json`/`en.json` keys. Do not introduce hard-coded fallback text or a new language state.
+
+## Verification and Remaining Debt
+
+Regression tests include [MainLayout.test.tsx](../site/src/layouts/MainLayout.test.tsx), [resourceLists.test.tsx](../site/src/pages/resourceLists.test.tsx), [consoleInteractions.test.tsx](../site/src/components/consoleInteractions.test.tsx), topology/fullscreen/search tests, external-probe persistence tests, filtered-query race tests, icon and locale guards.
+
+For browser acceptance, use isolated mock API fixtures without real tokens, server credentials or production records. Check 320px, 390px, 760/761px, tablet and desktop, both themes/languages, long names/domains, IPv6, empty/error/refresh states, batch selection, dialogs, keyboard access and normal/reduced motion. No horizontal **page** overflow; intentional scrolling inside settings navigation, graph/table or log containers is allowed. Unit tests do not prove rendered geometry or production performance.
+
+Remaining debt: some legacy form labels/error messages and chart motion/accessibility patterns are still page-specific; the root motion setting does not by itself stop every opacity loop or SVG SMIL animation. Do not claim universal reduced-motion compliance without checking those components. High-cardinality topology intentionally prioritizes completeness over fitting legible labels in one small viewport; fullscreen locate/table are the reading paths.

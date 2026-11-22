@@ -22,7 +22,6 @@ export function ServerLogPage() {
     <Flex direction="column" gap="5">
       <PageHeader
         title={t("server.connectionLogs")}
-        description={t("server.viewLogsDesc")}
         visible={mounted}
         extra={
           <Button variant="soft" onClick={() => navigate("/servers")}>

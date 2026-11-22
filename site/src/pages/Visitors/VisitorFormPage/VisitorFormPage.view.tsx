@@ -1,5 +1,15 @@
-import { Icon } from "@iconify/react/offline";
-import { Box, Button, Callout, Flex, Select, Separator, Spinner, Switch, Text, TextArea, TextField } from "@radix-ui/themes";
+import {
+  Box,
+  Callout,
+  Flex,
+  Select,
+  Separator,
+  Spinner,
+  Switch,
+  Text,
+  TextArea,
+  TextField,
+} from "@radix-ui/themes";
 import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 
@@ -7,6 +17,7 @@ import { FormItem } from "../../../components/FormItem";
 import { PageHeader } from "../../../components/PageHeader";
 import { RadioCardGroup } from "../../../components/RadioCardGroup";
 import { SectionHeading } from "../../../components/SectionHeading";
+import { FormActions } from "../../../components/FormActions";
 import type { ServerOption } from "../../Proxies/ProxyFormPage/useProxyForm";
 import type { FallbackOption, SecretProxyOption, VisitorFormData } from "./useVisitorForm";
 
@@ -60,10 +71,9 @@ export function VisitorFormPageView({
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col gap-5 overflow-hidden">
+    <div className="console-form">
       <PageHeader
         title={isEditing ? t("visitor.edit") : t("visitor.add")}
-        description={t("visitor.formDescription")}
         visible={mounted}
       />
 
@@ -71,9 +81,9 @@ export function VisitorFormPageView({
         initial={{ opacity: 0, y: 16 }}
         animate={mounted ? { opacity: 1, y: 0 } : { opacity: 0, y: 16 }}
         transition={{ duration: 0.4, delay: 0.1, ease: "easeOut" }}
-        className="flex-1 min-h-0 overflow-y-auto pr-2"
+        className="console-form__body"
       >
-        <Flex direction="column" gap="8">
+        <Flex direction="column" gap="6">
           <section>
             <SectionHeading id="section-basic" title={t("proxy.sectionBasic")} icon="lucide:info" />
             <Flex direction="column" gap="4">
@@ -84,7 +94,9 @@ export function VisitorFormPageView({
                   disabled={loadingServers || servers.length === 0}
                 >
                   <Select.Trigger
-                    placeholder={loadingServers ? t("common.loading") : t("proxy.selectServerPlaceholder")}
+                    placeholder={
+                      loadingServers ? t("common.loading") : t("proxy.selectServerPlaceholder")
+                    }
                     style={{ width: "100%" }}
                   />
                   <Select.Content>
@@ -111,7 +123,11 @@ export function VisitorFormPageView({
               </FormItem>
 
               <FormItem label={t("common.type")} required>
-                <RadioCardGroup options={visitorTypes} value={formData.type} onChange={(v) => onChange("type", v)} />
+                <RadioCardGroup
+                  options={visitorTypes}
+                  value={formData.type}
+                  onChange={(v) => onChange("type", v)}
+                />
               </FormItem>
             </Flex>
           </section>
@@ -119,12 +135,19 @@ export function VisitorFormPageView({
           <Separator size="4" />
 
           <section>
-            <SectionHeading id="section-target" title={t("visitor.sectionTarget")} icon="lucide:crosshair" />
+            <SectionHeading
+              id="section-target"
+              title={t("visitor.sectionTarget")}
+              icon="lucide:crosshair"
+            />
             <Flex direction="column" gap="4">
               {secretProxies.length > 0 && (
                 <FormItem label={t("visitor.fillFromProxy")}>
                   <Select.Root value="" onValueChange={onFillFromProxy}>
-                    <Select.Trigger placeholder={t("visitor.fillFromProxyPlaceholder")} style={{ width: "100%" }} />
+                    <Select.Trigger
+                      placeholder={t("visitor.fillFromProxyPlaceholder")}
+                      style={{ width: "100%" }}
+                    />
                     <Select.Content>
                       {secretProxies.map((p) => (
                         <Select.Item key={p.id} value={p.id}>
@@ -183,41 +206,52 @@ export function VisitorFormPageView({
           <Separator size="4" />
 
           <section>
-            <SectionHeading id="section-local" title={t("visitor.sectionLocal")} icon="lucide:monitor" />
+            <SectionHeading
+              id="section-local"
+              title={t("visitor.sectionLocal")}
+              icon="lucide:monitor"
+            />
             <Flex direction="column" gap="4">
               {formData.type === "stcp" && (
                 <Flex justify="between" align="center">
                   <Box>
-                    <Text size="2" weight="medium">{t("visitor.noBind")}</Text>
-                    <Text as="p" size="1" color="gray">{t("visitor.noBindDesc")}</Text>
+                    <Text size="2" weight="medium">
+                      {t("visitor.noBind")}
+                    </Text>
+                    <Text as="p" size="1" color="gray">
+                      {t("visitor.noBindDesc")}
+                    </Text>
                   </Box>
-                  <Switch checked={formData.noBind} onCheckedChange={(v) => onChange("noBind", v)} />
+                  <Switch
+                    checked={formData.noBind}
+                    onCheckedChange={(v) => onChange("noBind", v)}
+                  />
                 </Flex>
               )}
               {!(formData.type === "stcp" && formData.noBind) && (
-              <Flex gap="3">
-                <Box className="flex-[2]">
-                  <FormItem label={t("visitor.bindAddr")} required error={errors.bindAddr}>
-                    <TextField.Root
-                      size="2"
-                      value={formData.bindAddr}
-                      onChange={(e) => onChange("bindAddr", e.target.value)}
-                      color={errors.bindAddr ? "red" : undefined}
-                    />
-                  </FormItem>
-                </Box>
-                <Box className="flex-1">
-                  <FormItem label={t("visitor.bindPort")} required error={errors.bindPort}>
-                    <TextField.Root
-                      size="2"
-                      type="number"
-                      value={formData.bindPort}
-                      onChange={(e) => onChange("bindPort", e.target.value)}
-                      color={errors.bindPort ? "red" : undefined}
-                    />
-                  </FormItem>
-                </Box>
-              </Flex>
+                <Flex gap="3">
+                  <Box className="flex-[2]">
+                    <FormItem label={t("visitor.bindAddr")} required error={errors.bindAddr}>
+                      <TextField.Root
+                        size="2"
+                        value={formData.bindAddr}
+                        onChange={(e) => onChange("bindAddr", e.target.value)}
+                        color={errors.bindAddr ? "red" : undefined}
+                      />
+                    </FormItem>
+                  </Box>
+                  <Box className="flex-1">
+                    <FormItem label={t("visitor.bindPort")} required error={errors.bindPort}>
+                      <TextField.Root
+                        size="2"
+                        type="number"
+                        value={formData.bindPort}
+                        onChange={(e) => onChange("bindPort", e.target.value)}
+                        color={errors.bindPort ? "red" : undefined}
+                      />
+                    </FormItem>
+                  </Box>
+                </Flex>
               )}
               <Text size="1" color="gray" as="p">
                 {t("visitor.bindDesc")}
@@ -226,10 +260,17 @@ export function VisitorFormPageView({
               {formData.type === "xtcp" && (
                 <Flex justify="between" align="center">
                   <Box>
-                    <Text size="2" weight="medium">{t("visitor.keepTunnelOpen")}</Text>
-                    <Text as="p" size="1" color="gray">{t("visitor.keepTunnelOpenDesc")}</Text>
+                    <Text size="2" weight="medium">
+                      {t("visitor.keepTunnelOpen")}
+                    </Text>
+                    <Text as="p" size="1" color="gray">
+                      {t("visitor.keepTunnelOpenDesc")}
+                    </Text>
                   </Box>
-                  <Switch checked={formData.keepTunnelOpen} onCheckedChange={(v) => onChange("keepTunnelOpen", v)} />
+                  <Switch
+                    checked={formData.keepTunnelOpen}
+                    onCheckedChange={(v) => onChange("keepTunnelOpen", v)}
+                  />
                 </Flex>
               )}
 
@@ -276,19 +317,33 @@ export function VisitorFormPageView({
           <Separator size="4" />
 
           <section>
-            <SectionHeading id="section-transport" title={t("proxy.sectionTransport")} icon="lucide:shield" />
+            <SectionHeading
+              id="section-transport"
+              title={t("proxy.sectionTransport")}
+              icon="lucide:shield"
+            />
             <Flex direction="column" gap="3">
               <Callout.Root size="1" color="gray" variant="surface">
                 <Callout.Text>{t("visitor.transportMatch")}</Callout.Text>
               </Callout.Root>
               <Flex justify="between" align="center">
-                <Text size="2" weight="medium">{t("proxy.transportEncryption")}</Text>
-                <Switch checked={formData.encryption} onCheckedChange={(v) => onChange("encryption", v)} />
+                <Text size="2" weight="medium">
+                  {t("proxy.transportEncryption")}
+                </Text>
+                <Switch
+                  checked={formData.encryption}
+                  onCheckedChange={(v) => onChange("encryption", v)}
+                />
               </Flex>
               <Separator size="4" />
               <Flex justify="between" align="center">
-                <Text size="2" weight="medium">{t("proxy.dataCompression")}</Text>
-                <Switch checked={formData.compression} onCheckedChange={(v) => onChange("compression", v)} />
+                <Text size="2" weight="medium">
+                  {t("proxy.dataCompression")}
+                </Text>
+                <Switch
+                  checked={formData.compression}
+                  onCheckedChange={(v) => onChange("compression", v)}
+                />
               </Flex>
             </Flex>
           </section>
@@ -296,7 +351,11 @@ export function VisitorFormPageView({
           <Separator size="4" />
 
           <section>
-            <SectionHeading id="section-description" title={t("proxy.descriptionLabel")} icon="lucide:file-text" />
+            <SectionHeading
+              id="section-description"
+              title={t("proxy.descriptionLabel")}
+              icon="lucide:file-text"
+            />
             <TextArea
               size="2"
               maxLength={1000}
@@ -306,19 +365,16 @@ export function VisitorFormPageView({
               className="min-h-[100px]"
             />
           </section>
-
-          <Flex justify="end" gap="3" pb="6">
-            <Button variant="soft" color="gray" size="2" onClick={onCancel}>
-              <Icon icon="lucide:arrow-left" width="16" height="16" />
-              {t("common.cancel")}
-            </Button>
-            <Button size="2" disabled={submitting} onClick={onSubmit}>
-              {submitting ? <Spinner size="1" /> : <Icon icon={isEditing ? "lucide:pencil" : "lucide:plus"} width="16" height="16" />}
-              {isEditing ? t("proxy.saveChanges") : t("visitor.add")}
-            </Button>
-          </Flex>
         </Flex>
       </motion.div>
+      <FormActions
+        onCancel={onCancel}
+        onSubmit={onSubmit}
+        submitting={submitting}
+        editing={isEditing}
+        label={t(isEditing ? "proxy.saveChanges" : "visitor.add")}
+        busyLabel={t(isEditing ? "proxy.saving" : "proxy.adding")}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { motion, type HTMLMotionProps } from "framer-motion";
+import { motion, useReducedMotion, type HTMLMotionProps } from "framer-motion";
 import type { ReactNode } from "react";
 
 interface PageTransitionProps extends HTMLMotionProps<"div"> {
@@ -6,13 +6,14 @@ interface PageTransitionProps extends HTMLMotionProps<"div"> {
 }
 
 export function PageTransition({ children, ...props }: PageTransitionProps) {
+  const reducedMotion = useReducedMotion();
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: reducedMotion ? 0 : 6 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
+      exit={{ opacity: 0, y: reducedMotion ? 0 : -6 }}
       transition={{
-        duration: 0.3,
+        duration: reducedMotion ? 0 : 0.18,
         ease: [0.22, 1, 0.36, 1], // Custom cubic-bezier for a more premium feel
       }}
       {...props}

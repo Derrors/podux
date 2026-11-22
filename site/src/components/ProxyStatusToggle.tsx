@@ -24,6 +24,8 @@ export function ProxyStatusToggle({ enabled, toggling, onToggle }: ProxyStatusTo
         opacity: toggling ? 0.6 : 1,
         transition: "opacity 0.2s",
       }}
+      aria-pressed={enabled}
+      aria-label={enabled ? t("proxy.clickToDisable") : t("proxy.clickToEnable")}
       title={enabled ? t("proxy.clickToDisable") : t("proxy.clickToEnable")}
     >
       <Badge color={enabled ? "green" : "gray"} style={{ cursor: "inherit" }}>

@@ -72,15 +72,6 @@ export function LoginView({
                   <Heading size="6">Podux</Heading>
                 </Flex>
               </motion.div>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4, duration: 0.5 }}
-              >
-                <Text color="gray" size="2" align="center">
-                  {t("auth.signInToAccount")}
-                </Text>
-              </motion.div>
             </Flex>
 
             {/* Error Message */}
@@ -160,7 +151,7 @@ export function LoginView({
                 </TextField.Root>
 
                 <Flex justify={"end"} className="mt-1">
-                  <Text size="1" color="indigo" className="cursor-pointer hover:underline">
+                  <Text size="1" color="blue" className="cursor-pointer hover:underline">
                     {t("auth.forgotPassword")}
                   </Text>
                 </Flex>

@@ -77,14 +77,7 @@ export function GeneralSettings() {
 
   return (
     <Flex direction="column" gap="4">
-      <Box>
-        <Heading size="4" mb="1">
-          {t("settings.generalSettings")}
-        </Heading>
-        <Text size="2" color="gray">
-          {t("settings.configureApp")}
-        </Text>
-      </Box>
+      <Heading size="4">{t("settings.generalSettings")}</Heading>
 
       <Separator size="4" />
 

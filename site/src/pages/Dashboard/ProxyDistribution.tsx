@@ -10,7 +10,7 @@ export function ProxyDistribution({ counts }: { counts: Record<string, number> }
   const total = rows.reduce((sum, [, count]) => sum + count, 0);
   const max = Math.max(...rows.map(([, count]) => count), 1);
   return (
-    <Flex direction="column" gap="4" style={{ minHeight: 350 }}>
+    <Flex direction="column" gap="4">
       <Text size="3" weight="bold">
         {t("dashboard.proxyTypeDistribution")}
       </Text>
@@ -58,9 +58,9 @@ export function ProxyDistribution({ counts }: { counts: Record<string, number> }
                         <span
                           style={{
                             width: `${(count / max) * 100}%`,
-                            height: 12,
-                            borderRadius: "0 4px 4px 0",
-                            background: "var(--indigo-9)",
+                            height: 10,
+                            borderRadius: 999,
+                            background: "var(--accent-9)",
                             border: "1px solid transparent",
                           }}
                         />

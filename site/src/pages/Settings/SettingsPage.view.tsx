@@ -26,7 +26,7 @@ export function SettingsView() {
       <Box className="settings-container">
         {/* Header Section */}
         <Box mb="6">
-          <PageHeader title={t("settings.title")} description={t("settings.manageWorkspace")} />
+          <PageHeader title={t("settings.title")} />
         </Box>
 
         {/* Main Interface */}
@@ -38,6 +38,7 @@ export function SettingsView() {
                 <button
                   className="nav-item"
                   data-state={activeTab === "general" ? "active" : "inactive"}
+                  aria-pressed={activeTab === "general"}
                   onClick={() => handleTabChange("general")}
                 >
                   <Flex align="center" gap="3">
@@ -50,6 +51,7 @@ export function SettingsView() {
                 <button
                   className="nav-item"
                   data-state={activeTab === "notifications" ? "active" : "inactive"}
+                  aria-pressed={activeTab === "notifications"}
                   onClick={() => handleTabChange("notifications")}
                 >
                   <Flex align="center" gap="3">
@@ -62,6 +64,7 @@ export function SettingsView() {
                 <button
                   className="nav-item"
                   data-state={activeTab === "backups" ? "active" : "inactive"}
+                  aria-pressed={activeTab === "backups"}
                   onClick={() => handleTabChange("backups")}
                 >
                   <Flex align="center" gap="3">
@@ -74,6 +77,7 @@ export function SettingsView() {
                 <button
                   className="nav-item"
                   data-state={activeTab === "api" ? "active" : "inactive"}
+                  aria-pressed={activeTab === "api"}
                   onClick={() => handleTabChange("api")}
                 >
                   <Flex align="center" gap="3">
@@ -86,6 +90,7 @@ export function SettingsView() {
                 <button
                   className="nav-item"
                   data-state={activeTab === "profile" ? "active" : "inactive"}
+                  aria-pressed={activeTab === "profile"}
                   onClick={() => handleTabChange("profile")}
                 >
                   <Flex align="center" gap="3">

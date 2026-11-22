@@ -1,38 +1,67 @@
 .settings-container {
   max-width: 1200px;
   margin: 0 auto;
+  min-width: 0;
 }
-
 .settings-card {
   padding: 0;
   overflow: hidden;
+  --card-background-color: var(--color-panel-solid);
+  --base-card-surface-box-shadow: 0 0 0 1px var(--gray-4), 0 1px 3px var(--gray-a3);
+  --card-border-radius: 16px;
+  box-shadow: none;
 }
-
 .settings-sidebar {
-  width: 240px;
-  background-color: var(--gray-1);
-  border-right: 1px solid var(--gray-5);
-  padding: 20px 16px;
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--gray-1);
+  border-right: 1px solid var(--gray-4);
+  padding: 20px 14px;
 }
-
-.settings-nav {
-  border-bottom: none;
-}
-
 .settings-content {
   flex: 1;
-  /* Lets wide tables scroll inside their own overflow box instead of widening the page. */
   min-width: 0;
   padding: 24px 32px;
   min-height: 500px;
 }
-
-/* Mobile: the sidebar becomes a row of tabs above the content. */
+.settings-nav .nav-item {
+  box-sizing: border-box;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-3);
+  background: transparent;
+  color: var(--gray-11);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+.settings-nav .nav-item:hover {
+  background: var(--gray-a3);
+  color: var(--gray-12);
+}
+.settings-nav .nav-item[data-state="active"] {
+  background: var(--accent-a3);
+  color: var(--accent-11);
+  font-weight: 600;
+}
+.settings-nav .nav-item:focus-visible {
+  outline: 2px solid var(--accent-8);
+  outline-offset: 2px;
+}
+.settings-container .avatar-edit-btn:hover {
+  transform: scale(1.04);
+  box-shadow: var(--shadow-2);
+}
 @media (max-width: 760px) {
   .settings-layout {
     flex-direction: column;
   }
-
   .settings-sidebar {
     width: auto;
     border-right: none;
@@ -40,58 +69,26 @@
     padding: 12px;
     overflow-x: auto;
   }
-
-  .settings-nav {
-    flex-direction: row !important;
+  .settings-sidebar .settings-nav {
+    flex-direction: row;
+    gap: 6px;
   }
-
   .settings-nav .nav-item {
-    width: auto !important;
+    width: auto;
     white-space: nowrap;
+    flex-shrink: 0;
   }
-
   .settings-content {
     padding: 20px 16px;
     min-height: 0;
   }
 }
-
-.nav-item {
-  all: unset;
-  box-sizing: border-box !important;
-  user-select: none !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  width: 100% !important;
-  padding: 10px 12px !important;
-  border-radius: 8px !important;
-  cursor: pointer !important;
-  transition: all 0.15s ease !important;
-  color: var(--gray-11) !important;
-}
-
-/* Disable default Radix tab indicators/pseudos */
-.nav-item::before,
-.nav-item::after {
-  display: none !important;
-}
-
-.nav-item:hover {
-  background-color: var(--gray-3) !important;
-  /* Reset potential Radix hover bleeds */
-  color: var(--gray-11) !important;
-  box-shadow: none !important;
-  text-decoration: none !important;
-}
-
-.nav-item[data-state="active"] {
-  background-color: var(--accent-3) !important;
-  color: var(--accent-11) !important;
-  font-weight: 500 !important;
-}
-
-.avatar-edit-btn:hover {
-  transform: scale(1.1) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2) !important;
+@media (prefers-reduced-motion: reduce) {
+  .settings-nav .nav-item,
+  .settings-container .avatar-edit-btn {
+    transition: none;
+  }
+  .settings-container .avatar-edit-btn:hover {
+    transform: none;
+  }
 }

@@ -21,6 +21,7 @@ export function SearchField({
     <TextField.Root
       size="2"
       placeholder={placeholder}
+      aria-label={placeholder ?? t("common.search")}
       className={className}
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -29,14 +30,15 @@ export function SearchField({
         <Icon icon="lucide:search" width="16" height="16" />
       </TextField.Slot>
       {value && (
-        <TextField.Slot
-          pr="2"
-          role="button"
-          aria-label={t("common.clearSearch")}
-          onClick={() => onChange("")}
-          style={{ cursor: "pointer" }}
-        >
-          <Icon icon="lucide:x" width="16" height="16" />
+        <TextField.Slot pr="2">
+          <button
+            type="button"
+            className="search-clear"
+            aria-label={t("common.clearSearch")}
+            onClick={() => onChange("")}
+          >
+            <Icon icon="lucide:x" width="16" height="16" />
+          </button>
         </TextField.Slot>
       )}
     </TextField.Root>

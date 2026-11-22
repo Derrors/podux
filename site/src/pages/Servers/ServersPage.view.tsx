@@ -1,10 +1,8 @@
-import { Button, Card, Flex, Heading, Text, Badge, Table } from "@radix-ui/themes";
+import { Button, Card, Flex, Table, Text } from "@radix-ui/themes";
 import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { Icon } from "@iconify/react/offline";
-import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
-import { AnimateNumber } from "../../components/AnimateNumber";
 import { EmptyState } from "../../components/EmptyState";
 import { PageHeader } from "../../components/PageHeader";
 import { Loading } from "../../components/Loading";
@@ -16,17 +14,18 @@ import { PaginationBar } from "../../components/PaginationBar";
 import { SearchField } from "../../components/SearchField";
 import { RefreshButton } from "../../components/RefreshButton";
 import { ConfirmDeleteDialog } from "../../components/ConfirmDeleteDialog";
+import { CopyableText } from "../../components/CopyableText";
+import { MoreActions } from "../../components/MoreActions";
+import { ResourceListToolbar } from "../../components/ResourceListToolbar";
 import { Reveal } from "../../components/Reveal";
 import { useDelayedMount } from "../../hooks/useDelayedMount";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { formatEndpoint } from "../../lib/endpoints";
 import type { ServerListItem } from "../../types/server";
 
 interface ServersViewProps {
   servers: ServerListItem[];
-  stats: {
-    total: number;
-    running: number;
-    stopped: number;
-  };
+  stats: { total: number; running: number; stopped: number };
   loading: boolean;
   refreshing: boolean;
   pendingId: string | null;
@@ -40,13 +39,6 @@ interface ServersViewProps {
   setPage: (page: number) => void;
   totalPages: number;
 }
-
-const fade = {
-  initial: { opacity: 0 },
-  animate: { opacity: 1 },
-  exit: { opacity: 0 },
-  transition: { duration: 0.2 },
-};
 
 export function ServersView({
   servers,
@@ -67,285 +59,242 @@ export function ServersView({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const mounted = useDelayedMount();
+  const mobile = useMediaQuery("(max-width: 760px)");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const actions = (server: ServerListItem) => (
+    <Flex gap="3" align="center">
+      <Button
+        size="1"
+        variant="soft"
+        color={server.bootStatus === "running" ? "gray" : "green"}
+        disabled={pendingId !== null}
+        onClick={() =>
+          server.bootStatus === "running" ? terminateServer(server.id) : launchServer(server.id)
+        }
+      >
+        <Icon
+          icon={
+            pendingId === server.id
+              ? "lucide:loader-2"
+              : server.bootStatus === "running"
+                ? "lucide:square"
+                : "lucide:play"
+          }
+          className={pendingId === server.id ? "animate-spin" : ""}
+          width="13"
+          height="13"
+        />
+        {t(server.bootStatus === "running" ? "server.stop" : "server.start")}
+      </Button>
+      <MoreActions
+        name={server.serverName}
+        actions={[
+          {
+            label: t("server.view"),
+            icon: "lucide:eye",
+            onSelect: () => navigate(`/servers/${server.id}`),
+          },
+          {
+            label: t("server.viewLogs"),
+            icon: "lucide:scroll-text",
+            onSelect: () => navigate(`/servers/${server.id}/logs`),
+          },
+          {
+            label: t("common.edit"),
+            icon: "lucide:pencil",
+            onSelect: () => navigate(`/servers/${server.id}/edit`),
+          },
+          {
+            label: t("common.delete"),
+            icon: "lucide:trash-2",
+            danger: true,
+            onSelect: () => setDeleteId(server.id),
+          },
+        ]}
+      />
+    </Flex>
+  );
+  const identity = (server: ServerListItem) => (
+    <div className="resource-name">
+      <span className="resource-name__icon" aria-hidden="true">
+        <Icon icon="lucide:server" width="17" height="17" />
+      </span>
+      <div className="min-w-0">
+        <Link to={`/servers/${server.id}`} className="resource-name__title">
+          {server.serverName}
+        </Link>
+        <div>
+          <CopyableText text={formatEndpoint(server.serverAddr, server.serverPort)} color="gray" />
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <>
-      <Flex direction="column" gap="5" className="flex flex-1 flex-col">
-        {/* Header */}
-        <PageHeader
-          title={t("server.title")}
-          description={t("server.manageServers")}
-          visible={mounted}
-        />
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Reveal visible={mounted} delay={0.1}>
-            <StatCard
-              title={t("server.totalServers")}
-              value={<AnimateNumber value={stats.total} decimalPlaces={0} />}
-              color="gray"
-              icon={<Icon icon="lucide:hard-drive" width="32" height="32" color="var(--gray-11)" />}
-            />
-          </Reveal>
-          <Reveal visible={mounted} delay={0.2}>
-            <StatCard
-              title={t("server.running")}
-              value={
-                <span style={{ color: "var(--green-9)" }}>
-                  <AnimateNumber
-                    value={stats.running}
-                    decimalPlaces={0}
-                  />
-                </span>
-              }
-              color="green"
-              icon={<Icon icon="lucide:rocket" width="32" height="32" color="var(--green-11)" />}
-            />
-          </Reveal>
-          <Reveal visible={mounted} delay={0.3}>
-            <StatCard
-              title={t("server.stopped")}
-              value={
-                <span style={{ color: "var(--red-9)" }}>
-                  <AnimateNumber
-                    value={stats.stopped}
-                    decimalPlaces={0}
-                  />
-                </span>
-              }
-              color="red"
-              icon={<Icon icon="lucide:bug" width="32" height="32" color="var(--red-11)" />}
-            />
-          </Reveal>
+    <Flex direction="column" gap="5">
+      <PageHeader
+        title={t("server.title")}
+        visible={mounted}
+        extra={
+          <Flex gap="2" wrap="wrap">
+            <Button asChild variant="soft" color="gray">
+              <Link to="/import">
+                <Icon icon="lucide:file-input" width="15" height="15" />
+                {t("nav.import")}
+              </Link>
+            </Button>
+            <Button asChild>
+              <Link to="/servers/new">
+                <Icon icon="lucide:plus" width="16" height="16" />
+                {t("server.addServer")}
+              </Link>
+            </Button>
+          </Flex>
+        }
+      />
+      <Reveal visible={mounted}>
+        <div className="resource-stats">
+          <StatCard
+            title={t("server.totalServers")}
+            value={stats.total}
+            color="blue"
+            icon={<Icon icon="lucide:server" />}
+            loading={loading && servers.length === 0}
+          />
+          <StatCard
+            title={t("server.running")}
+            value={stats.running}
+            color="green"
+            icon={<Icon icon="lucide:circle-check" />}
+            loading={loading && servers.length === 0}
+          />
+          <StatCard
+            title={t("server.stopped")}
+            value={stats.stopped}
+            color="gray"
+            icon={<Icon icon="lucide:pause" />}
+            loading={loading && servers.length === 0}
+          />
         </div>
-        {/* Servers Table */}
-        <Reveal visible={mounted} delay={0.4} className="flex flex-1 flex-col overflow-hidden">
-          <Card className="flex flex-1 flex-col">
-            <Flex direction="column" gap="3" mb="4" p="2">
-              <Flex justify="between" align="center" wrap="wrap" gap="2">
-                <Text size="3" weight="bold">
-                  {t("server.allServers")}
-                </Text>
-                <Flex gap="2" wrap="wrap" align="center">
-                  <SearchField
-                    value={search}
-                    onChange={setSearch}
-                    placeholder={t("server.searchServers")}
-                  />
-                  <RefreshButton
-                    onClick={refreshServers}
-                    refreshing={refreshing}
-                    label={t("server.refresh")}
-                  />
-                  <Button variant="soft" color="gray" onClick={() => navigate("/logs")}>
-                    <Icon icon="lucide:scroll-text" width="16" height="16" />
-                    {t("server.allLogs")}
-                  </Button>
-                  <Button variant="soft" color="gray" onClick={() => navigate("/import")}>
-                    <Icon icon="lucide:file-input" width="16" height="16" />
-                    {t("import.title")}
-                  </Button>
-                  <Button onClick={() => navigate("/servers/new")}>
-                    <Icon icon="lucide:plus" width="14" height="14" />
-                    {t("server.addServer")}
-                  </Button>
-                </Flex>
-              </Flex>
+      </Reveal>
+      <Card size="2" className="resource-panel">
+        <ResourceListToolbar
+          title={t("server.allServers")}
+          actions={
+            <RefreshButton
+              onClick={refreshServers}
+              refreshing={refreshing}
+              label={t("server.refresh")}
+            />
+          }
+        >
+          <SearchField
+            value={search}
+            onChange={setSearch}
+            placeholder={t("server.searchServers")}
+          />
+        </ResourceListToolbar>
+        {loading ? (
+          <Flex
+            className="resource-empty"
+            align="center"
+            justify="center"
+            role="status"
+            aria-label={t("common.loading")}
+          >
+            <Loading size="small" />
+          </Flex>
+        ) : servers.length === 0 ? (
+          search ? (
+            <Flex direction="column" gap="3" align="center" className="resource-empty">
+              <Text weight="medium">{t("server.noResultsFound")}</Text>
+              <Text size="2" color="gray">
+                {t("server.noServersMatch")}
+              </Text>
+              <Button variant="soft" onClick={() => setSearch("")}>
+                {t("server.clearSearch")}
+              </Button>
             </Flex>
-
-            <AnimatePresence mode="wait">
-              {loading ? (
-                <motion.div key="loading" {...fade} className="flex-1">
-                  <Flex
-                    direction="column"
-                    align="center"
-                    justify="center"
-                    gap="2"
-                    className="h-full py-12"
-                  >
-                    <Loading size="small" />
-                  </Flex>
-                </motion.div>
-              ) : servers.length === 0 ? (
-                search ? (
-                  <motion.div key="no-results" {...fade} className="flex-1">
-                    <Flex
-                      direction="column"
-                      align="center"
-                      justify="center"
-                      gap="2"
-                      className="h-full"
-                    >
-                      <Icon icon="lucide:search" width="32" height="32" color="var(--gray-9)" />
-                      <Heading size="4">{t("server.noResultsFound")}</Heading>
-                      <Text color="gray" size="2">
-                        {t("server.noServersMatch")} "{search}"
-                      </Text>
-                      <Button variant="soft" mt="2" onClick={() => setSearch("")}>
-                        {t("server.clearSearch")}
-                      </Button>
-                    </Flex>
-                  </motion.div>
-                ) : (
-                  <motion.div key="empty-state" {...fade} className="flex-1">
-                    <Flex direction="column" align="center" justify="center" className="h-full">
-                      <EmptyState
-                        title={t("server.noServers")}
-                        description={t("server.addFirstServer")}
-                        actionText={t("server.addYourFirstServer")}
-                        onAction={() => navigate("/servers/new")}
-                      />
-                    </Flex>
-                  </motion.div>
-                )
-              ) : (
-                <motion.div key="table" {...fade}>
-                  <div className="overflow-x-auto">
-                    <Table.Root>
-                      <Table.Header>
-                        <Table.Row>
-                          <Table.ColumnHeaderCell>{t("common.name")}</Table.ColumnHeaderCell>
-                          <Table.ColumnHeaderCell>{t("server.host")}</Table.ColumnHeaderCell>
-                          <Table.ColumnHeaderCell>{t("server.port")}</Table.ColumnHeaderCell>
-                          <Table.ColumnHeaderCell>{t("server.latency")}</Table.ColumnHeaderCell>
-                          <Table.ColumnHeaderCell>{t("server.location")}</Table.ColumnHeaderCell>
-                          <Table.ColumnHeaderCell>{t("server.bootStatus")}</Table.ColumnHeaderCell>
-                          <Table.ColumnHeaderCell>{t("common.actions")}</Table.ColumnHeaderCell>
-                        </Table.Row>
-                      </Table.Header>
-                      <Table.Body>
-                        {servers.map((server) => (
-                          <Table.Row key={server.id}>
-                            <Table.Cell>
-                              <Link
-                                to={`/servers/${server.id}`}
-                                style={{ textDecoration: "none", color: "inherit" }}
-                              >
-                                <Text weight="medium" className="cursor-pointer hover:underline">
-                                  {server.serverName}
-                                </Text>
-                              </Link>
-                            </Table.Cell>
-                            <Table.Cell>
-                              <Text size="2" className="font-mono">
-                                {server.serverAddr}
-                              </Text>
-                            </Table.Cell>
-                            <Table.Cell>
-                              <Badge variant="surface">{server.serverPort}</Badge>
-                            </Table.Cell>
-                            <Table.Cell>
-                              <ServerLatency networkStatus={server.networkStatus} />
-                            </Table.Cell>
-                            <Table.Cell>
-                              <ServerLocation geoLocation={server.geoLocation} />
-                            </Table.Cell>
-                            <Table.Cell>
-                              <ServerStatusBadge status={server.bootStatus} />
-                            </Table.Cell>
-                            <Table.Cell>
-                              <Flex gap="2">
-                                {server.bootStatus === "running" ? (
-                                  <Button
-                                    size="1"
-                                    variant="soft"
-                                    className="cursor-pointer"
-                                    color="red"
-                                    disabled={pendingId !== null}
-                                    onClick={() => terminateServer(server.id)}
-                                  >
-                                    <Icon
-                                      icon={pendingId === server.id ? "lucide:loader-2" : "lucide:bug"}
-                                      className={pendingId === server.id ? "animate-spin" : ""}
-                                      width="14"
-                                      height="14"
-                                    />
-                                    {t("server.stop")}
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    size="1"
-                                    variant="soft"
-                                    className="cursor-pointer"
-                                    color="green"
-                                    disabled={pendingId !== null}
-                                    onClick={() => launchServer(server.id)}
-                                  >
-                                    <Icon
-                                      icon={
-                                        pendingId === server.id ? "lucide:loader-2" : "lucide:rocket"
-                                      }
-                                      className={pendingId === server.id ? "animate-spin" : ""}
-                                      width="14"
-                                      height="14"
-                                    />
-                                    {t("server.launch")}
-                                  </Button>
-                                )}
-
-                                <Link to={`/servers/${server.id}`} style={{ textDecoration: "none" }}>
-                                  <Button
-                                    size="1"
-                                    variant="soft"
-                                    className="cursor-pointer"
-                                    color="blue"
-                                  >
-                                    <Icon icon="lucide:eye" width="14" height="14" />
-                                    {t("server.view")}
-                                  </Button>
-                                </Link>
-
-                                <Link
-                                  to={`/servers/${server.id}/logs`}
-                                  style={{ textDecoration: "none" }}
-                                >
-                                  <Button
-                                    size="1"
-                                    variant="soft"
-                                    className="cursor-pointer"
-                                    color="gray"
-                                  >
-                                    <Icon icon="lucide:scroll-text" width="14" height="14" />
-                                    {t("server.viewLogs")}
-                                  </Button>
-                                </Link>
-
-                                <Button
-                                  size="1"
-                                  variant="soft"
-                                  className="cursor-pointer"
-                                  onClick={() => navigate(`/servers/${server.id}/edit`)}
-                                >
-                                  <Icon icon="lucide:pencil" width="14" height="14" />
-                                  {t("common.edit")}
-                                </Button>
-
-                                <Button
-                                  size="1"
-                                  variant="soft"
-                                  className="cursor-pointer"
-                                  color="red"
-                                  onClick={() => setDeleteId(server.id)}
-                                >
-                                  <Icon icon="lucide:trash" width="14" height="14" />
-                                  {t("common.delete")}
-                                </Button>
-                              </Flex>
-                            </Table.Cell>
-                          </Table.Row>
-                        ))}
-                      </Table.Body>
-                    </Table.Root>
-                  </div>
-                  <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </Card>
-        </Reveal>
-      </Flex>
-
+          ) : (
+            <EmptyState
+              title={t("server.noServers")}
+              description={t("server.addFirstServer")}
+              actionText={t("server.addYourFirstServer")}
+              onAction={() => navigate("/servers/new")}
+            />
+          )
+        ) : (
+          <>
+            {mobile ? (
+              <div className="resource-cards">
+                {servers.map((server) => (
+                  <Card key={server.id} size="2" className="resource-card">
+                    <div className="resource-card__header">{identity(server)}</div>
+                    <div className="resource-card__fields">
+                      <div className="resource-card__field">
+                        <Text size="1" color="gray">
+                          {t("server.latency")}
+                        </Text>
+                        <ServerLatency networkStatus={server.networkStatus} />
+                      </div>
+                      <div className="resource-card__field">
+                        <Text size="1" color="gray">
+                          {t("server.location")}
+                        </Text>
+                        <ServerLocation geoLocation={server.geoLocation} />
+                      </div>
+                    </div>
+                    {server.description && (
+                      <details className="resource-detail">
+                        <summary>{t("common.details")}</summary>
+                        <Text as="p" size="2" color="gray" className="resource-detail__body">
+                          {server.description}
+                        </Text>
+                      </details>
+                    )}
+                    <div className="resource-card__footer">
+                      <ServerStatusBadge status={server.bootStatus} variant="soft" />
+                      {actions(server)}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table.Root className="resource-table">
+                  <Table.Header>
+                    <Table.Row>
+                      <Table.ColumnHeaderCell>{t("common.name")}</Table.ColumnHeaderCell>
+                      <Table.ColumnHeaderCell>{t("server.latency")}</Table.ColumnHeaderCell>
+                      <Table.ColumnHeaderCell>{t("server.location")}</Table.ColumnHeaderCell>
+                      <Table.ColumnHeaderCell>{t("server.bootStatus")}</Table.ColumnHeaderCell>
+                      <Table.ColumnHeaderCell>{t("common.actions")}</Table.ColumnHeaderCell>
+                    </Table.Row>
+                  </Table.Header>
+                  <Table.Body>
+                    {servers.map((server) => (
+                      <Table.Row key={server.id}>
+                        <Table.Cell>{identity(server)}</Table.Cell>
+                        <Table.Cell>
+                          <ServerLatency networkStatus={server.networkStatus} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <ServerLocation geoLocation={server.geoLocation} />
+                        </Table.Cell>
+                        <Table.Cell>
+                          <ServerStatusBadge status={server.bootStatus} variant="soft" />
+                        </Table.Cell>
+                        <Table.Cell>{actions(server)}</Table.Cell>
+                      </Table.Row>
+                    ))}
+                  </Table.Body>
+                </Table.Root>
+              </div>
+            )}
+            <PaginationBar page={page} totalPages={totalPages} onPageChange={setPage} />
+          </>
+        )}
+      </Card>
       <ConfirmDeleteDialog
         open={deleteId !== null}
         title={t("server.confirmDeletion")}
@@ -356,6 +305,6 @@ export function ServersView({
           setDeleteId(null);
         }}
       />
-    </>
+    </Flex>
   );
 }

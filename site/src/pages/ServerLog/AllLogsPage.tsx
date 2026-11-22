@@ -17,7 +17,6 @@ export function AllLogsPage() {
     <Flex direction="column" gap="5">
       <PageHeader
         title={t("server.allLogs")}
-        description={t("server.allLogsDesc")}
         visible={mounted}
         extra={
           <Button variant="soft" onClick={() => navigate("/servers")}>

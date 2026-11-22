@@ -1,5 +1,6 @@
-import { motion, AnimatePresence } from "framer-motion";
 import { Icon } from "@iconify/react/offline";
+import { IconButton, Tooltip } from "@radix-ui/themes";
+import { useTranslation } from "react-i18next";
 import { useLanguage } from "../contexts/language";
 
 interface LanguageToggleProps {
@@ -9,45 +10,22 @@ interface LanguageToggleProps {
 
 export function LanguageToggle({ language: customLanguage, onChange }: LanguageToggleProps = {}) {
   const context = useLanguage();
-
-  // Use custom language/onChange if provided, otherwise use context
+  const { t } = useTranslation();
   const language = customLanguage ?? context.language;
   const setLanguage = onChange ?? context.setLanguage;
-
-  const toggleLanguage = () => {
-    const newLang = language === "en" ? "zh" : "en";
-    setLanguage(newLang);
-  };
-
+  const label = t("language.switchTo", {
+    language: t(language === "en" ? "language.zh" : "language.en"),
+  });
   return (
-    <motion.div
-      className="cursor-pointer rounded-lg p-2 transition-colors hover:bg-[var(--gray-a3)]"
-      onClick={toggleLanguage}
-      whileTap={{ scale: 0.95 }}
-      whileHover="hover"
-    >
-      <motion.div
-        variants={{
-          hover: { scale: 1.1, rotate: 15 },
-        }}
-        className="flex items-center justify-center"
+    <Tooltip content={label}>
+      <IconButton
+        variant="ghost"
+        color="gray"
+        onClick={() => setLanguage(language === "en" ? "zh" : "en")}
+        aria-label={label}
       >
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={language}
-            initial={{ rotate: -90, scale: 0 }}
-            animate={{ rotate: 0, scale: 1 }}
-            exit={{ rotate: 90, scale: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <Icon
-              icon={language === "en" ? "circle-flags:us" : "circle-flags:cn"}
-              width="20"
-              height="20"
-            />
-          </motion.div>
-        </AnimatePresence>
-      </motion.div>
-    </motion.div>
+        <Icon icon="lucide:languages" width="19" height="19" />
+      </IconButton>
+    </Tooltip>
   );
 }
